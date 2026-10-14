@@ -1,0 +1,89 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - develop
+      - main
+    tags:
+      - "v*"
+  pull_request:
+    branches:
+      - develop
+      - main
+      
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Python ${{ matrix.python-version }} / NumPy ${{ matrix.numpy }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - python-version: "3.12"
+            tox-version: "312"
+            numpy: min
+          - python-version: "3.13"
+            tox-version: "313"
+            numpy: min
+          - python-version: "3.14"
+            tox-version: "314"
+            numpy: min
+          - python-version: "3.12"
+            tox-version: "312"
+            numpy: latest
+          - python-version: "3.13"
+            tox-version: "313"
+            numpy: latest
+          - python-version: "3.14"
+            tox-version: "314"
+            numpy: latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Run tox environment
+        run: uv tool run tox -e py${{ matrix.tox-version }}-numpy_${{ matrix.numpy }}
+
+  build:
+    name: Build wheel with Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.13", "3.14"]
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Build wheel
+        run: uv build --wheel
