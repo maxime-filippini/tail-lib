@@ -178,7 +178,7 @@ def test_fit_ewma_decay_rejects_invalid_arguments(
 ) -> None:
     r = _simulate_ewma(np.array([0.94]), n=300)
 
-    with pytest.raises(ValueError, match="(bounds|Burn-in)"):
+    with pytest.raises(ValueError, match=r"(bounds|Burn-in)"):
         fit_ewma_decay(r, bounds=bounds, burn_in=burn_in)
 
 

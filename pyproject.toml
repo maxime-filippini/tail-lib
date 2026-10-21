@@ -21,7 +21,22 @@ indent-width = 4
 
 [tool.ruff.lint]
 select = ["ALL"]
-ignore = ["ICN001", "CPY001", "D105", "D107"]
+ignore = [
+    "ICN001",
+    "CPY001",
+    "D105",
+    "D107",
+    # Pick one of each pair of conflicting docstring rules: D211 and D212.
+    "D203",
+    "D213",
+    # Conflicts with the formatter, which handles trailing commas.
+    "COM812",
+]
 
-[tool.ruff.isort]
+[tool.ruff.lint.per-file-ignores]
+# Tests are plain functions run by pytest: no docstrings, no package, and
+# bare `assert` statements.
+"tests/**" = ["D", "INP001", "S101"]
+
+[tool.ruff.lint.isort]
 force-single-line = true

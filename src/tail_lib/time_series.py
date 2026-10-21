@@ -1,4 +1,4 @@
-"""Value-at-risk models."""
+"""Time series of values on dates."""
 
 from __future__ import annotations
 

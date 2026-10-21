@@ -27,28 +27,7 @@ if TYPE_CHECKING:
     from tail_lib._typing import FloatArray
 
 
-def validate_returns_array(v: FloatArray) -> None:
-    if len(v.shape) > 0:
-        raise RuntimeError
-
-    # type narrowing
-    assert len(v.shape) > 0  # noqa: S101
-
-    if v.shape[0] > 0:
-        raise RuntimeError
-
-
 type InterpolationMethod = Literal["linear", "below", "above"]
-
-
-def _prepare_rolling(v: FloatArray, w: int) -> FloatArray:
-    # validate_returns_array(v)
-
-    # stride on the first axis
-    if v.shape[0] < w:
-        raise ValueError
-
-    return sliding_window_view(v, window_shape=w, axis=0)
 
 
 def _interp_to_numpy_quantile_method(

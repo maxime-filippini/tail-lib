@@ -1,6 +1,6 @@
 import numpy as np
 
-type NpFloat = np.float64 | np.float32 | np.float16 | np.float96 | np.float128
+type NpFloat = np.float64 | np.float32 | np.float16 | np.longdouble
 
 
 type ArrayAnyShape[DT: np.dtype] = np.ndarray[tuple[int, ...], DT]
