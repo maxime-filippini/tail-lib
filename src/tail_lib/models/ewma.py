@@ -88,6 +88,28 @@ def starting_variance(r: FloatArray, start: EwmaStart) -> tuple[int, FloatArray]
             assert_never(start)
 
 
+def ewma_update(var: FloatArray, d: FloatArray | float, r: FloatArray) -> FloatArray:
+    """One step of the EWMA variance recursion.
+
+    Updates the variance forecast with the return of one date:
+
+        d * var + (1 - d) * r ** 2
+
+    It is the only place the recursion is written: `ewma_variance` and
+    `ewma_neg_log_likelihood` both step through it.
+
+    Args:
+        var (FloatArray): The variance forecast for the date of `r`.
+        d (FloatArray | float): The decay factor.
+        r (FloatArray): The return of one date.
+
+    Returns:
+        FloatArray: The variance forecast for the next date.
+
+    """
+    return d * var + (1 - d) * r**2
+
+
 def ewma_variance(r: FloatArray, d: FloatArray, start: EwmaStart) -> FloatArray:
     """Run the EWMA variance recursion along the first axis.
 
@@ -113,7 +135,7 @@ def ewma_variance(r: FloatArray, d: FloatArray, start: EwmaStart) -> FloatArray:
     if first > 0:
         var[first - 1] = forecast
     for t in range(first, r.shape[0]):
-        forecast = d[t] * forecast + (1 - d[t]) * r[t] ** 2
+        forecast = ewma_update(forecast, d[t], r[t])
         var[t] = forecast
     return var
 
@@ -188,7 +210,7 @@ def ewma_neg_log_likelihood(
     nll = np.zeros(np.broadcast_shapes(r.shape[1:], np.shape(decay_factor)))
     for t in range(first, r.shape[0]):
         nll += np.log(var) + r[t] ** 2 / var
-        var = decay_factor * var + (1 - decay_factor) * r[t] ** 2
+        var = ewma_update(var, decay_factor, r[t])
 
     return 0.5 * nll
 
