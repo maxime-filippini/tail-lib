@@ -2,6 +2,8 @@
 
 Read `docs/requirements.md` before designing, implementing or reviewing a
 feature. Cite requirement IDs (R1, D2, ...) in plans and hand-offs.
+Stated requirements record only what the developer said. Anything proposed
+during design goes under Derived until the developer confirms it.
 
 ## Working with the core developer
 
