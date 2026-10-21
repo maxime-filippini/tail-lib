@@ -20,5 +20,8 @@ orchestration and the methodology (R10). Work in small increments:
   timing convention (which dates feed the forecast for date `t`) and its
   parameters. It also cites a reference when the method comes from the
   literature.
+- **Green checks.** Before proposing a change, run `uv run ty check`,
+  `uv run ruff check` and `uv run pytest`. Hand off with all three passing, or
+  list each remaining failure and why it remains.
 - **Hand-off.** Summarize what changed, why, and which requirements it serves.
   Also list anything you deferred or noticed but left untouched.

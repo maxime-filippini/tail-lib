@@ -45,6 +45,10 @@ Requirements are numbered so changes and reviews can cite them (e.g. "R4").
 - **R10** — The core developer must always fully understand how the code is
   orchestrated and which methodology each model uses. Code and docs serve this
   first.
+- **R11** — The library is fully typed, so the types tell users exactly what
+  each model and function needs. Use loose types (`Any`, `...`) only where
+  NumPy's typing can't express the precise type, and explain that limit in a
+  comment.
 
 ## Derived requirements (proposed, not yet confirmed)
 

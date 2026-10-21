@@ -12,7 +12,11 @@ requires = ["setuptools>=80", "setuptools-scm>=9"]
 build-backend = "setuptools.build_meta"
 
 [dependency-groups]
-dev = ["pytest>=9.1.1", "ruff>=0.17.0"]
+dev = [
+    "pytest>=9.1.1",
+    "ruff>=0.17.0",
+    "ty>=0.0.90",
+]
 
 [tool.ruff]
 exclude = ["./.user"]
