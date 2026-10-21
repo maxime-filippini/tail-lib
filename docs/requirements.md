@@ -42,16 +42,13 @@ Requirements are numbered so changes and reviews can cite them (e.g. "R4").
   calendar is Monday to Friday, without holidays.
 - **R9** — Users can write model specs in a serialized data format.
 - **R9a** — Users specify models. The library builds the preprocessors those
-  models need (e.g. volatility models, calibrations). Identical preprocessor
-  specs share one computation, even across separately written model specs.
+  models need (e.g. volatility models, calibrations).
 - **R12** — After a run, users can serialize its results: model outputs and
   preprocessor outputs.
 - **R13** — Data that comes from outside a run (e.g. VaR forecasts for R3's
   first mode, or volatilities from the data service) is declared in the spec
   as a named input, and passed in by name at run time. A missing input is an
   error.
-- **R14** — Results saved from earlier runs (R12) can be loaded back to skip
-  work. Loading them never changes a result, only the time a run takes.
 
 ### Maintainability
 
@@ -65,14 +62,21 @@ Requirements are numbered so changes and reviews can cite them (e.g. "R4").
 
 ## Derived requirements (proposed, not yet confirmed)
 
-These follow from the stated requirements, and the core developer needs to
-confirm them.
+These follow from the stated requirements, or were proposed during design.
+The core developer needs to confirm them.
 
 - **D1** — *No look-ahead.* A forecast for date `t` uses only data from before
   `t`. Backtesting (R3) is meaningless without this.
 - **D2** — *Uniform forecast output.* Every VaR/ES model produces one forecast
   per date in the same form, so backtests (R3) and comparisons (R4, R5) treat
   all models the same way.
+- **D3** — *Shared preprocessors.* Identical preprocessor specs share one
+  computation within a run, even across separately written model specs (R6,
+  R9a). Wanted, but the design needs fleshing out before implementing.
+- **D4** — *Reusing saved results.* Results saved from earlier runs (R12) can
+  be loaded back to skip work. Loading them never changes a result, only the
+  time a run takes. Wanted, but the design needs fleshing out before
+  implementing.
 
 ## Open questions
 
