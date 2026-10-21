@@ -12,6 +12,7 @@ from tail_lib.models.value_at_risk import ConstantMean
 from tail_lib.models.value_at_risk import ConstantVolatility
 from tail_lib.models.value_at_risk import EwmaDecayCalibration
 from tail_lib.models.value_at_risk import EwmaVolatility
+from tail_lib.models.value_at_risk import FittedEwmaVolatility
 from tail_lib.models.value_at_risk import GaussianModel
 from tail_lib.models.value_at_risk import HistoricalSimulationsModel
 from tail_lib.models.value_at_risk import ModelPool
@@ -316,7 +317,9 @@ def test_ewma_volatility_rejects_decay_series_on_other_dates() -> None:
 
 def test_fitted_ewma_volatility_starts_after_first_calibration() -> None:
     returns = _simulated_returns()
-    vol_model = EwmaVolatility(EwmaDecayCalibration(Trailing(length=100, step=20)))
+    vol_model = FittedEwmaVolatility(
+        EwmaDecayCalibration(Trailing(length=100, step=20))
+    )
 
     vols = vol_model.run(returns)
     var = GaussianModel(cf=0.99, vol_model=vol_model).run(returns)
@@ -330,7 +333,9 @@ def test_fitted_ewma_volatility_starts_after_first_calibration() -> None:
 
 def test_fitted_ewma_volatility_has_no_look_ahead() -> None:
     returns = _simulated_returns()
-    vol_model = EwmaVolatility(EwmaDecayCalibration(Trailing(length=100, step=20)))
+    vol_model = FittedEwmaVolatility(
+        EwmaDecayCalibration(Trailing(length=100, step=20))
+    )
     t = 130
 
     full = vol_model.run(returns)
@@ -342,13 +347,52 @@ def test_fitted_ewma_volatility_has_no_look_ahead() -> None:
 def test_fitted_ewma_volatility_uses_calibrated_decay() -> None:
     returns = _simulated_returns()
     calibration = EwmaDecayCalibration(Trailing(length=100, step=20))
-    vol_model = EwmaVolatility(calibration)
+    vol_model = FittedEwmaVolatility(calibration)
 
     decay = calibration.run(returns)
 
     np.testing.assert_allclose(
         vol_model.run(returns).values,
-        vol_model.compute(returns, decay=decay).values,
+        vol_model.compute(
+            returns, decay=decay, window=calibration.window, start=calibration.start
+        ).values,
+    )
+
+
+def test_fitted_ewma_volatility_refilters_each_training_window() -> None:
+    returns = _simulated_returns()
+    length, step = 100, 20
+    calibration = EwmaDecayCalibration(Trailing(length=length, step=step))
+    decay = calibration.run(returns)
+
+    vols = FittedEwmaVolatility(calibration).run(returns)
+
+    # The dates after training window k use the EWMA with fit k, run from the
+    # start of the window, as if the returns started there.
+    for k, window_end in enumerate(range(length - 1, returns.n_dates - 1, step)):
+        window_start = window_end - length + 1
+        fit = decay.values[window_end]
+        refiltered = EwmaVolatility(ConstantDecay(fit)).run(returns[window_start:])
+        dates = slice(window_end + 1, min(window_end + 1 + step, returns.n_dates))
+        np.testing.assert_allclose(
+            vols.values[dates],
+            refiltered.values[dates.start - window_start : dates.stop - window_start],
+            err_msg=f"fit {k}",
+        )
+
+
+def test_fitted_ewma_volatility_uses_the_calibration_start() -> None:
+    returns = _simulated_returns()
+    calibration = EwmaDecayCalibration(
+        Trailing(length=100, step=20), start=StartingVol(0.01)
+    )
+    fit = calibration.run(returns).values[99]
+
+    vols = FittedEwmaVolatility(calibration).run(returns)
+
+    first_window = EwmaVolatility(ConstantDecay(fit), start=StartingVol(0.01))
+    np.testing.assert_allclose(
+        vols.values[100:120], first_window.run(returns[:120]).values[100:120]
     )
 
 
@@ -363,14 +407,14 @@ def test_pool_shares_decay_calibration_across_models() -> None:
     returns = _simulated_returns()
     calibration = _CountingCalibration(Trailing(length=100, step=20))
 
+    # Two volatility models, each a different node, on one calibration.
     ModelPool(
         {
-            "default_start": GaussianModel(
-                cf=0.99, vol_model=EwmaVolatility(calibration)
+            "gaussian_99": GaussianModel(
+                cf=0.99, vol_model=FittedEwmaVolatility(calibration)
             ),
-            "custom_start": GaussianModel(
-                cf=0.99,
-                vol_model=EwmaVolatility(calibration, start=StartingVol(0.02)),
+            "gaussian_95": GaussianModel(
+                cf=0.95, vol_model=FittedEwmaVolatility(calibration)
             ),
         }
     ).run(returns)

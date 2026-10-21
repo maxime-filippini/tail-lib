@@ -12,6 +12,7 @@ from typing import Literal
 from typing import assert_never
 
 import numpy as np
+from numpy.lib.stride_tricks import sliding_window_view
 from scipy import stats
 
 from tail_lib.time_series import TimeSeries
@@ -347,38 +348,54 @@ class ConstantDecay(DecayModel):
         )
 
 
-class EwmaVolatility(VolatilityModel):
-    """Exponentially weighted moving average (EWMA) volatility.
+def _ewma_variance(r: FloatArray, d: FloatArray, start: EwmaStart) -> FloatArray:
+    """Run the EWMA variance recursion along the first axis.
 
-    With `r[t]` the return and `d[t]` the decay factor on date `t`, the
-    variance follows the RiskMetrics recursion (J.P. Morgan/Reuters,
-    RiskMetrics Technical Document, 1996):
+    Args:
+        r (FloatArray): The returns, with time on the first axis.
+        d (FloatArray): The decay factor on each date, with the shape of `r`.
+        start (EwmaStart): How the recursion gets its first variance.
 
+    Returns:
+        FloatArray: The variances, with the shape of `r`. The variance on date
+            `t` only uses returns of dates before `t`. `NaN` before the first
+            date with a variance, see `_starting_variance`.
+
+    """
+    first, var0 = _starting_variance(r, start)
+    var = np.full(r.shape, np.nan)
+    var[first] = var0
+    for t in range(first, r.shape[0] - 1):
         var[t + 1] = d[t] * var[t] + (1 - d[t]) * r[t] ** 2
+    return var
+
+
+class EwmaVolatility(VolatilityModel):
+    """Exponentially weighted moving average (EWMA) volatility, with a fixed decay.
+
+    With `r[t]` the return on date `t` and `d` the decay factor, the variance
+    follows the RiskMetrics recursion (J.P. Morgan/Reuters, RiskMetrics
+    Technical Document, 1996, section 5.2.1), over the whole series:
+
+        var[t + 1] = d * var[t] + (1 - d) * r[t] ** 2
 
     The volatility on date `t` is `sqrt(var[t])`, and only uses returns of
     dates before `t`. The first variance comes from `start`: a backcast by
     default, see `Backcast` and `StartingVol`. Dates before it are `NaN`.
 
-    When the decay factor is missing (`NaN`) on the first dates, as before the
-    first calibration of an `EwmaDecayCalibration`, the recursion uses the
-    first available decay factor over those dates, to warm up. The
-    volatilities are then `NaN` up to and including the first date with a
-    decay factor, since the warm-up used a decay fitted on later returns.
-    A decay factor missing after that gives `NaN` volatilities from the next
-    date onwards.
+    For a decay recalibrated along the returns, see `FittedEwmaVolatility`.
     """
 
     def __init__(
         self,
-        decay: DecayModel,
+        decay: ConstantDecay,
         *,
         start: EwmaStart = DEFAULT_EWMA_START,
     ) -> None:
         """Build the model.
 
         Args:
-            decay (DecayModel): The decay factor as of each date.
+            decay (ConstantDecay): The decay factor.
             start (EwmaStart): How the recursion gets its first variance.
 
         """
@@ -394,39 +411,20 @@ class EwmaVolatility(VolatilityModel):
 
         Args:
             returns (TimeSeries): The returns time series.
-            decay (TimeSeries): The decay factor as of each date, with the
-                dates and shape of `returns`.
+            decay (TimeSeries): The decay factor on each date, with the dates
+                and shape of `returns`. The variance of date `t + 1` uses the
+                decay factor of date `t`.
 
         Returns:
             TimeSeries: The volatilities, on the dates of `returns`.
 
         Raises:
-            ValueError: If the decay factor is missing on every date, or does
-                not match the returns.
+            ValueError: If the decay factor does not match the returns.
 
         """
         returns.check_aligned(decay)
-        r = returns.values
-
-        has_decay = ~np.isnan(decay.values).reshape(decay.n_dates, -1).any(axis=1)
-        if not has_decay.any():
-            msg = "Decay factor is missing on every date!"
-            raise ValueError(msg)
-        first_decay = int(np.argmax(has_decay))
-
-        d = decay.values.copy()
-        d[:first_decay] = d[first_decay]
-
-        first_vol, var = _starting_variance(r, self._start)
-        vols = np.full(r.shape, np.nan)
-        vols[first_vol] = np.sqrt(var)
-        for t in range(first_vol, returns.n_dates - 1):
-            vols[t + 1] = np.sqrt(d[t] * vols[t] ** 2 + (1 - d[t]) * r[t] ** 2)
-
-        if first_decay > 0:
-            vols[: first_decay + 1] = np.nan
-
-        return TimeSeries(dates=returns.dates, values=vols)
+        var = _ewma_variance(returns.values, decay.values, self._start)
+        return TimeSeries(dates=returns.dates, values=np.sqrt(var))
 
 
 def ewma_neg_log_likelihood(
@@ -550,6 +548,11 @@ class EwmaDecayCalibration(DecayModel):
         """The training windows of the fits."""
         return self._window
 
+    @property
+    def start(self) -> EwmaStart:
+        """How the variance recursion of each fit gets its first value."""
+        return self._start
+
     def evaluate(self, cache: Cache) -> TimeSeries:  # noqa: D102
         return self.compute(cache.returns)
 
@@ -570,6 +573,102 @@ class EwmaDecayCalibration(DecayModel):
             n_iter=self._n_iter,
         )
         return Windows(returns, self._window).apply(fit)
+
+
+class FittedEwmaVolatility(VolatilityModel):
+    """EWMA volatility, re-filtered with each calibration of the decay factor.
+
+    Each calibration of `calibration` fits a decay factor on a training window
+    of returns. With that decay factor, the EWMA recursion of `EwmaVolatility`
+    is run over the training window, from its own start (`calibration.start`,
+    e.g. a backcast on the window's first dates), then continued with the same
+    decay factor over the dates until the next calibration. The volatility on
+    those dates comes from that run: it uses a single decay factor, and only
+    the returns of its training window and of later dates before it.
+
+    This is how GARCH-type models are forecast after a refit, e.g. `rugarch`'s
+    `ugarchroll` with a moving window, and `arch`'s `forecast` after
+    `fit(first_obs=..., last_obs=...)`.
+
+    The volatility on date `t` only uses returns of dates before `t`. It is
+    `NaN` up to and including the last date of the first training window.
+    """
+
+    def __init__(self, calibration: EwmaDecayCalibration) -> None:
+        """Build the model.
+
+        Args:
+            calibration (EwmaDecayCalibration): The calibration of the decay
+                factor. Its training windows and start are used to re-filter.
+
+        """
+        self._calibration = calibration
+
+    def evaluate(self, cache: Cache) -> TimeSeries:  # noqa: D102
+        decay = cache.get(self._calibration)
+        return self.compute(
+            cache.returns,
+            decay=decay,
+            window=self._calibration.window,
+            start=self._calibration.start,
+        )
+
+    def compute(
+        self,
+        returns: TimeSeries,
+        *,
+        decay: TimeSeries,
+        window: Trailing,
+        start: EwmaStart,
+    ) -> TimeSeries:
+        """Compute the volatilities.
+
+        Args:
+            returns (TimeSeries): The returns time series.
+            decay (TimeSeries): The decay factor fitted on the training windows
+                `window` of `returns`, as output by an `EwmaDecayCalibration`.
+            window (Trailing): The training windows the decay was fitted on.
+            start (EwmaStart): How the recursion gets its first variance, at
+                the start of each training window.
+
+        Returns:
+            TimeSeries: The volatilities, on the dates of `returns`.
+
+        Raises:
+            ValueError: If the decay factor does not match the returns.
+
+        """
+        returns.check_aligned(decay)
+        r = returns.values
+        n = returns.n_dates
+        length, step = window.length, window.step
+
+        # Calibration k fits the training window of dates
+        # [k * step, k * step + length - 1], and its decay factor is used for
+        # the volatilities of the `step` dates after that window.
+        window_ends = np.arange(length - 1, n, step)
+        fitted = decay.values[window_ends]  # (n_fits, *batch)
+
+        # Segment k: the training window, then the `step` dates after it. The
+        # returns are padded with NaN so the last segments have full length;
+        # the padding only reaches volatilities after the last date.
+        segment_length = length + step
+        padded = np.concatenate([r, np.full((segment_length, *r.shape[1:]), np.nan)])
+        strided = sliding_window_view(padded, segment_length, axis=0)
+        segments = np.moveaxis(strided, -1, 0)[:, window_ends - (length - 1)]
+
+        # One recursion per segment, all at once: segments are a batch axis.
+        d = np.broadcast_to(fitted, segments.shape)
+        var = _ewma_variance(segments, d, start)
+
+        # Row `length + j` of segment k is the variance of date
+        # `window_ends[k] + 1 + j`, for j in [0, step).
+        after_window = np.moveaxis(var[length:], 1, 0)  # (n_fits, step, *batch)
+        flat = after_window.reshape(-1, *r.shape[1:])
+        vols = np.full(r.shape, np.nan)
+        n_after = min(flat.shape[0], n - length)
+        vols[length : length + n_after] = np.sqrt(flat[:n_after])
+        return TimeSeries(dates=returns.dates, values=vols)
 
 
 class VolatilityFilter(Preprocessor):
