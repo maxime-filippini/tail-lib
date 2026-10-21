@@ -16,7 +16,9 @@ Requirements are numbered so changes and reviews can cite them (e.g. "R4").
 
 ### Backtesting and comparison
 
-- **R3** — Backtest VaR models.
+- **R3** — Backtest VaR models, in either of two modes:
+  - on VaR forecasts computed earlier and passed in as an input;
+  - together with the models that produce the forecasts, in one run.
 - **R4** — Benchmark models against each other using their backtest results.
 - **R5** — Apply several models to the same portfolio and compare their
   results.
@@ -39,6 +41,17 @@ Requirements are numbered so changes and reviews can cite them (e.g. "R4").
   valid, and users can customize it (e.g. weekends, holidays). The default
   calendar is Monday to Friday, without holidays.
 - **R9** — Users can write model specs in a serialized data format.
+- **R9a** — Users specify models. The library builds the preprocessors those
+  models need (e.g. volatility models, calibrations). Identical preprocessor
+  specs share one computation, even across separately written model specs.
+- **R12** — After a run, users can serialize its results: model outputs and
+  preprocessor outputs.
+- **R13** — Data that comes from outside a run (e.g. VaR forecasts for R3's
+  first mode, or volatilities from the data service) is declared in the spec
+  as a named input, and passed in by name at run time. A missing input is an
+  error.
+- **R14** — Results saved from earlier runs (R12) can be loaded back to skip
+  work. Loading them never changes a result, only the time a run takes.
 
 ### Maintainability
 
@@ -60,9 +73,6 @@ confirm them.
 - **D2** — *Uniform forecast output.* Every VaR/ES model produces one forecast
   per date in the same form, so backtests (R3) and comparisons (R4, R5) treat
   all models the same way.
-- **D3** — *Shared work identified by spec.* Two models whose specs share an
-  identical component (e.g. the same volatility calibration) compute it only
-  once, even if each was built from a separate serialized spec (R6, R9).
 
 ## Open questions
 
