@@ -65,8 +65,10 @@ Requirements are numbered so changes and reviews can cite them (e.g. "R4").
 These follow from the stated requirements, or were proposed during design.
 The core developer needs to confirm them.
 
-- **D1** — *No look-ahead.* A forecast for date `t` uses only data from before
-  `t`. Backtesting (R3) is meaningless without this.
+- **D1** — *No look-ahead.* A value on date `t` (a calibration, a volatility,
+  a VaR) uses only data up to and including `t`. The VaR on `t` is then the
+  forecast for `t + 1`, and backtests (R3) compare the VaR on `t - 1` with the
+  return on `t`.
 - **D2** — *Uniform forecast output.* Every VaR/ES model produces one forecast
   per date in the same form, so backtests (R3) and comparisons (R4, R5) treat
   all models the same way.
@@ -77,6 +79,16 @@ The core developer needs to confirm them.
   be loaded back to skip work. Loading them never changes a result, only the
   time a run takes. Wanted, but the design needs fleshing out before
   implementing.
+- **D5** — *Rolling windows.* Rolling calculations go through a `Windows`
+  object: the windows over a series, in the library's array layout (time
+  first, then the windows as a batch axis, then the series). It carries the
+  dates inside each window and the date each result belongs to, the window's
+  last date. Results go back onto the series' dates, each date holding the
+  latest result available on it.
+- **D6** — *Independent schedules.* Each node has its own window and step. A
+  node reads its inputs as of its own calculation date, i.e. their latest
+  values on that date. A windowed model gets, for each window, the returns in
+  the window and its inputs as of the window's last date.
 
 ## Open questions
 
