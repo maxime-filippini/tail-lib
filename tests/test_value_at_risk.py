@@ -158,20 +158,19 @@ def test_pool_computes_shared_preprocessors_once() -> None:
 
     returns = _returns()
     vol_model = CountingVolatility(0.01)
-    models = {
+    # Kept apart: the two model types do not output the same type yet (D2).
+    gaussians = {
         "gaussian_99": GaussianModel(cf=0.99, vol_model=vol_model),
         "gaussian_95": GaussianModel(cf=0.95, vol_model=vol_model),
-        "hs_99": HistoricalSimulationsModel(cf=0.99),
     }
+    hs = HistoricalSimulationsModel(cf=0.99)
 
-    results = ModelPool(models).run(returns)
+    results = ModelPool({**gaussians, "hs_99": hs}).run(returns)
 
     assert CountingVolatility.n_calls == 1
-    for name in ("gaussian_99", "gaussian_95"):
-        np.testing.assert_allclose(
-            results[name].values, models[name].run(returns).values
-        )
-    np.testing.assert_allclose(results["hs_99"], models["hs_99"].run(returns))
+    for name, model in gaussians.items():
+        np.testing.assert_allclose(results[name].values, model.run(returns).values)
+    np.testing.assert_allclose(results["hs_99"], hs.run(returns))
 
 
 def _simulate_ewma(decay_factor: np.ndarray, n: int) -> np.ndarray:
