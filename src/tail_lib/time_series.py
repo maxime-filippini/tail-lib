@@ -7,6 +7,8 @@ from typing import Any
 
 import numpy as np
 
+from tail_lib.calendar import Calendar
+
 if TYPE_CHECKING:
     import datetime
 
@@ -90,39 +92,49 @@ class TimeSeries:
         cls,
         first_date: datetime.date,
         values: FloatArrayAtLeast1D,
+        calendar: Calendar | None = None,
     ) -> TimeSeries:
         """Build a time series from a starting date.
 
+        The dates are the consecutive valid dates of `calendar` from
+        `first_date`, one per value, see `Calendar.dates_from`.
+
         Args:
             first_date (datetime.date): The first date of the time series.
-            values (NonEmptyFloatArray): The value array.
+            values (FloatArrayAtLeast1D): The value array.
+            calendar (Calendar | None): The calendar of valid dates. Defaults
+                to Monday to Friday, without holidays.
 
         Returns:
             TimeSeries: Resulting time series.
 
         """
-        np_first_date = np.datetime64(first_date, "D")
-        n = values.shape[0]
-        date_arr = np.arange(np_first_date, np_first_date + n)
-        return cls(dates=date_arr, values=values)
+        calendar = Calendar() if calendar is None else calendar
+        dates = calendar.dates_from(first_date, values.shape[0])
+        return cls(dates=dates, values=values)
 
     @classmethod
     def to_last_date(
         cls,
         last_date: datetime.date,
         values: FloatArrayAtLeast1D,
+        calendar: Calendar | None = None,
     ) -> TimeSeries:
         """Build a time series from an ending date.
 
+        The dates are the consecutive valid dates of `calendar` up to
+        `last_date`, one per value, see `Calendar.dates_to`.
+
         Args:
-            last_date (datetime.date): The first date of the time series.
-            values (NonEmptyFloatArray): The value array.
+            last_date (datetime.date): The last date of the time series.
+            values (FloatArrayAtLeast1D): The value array.
+            calendar (Calendar | None): The calendar of valid dates. Defaults
+                to Monday to Friday, without holidays.
 
         Returns:
             TimeSeries: Resulting time series.
 
         """
-        np_last_date = np.datetime64(last_date, "D")
-        n = values.shape[0]
-        date_arr = np.arange(np_last_date - n + 1, np_last_date + 1)
-        return cls(dates=date_arr, values=values)
+        calendar = Calendar() if calendar is None else calendar
+        dates = calendar.dates_to(last_date, values.shape[0])
+        return cls(dates=dates, values=values)
