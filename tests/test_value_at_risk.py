@@ -5,17 +5,19 @@ import pytest
 from numpy.lib.stride_tricks import sliding_window_view
 from scipy import stats
 
+from tail_lib.models.value_at_risk import Backcast
 from tail_lib.models.value_at_risk import Cache
+from tail_lib.models.value_at_risk import ConstantDecay
 from tail_lib.models.value_at_risk import ConstantMean
 from tail_lib.models.value_at_risk import ConstantVolatility
 from tail_lib.models.value_at_risk import EwmaDecayCalibration
 from tail_lib.models.value_at_risk import EwmaVolatility
-from tail_lib.models.value_at_risk import FittedEwmaVolatility
 from tail_lib.models.value_at_risk import GaussianModel
 from tail_lib.models.value_at_risk import HistoricalSimulationsModel
 from tail_lib.models.value_at_risk import ModelPool
 from tail_lib.models.value_at_risk import Preprocessor
 from tail_lib.models.value_at_risk import Rolling
+from tail_lib.models.value_at_risk import StartingVol
 from tail_lib.models.value_at_risk import ValueAtRiskModel
 from tail_lib.models.value_at_risk import VolatilityFilter
 from tail_lib.models.value_at_risk import VolatilityModel
@@ -83,9 +85,13 @@ def test_gaussian_run_uses_mean_and_vol_models() -> None:
     np.testing.assert_allclose(var.values, np.tile(expected, (returns.n_dates, 1)))
 
 
+def _ewma(decay: np.ndarray | float, start: float = 0.01) -> EwmaVolatility:
+    return EwmaVolatility(ConstantDecay(decay), start=StartingVol(start))
+
+
 def test_ewma_volatility_recursion() -> None:
     returns = _returns(n=5)
-    vols = EwmaVolatility(decay_factor=0.94, starting_vol=0.01).compute(returns)
+    vols = _ewma(0.94).run(returns)
 
     expected = [0.01]
     for r in returns.values[:-1]:
@@ -93,6 +99,44 @@ def test_ewma_volatility_recursion() -> None:
 
     np.testing.assert_array_equal(vols.dates, returns.dates)
     np.testing.assert_allclose(vols.values, expected)
+
+
+def test_ewma_volatility_backcast_by_default() -> None:
+    returns = _returns(n=30)
+    r = returns.values
+    n = 20
+
+    vols = EwmaVolatility(ConstantDecay(0.94)).run(returns)
+
+    expected = [np.sqrt(np.mean(r[:n] ** 2))]
+    for t in range(n, 29):
+        expected.append(np.sqrt(0.94 * expected[-1] ** 2 + 0.06 * r[t] ** 2))
+
+    assert np.isnan(vols.values[:n]).all()
+    np.testing.assert_allclose(vols.values[n:], expected)
+
+
+def test_ewma_volatility_backcast_window_must_fit_returns() -> None:
+    with pytest.raises(ValueError, match="Backcast window"):
+        EwmaVolatility(ConstantDecay(0.94), start=Backcast(window=30)).run(
+            _returns(n=30)
+        )
+
+
+@pytest.mark.parametrize("window", [0, -1])
+def test_backcast_rejects_empty_window(window: int) -> None:
+    with pytest.raises(ValueError, match="at least 1"):
+        Backcast(window=window)
+
+
+def test_starting_vol_rejects_non_positive_vol() -> None:
+    with pytest.raises(ValueError, match="positive"):
+        StartingVol(np.array([0.01, 0.0]))
+
+
+def test_constant_decay_rejects_decay_outside_unit_interval() -> None:
+    with pytest.raises(ValueError, match=r"\[0,1\]"):
+        ConstantDecay(1.1)
 
 
 def test_historical_simulations_run() -> None:
@@ -170,38 +214,44 @@ def test_fit_ewma_decay_on_rolling_windows() -> None:
 
 
 @pytest.mark.parametrize(
-    ("bounds", "burn_in"),
-    [((0.9, 0.8), 20), ((0.5, 1.1), 20), ((0.8, 0.99), 0), ((0.8, 0.99), 300)],
+    ("bounds", "window"),
+    [((0.9, 0.8), 20), ((0.5, 1.1), 20), ((0.8, 0.99), 300)],
 )
 def test_fit_ewma_decay_rejects_invalid_arguments(
-    bounds: tuple[float, float], burn_in: int
+    bounds: tuple[float, float], window: int
 ) -> None:
     r = _simulate_ewma(np.array([0.94]), n=300)
 
-    with pytest.raises(ValueError, match=r"(bounds|Burn-in)"):
-        fit_ewma_decay(r, bounds=bounds, burn_in=burn_in)
+    with pytest.raises(ValueError, match=r"(bounds|Backcast)"):
+        fit_ewma_decay(r, bounds=bounds, start=Backcast(window=window))
+
+
+def test_fit_ewma_decay_with_starting_vol_uses_every_date() -> None:
+    r = _simulate_ewma(np.array([0.9, 0.97]), n=300)
+
+    fitted = fit_ewma_decay(r, start=StartingVol(0.01))
+
+    assert fitted.shape == (2,)
+    assert not np.allclose(fitted, fit_ewma_decay(r))
 
 
 def test_ewma_volatility_with_batch_decay_factors() -> None:
     returns = _returns(n=50, n_assets=2)
     decay = np.array([0.9, 0.97])
 
-    vols = EwmaVolatility(decay_factor=decay, starting_vol=0.01).compute(returns)
+    vols = _ewma(decay).run(returns)
 
     for i, d in enumerate(decay):
         single = TimeSeries(dates=returns.dates, values=returns.values[:, i])
-        np.testing.assert_allclose(
-            vols.values[:, i],
-            EwmaVolatility(decay_factor=d, starting_vol=0.01).compute(single).values,
-        )
+        np.testing.assert_allclose(vols.values[:, i], _ewma(d).run(single).values)
 
 
 def test_ewma_volatility_rejects_decay_not_matching_batch() -> None:
     returns = _returns(n=50, n_assets=2)
-    model = EwmaVolatility(decay_factor=np.array([0.9, 0.94, 0.97]), starting_vol=0.01)
+    model = _ewma(np.array([0.9, 0.94, 0.97]))
 
-    with pytest.raises(ValueError, match="does not broadcast"):
-        model.compute(returns)
+    with pytest.raises(ValueError, match="broadcast"):
+        model.run(returns)
 
 
 def _simulated_returns(n: int = 160) -> TimeSeries:
@@ -229,13 +279,13 @@ def test_rolling_schedule_rejects_window_longer_than_returns() -> None:
         Rolling(window=200).calibrate(_simulated_returns(), fit=fit_ewma_decay)
 
 
-def test_ewma_volatility_constant_decay_series_matches_constant_decay() -> None:
+def test_ewma_volatility_compute_matches_constant_decay_run() -> None:
     returns = _returns(n=50, n_assets=2)
     decay = TimeSeries(dates=returns.dates, values=np.full((50, 2), 0.94))
 
     np.testing.assert_allclose(
-        EwmaVolatility(decay_factor=decay, starting_vol=0.01).compute(returns).values,
-        EwmaVolatility(decay_factor=0.94, starting_vol=0.01).compute(returns).values,
+        _ewma(0.94).compute(returns, decay=decay).values,
+        _ewma(0.94).run(returns).values,
     )
 
 
@@ -247,8 +297,8 @@ def test_ewma_volatility_decay_series_applies_from_next_date() -> None:
         values=np.where(np.arange(50) < switch, 0.9, 0.97),
     )
 
-    vols = EwmaVolatility(decay_factor=decay, starting_vol=0.01).compute(returns)
-    constant = EwmaVolatility(decay_factor=0.9, starting_vol=0.01).compute(returns)
+    vols = _ewma(0.9).compute(returns, decay=decay)
+    constant = _ewma(0.9).run(returns)
 
     np.testing.assert_allclose(vols.values[: switch + 1], constant.values[: switch + 1])
     assert not np.isclose(vols.values[switch + 1], constant.values[switch + 1])
@@ -261,12 +311,12 @@ def test_ewma_volatility_rejects_decay_series_on_other_dates() -> None:
     )
 
     with pytest.raises(ValueError, match="dates"):
-        EwmaVolatility(decay_factor=decay, starting_vol=0.01).compute(returns)
+        _ewma(0.94).compute(returns, decay=decay)
 
 
 def test_fitted_ewma_volatility_starts_after_first_calibration() -> None:
     returns = _simulated_returns()
-    vol_model = FittedEwmaVolatility(
+    vol_model = EwmaVolatility(
         EwmaDecayCalibration(Rolling(window=100, refit_every=20))
     )
 
@@ -282,7 +332,7 @@ def test_fitted_ewma_volatility_starts_after_first_calibration() -> None:
 
 def test_fitted_ewma_volatility_has_no_look_ahead() -> None:
     returns = _simulated_returns()
-    vol_model = FittedEwmaVolatility(
+    vol_model = EwmaVolatility(
         EwmaDecayCalibration(Rolling(window=100, refit_every=20))
     )
     t = 130
@@ -296,7 +346,7 @@ def test_fitted_ewma_volatility_has_no_look_ahead() -> None:
 def test_fitted_ewma_volatility_uses_calibrated_decay() -> None:
     returns = _simulated_returns()
     calibration = EwmaDecayCalibration(Rolling(window=100, refit_every=20))
-    vol_model = FittedEwmaVolatility(calibration)
+    vol_model = EwmaVolatility(calibration)
 
     decay = calibration.run(returns)
 
@@ -320,11 +370,11 @@ def test_pool_shares_decay_calibration_across_models() -> None:
     ModelPool(
         {
             "default_start": GaussianModel(
-                cf=0.99, vol_model=FittedEwmaVolatility(calibration)
+                cf=0.99, vol_model=EwmaVolatility(calibration)
             ),
             "custom_start": GaussianModel(
                 cf=0.99,
-                vol_model=FittedEwmaVolatility(calibration, starting_vol=0.02),
+                vol_model=EwmaVolatility(calibration, start=StartingVol(0.02)),
             ),
         }
     ).run(returns)
@@ -361,15 +411,11 @@ class _FilteredReturnsModel(ValueAtRiskModel[TimeSeries]):
 
 def test_volatility_filter_divides_returns_by_vols() -> None:
     returns = _returns(n=50, n_assets=2)
-    vol_model = EwmaVolatility(decay_factor=0.94, starting_vol=0.01)
+    vols = _ewma(0.94).run(returns)
 
-    filtered = VolatilityFilter(vol_model).compute(
-        returns, vols=vol_model.compute(returns)
-    )
+    filtered = VolatilityFilter(_ewma(0.94)).compute(returns, vols=vols)
 
-    np.testing.assert_allclose(
-        filtered.values, returns.values / vol_model.compute(returns).values
-    )
+    np.testing.assert_allclose(filtered.values, returns.values / vols.values)
 
 
 def test_volatility_filter_rejects_mismatched_vols() -> None:

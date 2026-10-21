@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from abc import ABC
 from abc import abstractmethod
+from dataclasses import dataclass
 from functools import partial
 from typing import TYPE_CHECKING
 from typing import Any
@@ -188,36 +189,92 @@ class ConstantVolatility(VolatilityModel):
         )
 
 
-class EwmaVolatility(VolatilityModel):
-    """Exponentially weighted moving average volatility.
+@dataclass(frozen=True)
+class Backcast:
+    """Start the EWMA from the mean squared return of the first dates.
 
-    The volatility on a date only uses the returns of the previous dates, the
-    first one being `starting_vol`.
-
-    `decay_factor` is either:
-    - a single value, or an array broadcastable to the batch shape of the
-      returns, for example the output of `fit_ewma_decay`;
-    - a time series of decay factors on the dates of the returns, whose value on
-      a date is used to update the volatility with the return of that date.
-      A `NaN` decay factor gives `NaN` volatilities from the next date onwards.
+    The variance on date `window` is the mean of the squared returns of dates
+    `0` to `window - 1`, assuming a zero mean. The recursion starts on date
+    `window`, so no date sees its own or later returns.
     """
 
-    def __init__(
-        self,
-        decay_factor: TimeSeries | FloatArray | float,
-        starting_vol: FloatArray | float,
-    ) -> None:
-        self._decay_factor: TimeSeries | FloatArray
-        if isinstance(decay_factor, TimeSeries):
-            self._decay_factor = decay_factor
-            values = decay_factor.values
-        else:
-            values = np.asarray(decay_factor)
-            self._decay_factor = values
+    window: int = 20
 
-        self._starting_vol = np.asarray(starting_vol)
+    def __post_init__(self) -> None:
+        if self.window < 1:
+            msg = f"Backcast window has to be at least 1, got {self.window}!"
+            raise ValueError(msg)
 
-        if np.any(values < 0) or np.any(values > 1):
+
+@dataclass(frozen=True)
+class StartingVol:
+    """Start the EWMA from a given volatility on the first date."""
+
+    vol: FloatArray | float
+
+    def __post_init__(self) -> None:
+        if np.any(np.asarray(self.vol) <= 0):
+            msg = "Starting volatility has to be positive!"
+            raise ValueError(msg)
+
+
+type EwmaStart = Backcast | StartingVol
+"""How an EWMA variance recursion gets its first value."""
+
+DEFAULT_EWMA_START = Backcast(window=20)
+
+
+def _starting_variance(r: FloatArray, start: EwmaStart) -> tuple[int, FloatArray]:
+    """Date the EWMA recursion starts on, and the variance on that date.
+
+    Args:
+        r (FloatArray): The returns, with time on the first axis.
+        start (EwmaStart): How the recursion gets its first value.
+
+    Returns:
+        tuple[int, FloatArray]: The index of the first date with a variance,
+            and that variance, with the batch shape of `r`.
+
+    Raises:
+        ValueError: If a backcast needs more dates than there are.
+
+    """
+    match start:
+        case Backcast(window=window):
+            if r.shape[0] <= window:
+                msg = (
+                    f"Backcast window of {window} dates needs more than "
+                    f"{window} dates of returns, got {r.shape[0]}!"
+                )
+                raise ValueError(msg)
+            return window, np.mean(r[:window] ** 2, axis=0)
+        case StartingVol(vol=vol):
+            return 0, np.broadcast_to(np.square(vol), r.shape[1:])
+        case _:
+            assert_never(start)
+
+
+class DecayModel(Preprocessor):
+    """A model of the EWMA decay factor, as of each date."""
+
+
+class ConstantDecay(DecayModel):
+    """The same decay factor on every date."""
+
+    def __init__(self, decay_factor: FloatArray | float) -> None:
+        """Build the model.
+
+        Args:
+            decay_factor (FloatArray | float): The decay factor, a single value
+                or an array broadcastable to the batch shape of the returns,
+                e.g. the output of `fit_ewma_decay`.
+
+        Raises:
+            ValueError: If the decay factor is not in [0,1].
+
+        """
+        self._decay_factor = np.asarray(decay_factor)
+        if np.any(self._decay_factor < 0) or np.any(self._decay_factor > 1):
             msg = "Decay factor has to be in [0,1]!"
             raise ValueError(msg)
 
@@ -225,73 +282,129 @@ class EwmaVolatility(VolatilityModel):
         return self.compute(cache.returns)
 
     def compute(self, returns: TimeSeries) -> TimeSeries:
-        """Compute the output from the returns."""
-        r = returns.values
-        decay_path = self._decay_path(returns)
+        """Repeat the decay factor on every date of the returns.
 
-        vols = np.zeros(r.shape)
-        vols[0] = self._starting_vol
-        for i in range(returns.n_dates - 1):
-            df = decay_path[i]
-            vols[i + 1] = np.sqrt(df * vols[i] ** 2 + (1 - df) * r[i] ** 2)
+        Args:
+            returns (TimeSeries): The returns time series.
+
+        Returns:
+            TimeSeries: The decay factor, with the dates and shape of `returns`.
+
+        """
+        return TimeSeries(
+            dates=returns.dates,
+            values=np.broadcast_to(self._decay_factor, returns.values.shape).copy(),
+        )
+
+
+class EwmaVolatility(VolatilityModel):
+    """Exponentially weighted moving average (EWMA) volatility.
+
+    With `r[t]` the return and `d[t]` the decay factor on date `t`, the
+    variance follows the RiskMetrics recursion (J.P. Morgan/Reuters,
+    RiskMetrics Technical Document, 1996):
+
+        var[t + 1] = d[t] * var[t] + (1 - d[t]) * r[t] ** 2
+
+    The volatility on date `t` is `sqrt(var[t])`, and only uses returns of
+    dates before `t`. The first variance comes from `start`: a backcast by
+    default, see `Backcast` and `StartingVol`. Dates before it are `NaN`.
+
+    When the decay factor is missing (`NaN`) on the first dates, as before the
+    first calibration of an `EwmaDecayCalibration`, the recursion uses the
+    first available decay factor over those dates, to warm up. The
+    volatilities are then `NaN` up to and including the first date with a
+    decay factor, since the warm-up used a decay fitted on later returns.
+    A decay factor missing after that gives `NaN` volatilities from the next
+    date onwards.
+    """
+
+    def __init__(
+        self,
+        decay: DecayModel,
+        *,
+        start: EwmaStart = DEFAULT_EWMA_START,
+    ) -> None:
+        """Build the model.
+
+        Args:
+            decay (DecayModel): The decay factor as of each date.
+            start (EwmaStart): How the recursion gets its first variance.
+
+        """
+        self._decay = decay
+        self._start = start
+
+    def evaluate(self, cache: Cache) -> TimeSeries:  # noqa: D102
+        decay = cache.get(self._decay)
+        return self.compute(cache.returns, decay=decay)
+
+    def compute(self, returns: TimeSeries, *, decay: TimeSeries) -> TimeSeries:
+        """Compute the volatilities.
+
+        Args:
+            returns (TimeSeries): The returns time series.
+            decay (TimeSeries): The decay factor as of each date, with the
+                dates and shape of `returns`.
+
+        Returns:
+            TimeSeries: The volatilities, on the dates of `returns`.
+
+        Raises:
+            ValueError: If the decay factor is missing on every date, or does
+                not match the returns.
+
+        """
+        returns.check_aligned(decay)
+        r = returns.values
+
+        has_decay = ~np.isnan(decay.values).reshape(decay.n_dates, -1).any(axis=1)
+        if not has_decay.any():
+            msg = "Decay factor is missing on every date!"
+            raise ValueError(msg)
+        first_decay = int(np.argmax(has_decay))
+
+        d = decay.values.copy()
+        d[:first_decay] = d[first_decay]
+
+        first_vol, var = _starting_variance(r, self._start)
+        vols = np.full(r.shape, np.nan)
+        vols[first_vol] = np.sqrt(var)
+        for t in range(first_vol, returns.n_dates - 1):
+            vols[t + 1] = np.sqrt(d[t] * vols[t] ** 2 + (1 - d[t]) * r[t] ** 2)
+
+        if first_decay > 0:
+            vols[: first_decay + 1] = np.nan
 
         return TimeSeries(dates=returns.dates, values=vols)
-
-    def _decay_path(self, returns: TimeSeries) -> FloatArray:
-        """Decay factors on every date, broadcast to the shape of the returns."""
-        r = returns.values
-
-        if isinstance(self._decay_factor, TimeSeries):
-            if not np.array_equal(self._decay_factor.dates, returns.dates):
-                msg = "Decay factor and returns have different dates!"
-                raise ValueError(msg)
-            df = self._decay_factor.values
-            target_shape = r.shape
-        else:
-            df = self._decay_factor
-            # A constant decay factor only broadcasts to the batch shape, so it
-            # is never mistaken for a time-varying one.
-            target_shape = r.shape[1:]
-
-        msg = (
-            f"Decay factor of shape {df.shape} does not broadcast to the "
-            f"shape {target_shape}!"
-        )
-        try:
-            broadcast_shape = np.broadcast_shapes(df.shape, target_shape)
-        except ValueError as e:
-            raise ValueError(msg) from e
-        if broadcast_shape != target_shape:
-            raise ValueError(msg)
-
-        return np.broadcast_to(df, r.shape)
 
 
 def ewma_neg_log_likelihood(
     r: FloatArray,
     decay_factor: FloatArray | float,
     *,
-    burn_in: int,
+    start: EwmaStart = DEFAULT_EWMA_START,
 ) -> FloatArray:
     """Gaussian negative log-likelihood of zero-mean EWMA variance forecasts.
 
-    The starting variance is the mean squared return over the first `burn_in`
-    dates, which are then left out of the likelihood.
+    The variance forecasts follow the recursion of `EwmaVolatility`, from the
+    first date with a variance given by `start`. Dates before it are left out
+    of the likelihood.
 
     Args:
         r (FloatArray): The returns, with time on the first axis.
         decay_factor (FloatArray | float): The decay factor, broadcastable to
             the batch shape of `r`.
-        burn_in (int): The number of dates used for the starting variance.
+        start (EwmaStart): How the recursion gets its first variance.
 
     Returns:
         FloatArray: The negative log-likelihood, one value per batch element
             (up to an additive constant).
 
     """
-    var = np.mean(r[:burn_in] ** 2, axis=0)
+    first, var = _starting_variance(r, start)
     nll = np.zeros(np.broadcast_shapes(r.shape[1:], np.shape(decay_factor)))
-    for t in range(burn_in, r.shape[0]):
+    for t in range(first, r.shape[0]):
         nll += np.log(var) + r[t] ** 2 / var
         var = decay_factor * var + (1 - decay_factor) * r[t] ** 2
 
@@ -302,7 +415,7 @@ def fit_ewma_decay(
     r: FloatArray,
     *,
     bounds: tuple[float, float] = (0.8, 0.9999),
-    burn_in: int = 20,
+    start: EwmaStart = DEFAULT_EWMA_START,
     n_iter: int = 40,
 ) -> FloatArray:
     """Fit EWMA decay factors by maximum likelihood.
@@ -313,7 +426,7 @@ def fit_ewma_decay(
     Args:
         r (FloatArray): The returns, with time on the first axis.
         bounds (tuple[float, float]): The search interval for the decay factor.
-        burn_in (int): The number of dates used for the starting variance, see
+        start (EwmaStart): How the variance recursion gets its first value, see
             `ewma_neg_log_likelihood`.
         n_iter (int): The number of golden-section iterations. The search
             interval shrinks by a factor of about 0.618 per iteration.
@@ -322,8 +435,8 @@ def fit_ewma_decay(
         FloatArray: The decay factors, with the batch shape of `r`.
 
     Raises:
-        ValueError: If the bounds are not in [0,1], or if there are no dates
-            left after the burn-in.
+        ValueError: If the bounds are not in [0,1], or if a backcast needs
+            more dates than there are.
 
     """
     lo, hi = bounds
@@ -331,12 +444,8 @@ def fit_ewma_decay(
         msg = "Decay factor bounds have to satisfy 0 <= lower < upper <= 1!"
         raise ValueError(msg)
 
-    if burn_in < 1 or r.shape[0] <= burn_in:
-        msg = (
-            f"Burn-in has to be in [1, {r.shape[0]}) for {r.shape[0]} dates, "
-            f"got {burn_in}!"
-        )
-        raise ValueError(msg)
+    # Fail early, before the search, if the start does not fit the returns.
+    _starting_variance(r, start)
 
     inv_phi = (np.sqrt(5) - 1) / 2
     a = np.full(r.shape[1:], lo)
@@ -344,8 +453,8 @@ def fit_ewma_decay(
     for _ in range(n_iter):
         c = b - inv_phi * (b - a)
         d = a + inv_phi * (b - a)
-        nll_c = ewma_neg_log_likelihood(r, c, burn_in=burn_in)
-        nll_d = ewma_neg_log_likelihood(r, d, burn_in=burn_in)
+        nll_c = ewma_neg_log_likelihood(r, c, start=start)
+        nll_d = ewma_neg_log_likelihood(r, d, start=start)
         is_left = nll_c < nll_d
         a, b = np.where(is_left, a, c), np.where(is_left, d, b)
 
@@ -419,12 +528,14 @@ class Rolling(CalibrationSchedule):
         return TimeSeries(dates=returns.dates, values=values)
 
 
-class EwmaDecayCalibration(Preprocessor):
+class EwmaDecayCalibration(DecayModel):
     """EWMA decay factors calibrated by maximum likelihood along a schedule.
 
-    The output is the decay factor as of each date, see
-    `CalibrationSchedule.calibrate`. Share one instance between the models
-    that should use the same calibration, so it is only fitted once.
+    Each calibration fits `fit_ewma_decay` on the returns the schedule gives
+    it. The output is the decay factor as of each date, see
+    `CalibrationSchedule.calibrate`: `NaN` before the first calibration. Share
+    one instance between the models that should use the same calibration, so
+    it is only fitted once.
     """
 
     def __init__(
@@ -432,97 +543,46 @@ class EwmaDecayCalibration(Preprocessor):
         schedule: CalibrationSchedule,
         *,
         bounds: tuple[float, float] = (0.8, 0.9999),
-        burn_in: int = 20,
+        start: EwmaStart = DEFAULT_EWMA_START,
         n_iter: int = 40,
     ) -> None:
+        """Build the calibration.
+
+        Args:
+            schedule (CalibrationSchedule): When, and on which returns, to fit.
+            bounds (tuple[float, float]): The search interval for the decay.
+            start (EwmaStart): How the variance recursion of each fit gets its
+                first value. A backcast uses the first dates of each fit.
+            n_iter (int): The number of golden-section iterations of each fit.
+
+        """
         self._schedule = schedule
         self._bounds = bounds
-        self._burn_in = burn_in
+        self._start = start
         self._n_iter = n_iter
-
-    @property
-    def burn_in(self) -> int:
-        """The number of dates used for the starting variance of each fit."""
-        return self._burn_in
 
     def evaluate(self, cache: Cache) -> TimeSeries:  # noqa: D102
         return self.compute(cache.returns)
 
     def compute(self, returns: TimeSeries) -> TimeSeries:
-        """Compute the output from the returns."""
+        """Calibrate the decay factor along the schedule.
+
+        Args:
+            returns (TimeSeries): The returns time series.
+
+        Returns:
+            TimeSeries: The decay factor as of each date of `returns`.
+
+        """
         return self._schedule.calibrate(
             returns,
             fit=partial(
                 fit_ewma_decay,
                 bounds=self._bounds,
-                burn_in=self._burn_in,
+                start=self._start,
                 n_iter=self._n_iter,
             ),
         )
-
-
-class FittedEwmaVolatility(VolatilityModel):
-    """EWMA volatility with decay factors from an `EwmaDecayCalibration`.
-
-    The volatility on a date only uses decay factors calibrated on returns of
-    previous dates. Volatilities are `NaN` up to and including the date of the
-    first calibration.
-
-    Before the first calibration, the volatility recursion runs with the first
-    calibrated decay factor so that it is warmed up when volatilities start.
-    This uses no returns beyond the first calibration window.
-    """
-
-    def __init__(
-        self,
-        calibration: EwmaDecayCalibration,
-        *,
-        starting_vol: FloatArray | float | None = None,
-    ) -> None:
-        self._calibration = calibration
-        self._starting_vol = starting_vol
-
-    def evaluate(self, cache: Cache) -> TimeSeries:  # noqa: D102
-        decay = cache.get(self._calibration)
-        return self.compute(cache.returns, decay=decay)
-
-    def compute(self, returns: TimeSeries, *, decay: TimeSeries) -> TimeSeries:
-        """Compute the volatilities.
-
-        Args:
-            returns (TimeSeries): The returns time series.
-            decay (TimeSeries): The decay factor as of each date of `returns`.
-
-        Returns:
-            TimeSeries: The volatilities, on the dates of `returns`.
-
-        Raises:
-            ValueError: If no decay factor was calibrated.
-
-        """
-        is_calibrated = ~np.isnan(decay.values).reshape(decay.n_dates, -1).any(axis=1)
-        if not is_calibrated.any():
-            msg = "No calibration happened on the returns!"
-            raise ValueError(msg)
-        first = int(np.argmax(is_calibrated))
-
-        warm_up_decay = decay.values.copy()
-        warm_up_decay[:first] = decay.values[first]
-
-        starting_vol = (
-            np.sqrt(np.mean(returns.values[: self._calibration.burn_in] ** 2, axis=0))
-            if self._starting_vol is None
-            else self._starting_vol
-        )
-
-        vols = EwmaVolatility(
-            decay_factor=TimeSeries(dates=decay.dates, values=warm_up_decay),
-            starting_vol=starting_vol,
-        ).compute(returns)
-
-        values = vols.values
-        values[: first + 1] = np.nan
-        return TimeSeries(dates=returns.dates, values=values)
 
 
 class VolatilityFilter(Preprocessor):
