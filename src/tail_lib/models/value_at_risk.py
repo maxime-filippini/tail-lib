@@ -207,18 +207,16 @@ class EwmaVolatility(VolatilityModel):
         decay_factor: TimeSeries | FloatArray | float,
         starting_vol: FloatArray | float,
     ) -> None:
-        self._decay_factor = (
-            decay_factor
-            if isinstance(decay_factor, TimeSeries)
-            else np.asarray(decay_factor)
-        )
+        self._decay_factor: TimeSeries | FloatArray
+        if isinstance(decay_factor, TimeSeries):
+            self._decay_factor = decay_factor
+            values = decay_factor.values
+        else:
+            values = np.asarray(decay_factor)
+            self._decay_factor = values
+
         self._starting_vol = np.asarray(starting_vol)
 
-        values = (
-            decay_factor.values
-            if isinstance(decay_factor, TimeSeries)
-            else self._decay_factor
-        )
         if np.any(values < 0) or np.any(values > 1):
             msg = "Decay factor has to be in [0,1]!"
             raise ValueError(msg)
