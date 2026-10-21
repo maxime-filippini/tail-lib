@@ -3,8 +3,6 @@ import datetime
 import numpy as np
 import pytest
 
-from tail_lib.models.value_at_risk import Rolling
-from tail_lib.models.value_at_risk import fit_ewma_decay
 from tail_lib.time_series import TimeSeries
 from tail_lib.windows import Trailing
 from tail_lib.windows import Windows
@@ -89,16 +87,3 @@ def test_apply_reduces_over_the_dates_of_each_window() -> None:
     assert np.isnan(means.values[:2]).all()
     for t in range(2, 6):
         np.testing.assert_allclose(means.values[t], v[t - 2 : t + 1].mean(axis=0))
-
-
-def test_apply_matches_rolling_calibration() -> None:
-    rng = np.random.default_rng(0)
-    returns = TimeSeries.from_first_date(
-        FIRST_DATE, values=rng.normal(scale=0.01, size=(160, 2))
-    )
-
-    windowed = Windows(returns, Trailing(length=100, step=20)).apply(fit_ewma_decay)
-    rolling = Rolling(window=100, refit_every=20).calibrate(returns, fit=fit_ewma_decay)
-
-    np.testing.assert_array_equal(windowed.dates, rolling.dates)
-    np.testing.assert_allclose(windowed.values, rolling.values)

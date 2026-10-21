@@ -12,13 +12,13 @@ from typing import Literal
 from typing import assert_never
 
 import numpy as np
-from numpy.lib.stride_tricks import sliding_window_view
 from scipy import stats
 
 from tail_lib.time_series import TimeSeries
+from tail_lib.windows import Trailing
+from tail_lib.windows import Windows
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
     from collections.abc import Mapping
 
     from numpy.lib._function_base_impl import (
@@ -511,86 +511,19 @@ def fit_ewma_decay(
     return (a + b) / 2
 
 
-class CalibrationSchedule(ABC):
-    """When, and on which returns, a model parameter is calibrated."""
-
-    @abstractmethod
-    def calibrate(
-        self,
-        returns: TimeSeries,
-        fit: Callable[[FloatArray], FloatArray],
-    ) -> TimeSeries:
-        """Calibrate a parameter along the returns.
-
-        Args:
-            returns (TimeSeries): The returns time series.
-            fit (Callable[[FloatArray], FloatArray]): Fits the parameter on an
-                array of returns with time on the first axis, giving one value
-                per batch element.
-
-        Returns:
-            TimeSeries: The parameter as of each date of the returns, only fitted
-                on returns up to and including that date. `NaN` before the first
-                calibration.
-
-        """
-
-
-class Rolling(CalibrationSchedule):
-    """Calibration on a rolling window of returns.
-
-    The first calibration uses the first `window` dates, then one happens every
-    `refit_every` dates. Between calibrations, the last calibrated value holds.
-    """
-
-    def __init__(self, window: int, refit_every: int = 1) -> None:
-        if window < 1:
-            msg = "Window has to be at least 1!"
-            raise ValueError(msg)
-
-        if refit_every < 1:
-            msg = "Refit frequency has to be at least 1!"
-            raise ValueError(msg)
-
-        self._window = window
-        self._refit_every = refit_every
-
-    def calibrate(  # noqa: D102
-        self,
-        returns: TimeSeries,
-        fit: Callable[[FloatArray], FloatArray],
-    ) -> TimeSeries:
-        r = returns.values
-        w = self._window
-        if returns.n_dates < w:
-            msg = f"Window of {w} dates is longer than the {returns.n_dates} dates!"
-            raise ValueError(msg)
-
-        # Training windows become a batch axis, right after the time axis.
-        windows = np.moveaxis(sliding_window_view(r, w, axis=0), -1, 0)
-        fitted = fit(windows[:, :: self._refit_every])
-
-        # Map each date to the last calibration whose window ends on or before it.
-        values = np.full((returns.n_dates, *fitted.shape[1:]), np.nan)
-        fit_index = (np.arange(w - 1, returns.n_dates) - (w - 1)) // self._refit_every
-        values[w - 1 :] = fitted[fit_index]
-
-        return TimeSeries(dates=returns.dates, values=values)
-
-
 class EwmaDecayCalibration(DecayModel):
-    """EWMA decay factors calibrated by maximum likelihood along a schedule.
+    """EWMA decay factors calibrated by maximum likelihood on trailing windows.
 
-    Each calibration fits `fit_ewma_decay` on the returns the schedule gives
-    it. The output is the decay factor as of each date, see
-    `CalibrationSchedule.calibrate`: `NaN` before the first calibration. Share
-    one instance between the models that should use the same calibration, so
-    it is only fitted once.
+    Each window of returns, see `Windows`, is fitted with `fit_ewma_decay`. The
+    decay factor on a date is the fit of the last window ending on or before
+    it, so it only uses returns up to and including that date, and is `NaN`
+    before the first window ends. Share one instance between the models that
+    should use the same calibration, so it is only fitted once.
     """
 
     def __init__(
         self,
-        schedule: CalibrationSchedule,
+        window: Trailing,
         *,
         bounds: tuple[float, float] = (0.8, 0.9999),
         start: EwmaStart = DEFAULT_EWMA_START,
@@ -599,23 +532,29 @@ class EwmaDecayCalibration(DecayModel):
         """Build the calibration.
 
         Args:
-            schedule (CalibrationSchedule): When, and on which returns, to fit.
+            window (Trailing): The training windows: how many dates each fit
+                uses, and how many dates apart the fits are.
             bounds (tuple[float, float]): The search interval for the decay.
             start (EwmaStart): How the variance recursion of each fit gets its
-                first value. A backcast uses the first dates of each fit.
+                first value. A backcast uses the first dates of each window.
             n_iter (int): The number of golden-section iterations of each fit.
 
         """
-        self._schedule = schedule
+        self._window = window
         self._bounds = bounds
         self._start = start
         self._n_iter = n_iter
+
+    @property
+    def window(self) -> Trailing:
+        """The training windows of the fits."""
+        return self._window
 
     def evaluate(self, cache: Cache) -> TimeSeries:  # noqa: D102
         return self.compute(cache.returns)
 
     def compute(self, returns: TimeSeries) -> TimeSeries:
-        """Calibrate the decay factor along the schedule.
+        """Fit the decay factor on every training window.
 
         Args:
             returns (TimeSeries): The returns time series.
@@ -624,15 +563,13 @@ class EwmaDecayCalibration(DecayModel):
             TimeSeries: The decay factor as of each date of `returns`.
 
         """
-        return self._schedule.calibrate(
-            returns,
-            fit=partial(
-                fit_ewma_decay,
-                bounds=self._bounds,
-                start=self._start,
-                n_iter=self._n_iter,
-            ),
+        fit = partial(
+            fit_ewma_decay,
+            bounds=self._bounds,
+            start=self._start,
+            n_iter=self._n_iter,
         )
+        return Windows(returns, self._window).apply(fit)
 
 
 class VolatilityFilter(Preprocessor):

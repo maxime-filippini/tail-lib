@@ -16,13 +16,13 @@ from tail_lib.models.value_at_risk import GaussianModel
 from tail_lib.models.value_at_risk import HistoricalSimulationsModel
 from tail_lib.models.value_at_risk import ModelPool
 from tail_lib.models.value_at_risk import Preprocessor
-from tail_lib.models.value_at_risk import Rolling
 from tail_lib.models.value_at_risk import StartingVol
 from tail_lib.models.value_at_risk import ValueAtRiskModel
 from tail_lib.models.value_at_risk import VolatilityFilter
 from tail_lib.models.value_at_risk import VolatilityModel
 from tail_lib.models.value_at_risk import fit_ewma_decay
 from tail_lib.time_series import TimeSeries
+from tail_lib.windows import Trailing
 
 FIRST_DATE = datetime.date(2020, 1, 1)
 
@@ -260,11 +260,11 @@ def _simulated_returns(n: int = 160) -> TimeSeries:
     )
 
 
-def test_rolling_schedule_calibrates_on_trailing_windows() -> None:
+def test_decay_calibration_fits_trailing_windows() -> None:
     returns = _simulated_returns()
     r = returns.values
 
-    decay = Rolling(window=100, refit_every=20).calibrate(returns, fit=fit_ewma_decay)
+    decay = EwmaDecayCalibration(Trailing(length=100, step=20)).run(returns)
 
     np.testing.assert_array_equal(decay.dates, returns.dates)
     assert np.isnan(decay.values[:99]).all()
@@ -274,9 +274,9 @@ def test_rolling_schedule_calibrates_on_trailing_windows() -> None:
     np.testing.assert_allclose(decay.values[159], fit_ewma_decay(r[60:160]))
 
 
-def test_rolling_schedule_rejects_window_longer_than_returns() -> None:
+def test_decay_calibration_rejects_window_longer_than_returns() -> None:
     with pytest.raises(ValueError, match="longer"):
-        Rolling(window=200).calibrate(_simulated_returns(), fit=fit_ewma_decay)
+        EwmaDecayCalibration(Trailing(length=200)).run(_simulated_returns())
 
 
 def test_ewma_volatility_compute_matches_constant_decay_run() -> None:
@@ -316,9 +316,7 @@ def test_ewma_volatility_rejects_decay_series_on_other_dates() -> None:
 
 def test_fitted_ewma_volatility_starts_after_first_calibration() -> None:
     returns = _simulated_returns()
-    vol_model = EwmaVolatility(
-        EwmaDecayCalibration(Rolling(window=100, refit_every=20))
-    )
+    vol_model = EwmaVolatility(EwmaDecayCalibration(Trailing(length=100, step=20)))
 
     vols = vol_model.run(returns)
     var = GaussianModel(cf=0.99, vol_model=vol_model).run(returns)
@@ -332,9 +330,7 @@ def test_fitted_ewma_volatility_starts_after_first_calibration() -> None:
 
 def test_fitted_ewma_volatility_has_no_look_ahead() -> None:
     returns = _simulated_returns()
-    vol_model = EwmaVolatility(
-        EwmaDecayCalibration(Rolling(window=100, refit_every=20))
-    )
+    vol_model = EwmaVolatility(EwmaDecayCalibration(Trailing(length=100, step=20)))
     t = 130
 
     full = vol_model.run(returns)
@@ -345,7 +341,7 @@ def test_fitted_ewma_volatility_has_no_look_ahead() -> None:
 
 def test_fitted_ewma_volatility_uses_calibrated_decay() -> None:
     returns = _simulated_returns()
-    calibration = EwmaDecayCalibration(Rolling(window=100, refit_every=20))
+    calibration = EwmaDecayCalibration(Trailing(length=100, step=20))
     vol_model = EwmaVolatility(calibration)
 
     decay = calibration.run(returns)
@@ -357,15 +353,15 @@ def test_fitted_ewma_volatility_uses_calibrated_decay() -> None:
 
 
 def test_pool_shares_decay_calibration_across_models() -> None:
-    class _CountingRolling(Rolling):
+    class _CountingCalibration(EwmaDecayCalibration):
         n_calls = 0
 
-        def calibrate(self, *args, **kwargs) -> TimeSeries:  # noqa: ANN002, ANN003
-            _CountingRolling.n_calls += 1
-            return super().calibrate(*args, **kwargs)
+        def compute(self, returns: TimeSeries) -> TimeSeries:
+            _CountingCalibration.n_calls += 1
+            return super().compute(returns)
 
     returns = _simulated_returns()
-    calibration = EwmaDecayCalibration(_CountingRolling(window=100, refit_every=20))
+    calibration = _CountingCalibration(Trailing(length=100, step=20))
 
     ModelPool(
         {
@@ -379,7 +375,7 @@ def test_pool_shares_decay_calibration_across_models() -> None:
         }
     ).run(returns)
 
-    assert _CountingRolling.n_calls == 1
+    assert _CountingCalibration.n_calls == 1
 
 
 class _CountingVolatility(ConstantVolatility):
