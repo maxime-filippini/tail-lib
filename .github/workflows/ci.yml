@@ -16,6 +16,35 @@ permissions:
   contents: read
 
 jobs:
+  lint:
+    name: Lint and type check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version-file: .python-version
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Lint with ruff
+        run: uv run --locked ruff check
+
+      - name: Check formatting with ruff
+        run: uv run --locked ruff format --check
+
+      - name: Type check with ty
+        run: uv run --locked ty check
+
   test:
     name: Python ${{ matrix.python-version }} / NumPy ${{ matrix.numpy }}
     runs-on: ubuntu-latest
