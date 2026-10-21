@@ -94,9 +94,12 @@ def test_ewma_volatility_recursion() -> None:
     returns = _returns(n=5)
     vols = _ewma(0.94).run(returns)
 
-    expected = [0.01]
-    for r in returns.values[:-1]:
-        expected.append(np.sqrt(0.94 * expected[-1] ** 2 + 0.06 * r**2))
+    # The volatility on date t is the forecast for t + 1: it uses r[t].
+    expected = []
+    previous = 0.01
+    for r in returns.values:
+        previous = np.sqrt(0.94 * previous**2 + 0.06 * r**2)
+        expected.append(previous)
 
     np.testing.assert_array_equal(vols.dates, returns.dates)
     np.testing.assert_allclose(vols.values, expected)
@@ -109,12 +112,13 @@ def test_ewma_volatility_backcast_by_default() -> None:
 
     vols = EwmaVolatility(ConstantDecay(0.94)).run(returns)
 
+    # The backcast uses dates 0 to n - 1, so it is the volatility as of n - 1.
     expected = [np.sqrt(np.mean(r[:n] ** 2))]
-    for t in range(n, 29):
+    for t in range(n, 30):
         expected.append(np.sqrt(0.94 * expected[-1] ** 2 + 0.06 * r[t] ** 2))
 
-    assert np.isnan(vols.values[:n]).all()
-    np.testing.assert_allclose(vols.values[n:], expected)
+    assert np.isnan(vols.values[: n - 1]).all()
+    np.testing.assert_allclose(vols.values[n - 1 :], expected)
 
 
 def test_ewma_volatility_backcast_window_must_fit_returns() -> None:
@@ -289,7 +293,7 @@ def test_ewma_volatility_compute_matches_constant_decay_run() -> None:
     )
 
 
-def test_ewma_volatility_decay_series_applies_from_next_date() -> None:
+def test_ewma_volatility_decay_applies_from_its_own_date() -> None:
     returns = _returns(n=50)
     switch = 30
     decay = TimeSeries(
@@ -300,8 +304,8 @@ def test_ewma_volatility_decay_series_applies_from_next_date() -> None:
     vols = _ewma(0.9).compute(returns, decay=decay)
     constant = _ewma(0.9).run(returns)
 
-    np.testing.assert_allclose(vols.values[: switch + 1], constant.values[: switch + 1])
-    assert not np.isclose(vols.values[switch + 1], constant.values[switch + 1])
+    np.testing.assert_allclose(vols.values[:switch], constant.values[:switch])
+    assert not np.isclose(vols.values[switch], constant.values[switch])
 
 
 def test_ewma_volatility_rejects_decay_series_on_other_dates() -> None:
@@ -323,11 +327,12 @@ def test_fitted_ewma_volatility_starts_after_first_calibration() -> None:
     vols = vol_model.run(returns)
     var = GaussianModel(cf=0.99, vol_model=vol_model).run(returns)
 
+    # The first calibration is known on date 99, the end of its window.
     np.testing.assert_array_equal(vols.dates, returns.dates)
-    assert np.isnan(vols.values[:100]).all()
-    assert np.isfinite(vols.values[100:]).all()
-    assert np.isnan(var.values[:100]).all()
-    assert np.isfinite(var.values[100:]).all()
+    assert np.isnan(vols.values[:99]).all()
+    assert np.isfinite(vols.values[99:]).all()
+    assert np.isnan(var.values[:99]).all()
+    assert np.isfinite(var.values[99:]).all()
 
 
 def test_fitted_ewma_volatility_has_no_look_ahead() -> None:
@@ -366,13 +371,14 @@ def test_fitted_ewma_volatility_refilters_each_training_window() -> None:
 
     vols = FittedEwmaVolatility(calibration).run(returns)
 
-    # The dates after training window k use the EWMA with fit k, run from the
-    # start of the window, as if the returns started there.
-    for k, window_end in enumerate(range(length - 1, returns.n_dates - 1, step)):
+    # From the end of training window k until the next fit, the volatility is
+    # the EWMA with fit k, run from the start of the window, as if the returns
+    # started there.
+    for k, window_end in enumerate(range(length - 1, returns.n_dates, step)):
         window_start = window_end - length + 1
         fit = decay.values[window_end]
         refiltered = EwmaVolatility(ConstantDecay(fit)).run(returns[window_start:])
-        dates = slice(window_end + 1, min(window_end + 1 + step, returns.n_dates))
+        dates = slice(window_end, min(window_end + step, returns.n_dates))
         np.testing.assert_allclose(
             vols.values[dates],
             refiltered.values[dates.start - window_start : dates.stop - window_start],
@@ -391,7 +397,7 @@ def test_fitted_ewma_volatility_uses_the_calibration_start() -> None:
 
     first_window = EwmaVolatility(ConstantDecay(fit), start=StartingVol(0.01))
     np.testing.assert_allclose(
-        vols.values[100:120], first_window.run(returns[:120]).values[100:120]
+        vols.values[99:119], first_window.run(returns[:119]).values[99:119]
     )
 
 
@@ -454,7 +460,11 @@ def test_volatility_filter_divides_returns_by_vols() -> None:
 
     filtered = VolatilityFilter(_ewma(0.94)).compute(returns, vols=vols)
 
-    np.testing.assert_allclose(filtered.values, returns.values / vols.values)
+    # The return of date t is divided by the forecast for t, made on t - 1.
+    assert np.isnan(filtered.values[0]).all()
+    np.testing.assert_allclose(
+        filtered.values[1:], returns.values[1:] / vols.values[:-1]
+    )
 
 
 def test_volatility_filter_rejects_mismatched_vols() -> None:
@@ -474,7 +484,7 @@ def test_run_computes_nested_preprocessors_once() -> None:
     rescaled = _FilteredReturnsModel(cf=0.99, vol_model=vol_model).run(returns)
 
     assert vol_model.n_calls == 1
-    np.testing.assert_allclose(rescaled.values, returns.values)
+    np.testing.assert_allclose(rescaled.values[1:], returns.values[1:])
 
 
 def test_pool_shares_nested_preprocessors_across_models() -> None:

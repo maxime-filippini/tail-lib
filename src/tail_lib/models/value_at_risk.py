@@ -135,7 +135,11 @@ class Cache:
 
 
 class MeanModel(Preprocessor):
-    """A model of the mean of the returns, as of each date."""
+    """A model of the mean of the returns, as of each date.
+
+    The mean on date `t` is the forecast of the mean of the return of date
+    `t + 1`, using data up to and including `t`.
+    """
 
 
 class ZeroMean(MeanModel):
@@ -201,7 +205,11 @@ class ConstantMean(MeanModel):
 
 
 class VolatilityModel(Preprocessor):
-    """A model of the volatility of the returns, as of each date."""
+    """A model of the volatility of the returns, as of each date.
+
+    The volatility on date `t` is the forecast of the volatility of the return
+    of date `t + 1`, using data up to and including `t`.
+    """
 
 
 class ConstantVolatility(VolatilityModel):
@@ -244,9 +252,9 @@ class ConstantVolatility(VolatilityModel):
 class Backcast:
     """Start the EWMA from the mean squared return of the first dates.
 
-    The variance on date `window` is the mean of the squared returns of dates
-    `0` to `window - 1`, assuming a zero mean. The recursion starts on date
-    `window`, so no date sees its own or later returns.
+    The variance as of date `window - 1`, the forecast for date `window`, is
+    the mean of the squared returns of dates `0` to `window - 1`, assuming a
+    zero mean. The recursion continues from there.
     """
 
     window: int = 20
@@ -259,7 +267,11 @@ class Backcast:
 
 @dataclass(frozen=True)
 class StartingVol:
-    """Start the EWMA from a given volatility on the first date."""
+    """Start the EWMA from a given volatility, the forecast for the first date.
+
+    The first variance as of a date is then the update of `vol ** 2` with the
+    return of date `0`, on date `0`.
+    """
 
     vol: FloatArray | float
 
@@ -351,22 +363,30 @@ class ConstantDecay(DecayModel):
 def _ewma_variance(r: FloatArray, d: FloatArray, start: EwmaStart) -> FloatArray:
     """Run the EWMA variance recursion along the first axis.
 
+    The variance on date `t` is the forecast for date `t + 1`, using returns up
+    to and including `t`:
+
+        var[t] = d[t] * var[t - 1] + (1 - d[t]) * r[t] ** 2
+
     Args:
         r (FloatArray): The returns, with time on the first axis.
         d (FloatArray): The decay factor on each date, with the shape of `r`.
         start (EwmaStart): How the recursion gets its first variance.
 
     Returns:
-        FloatArray: The variances, with the shape of `r`. The variance on date
-            `t` only uses returns of dates before `t`. `NaN` before the first
-            date with a variance, see `_starting_variance`.
+        FloatArray: The variances, with the shape of `r`. `NaN` before the
+            first date with a variance: date `window - 1` for a `Backcast`,
+            date `0` for a `StartingVol`.
 
     """
-    first, var0 = _starting_variance(r, start)
+    # `first` is the date the starting variance is the forecast for.
+    first, forecast = _starting_variance(r, start)
     var = np.full(r.shape, np.nan)
-    var[first] = var0
-    for t in range(first, r.shape[0] - 1):
-        var[t + 1] = d[t] * var[t] + (1 - d[t]) * r[t] ** 2
+    if first > 0:
+        var[first - 1] = forecast
+    for t in range(first, r.shape[0]):
+        forecast = d[t] * forecast + (1 - d[t]) * r[t] ** 2
+        var[t] = forecast
     return var
 
 
@@ -377,11 +397,12 @@ class EwmaVolatility(VolatilityModel):
     follows the RiskMetrics recursion (J.P. Morgan/Reuters, RiskMetrics
     Technical Document, 1996, section 5.2.1), over the whole series:
 
-        var[t + 1] = d * var[t] + (1 - d) * r[t] ** 2
+        var[t] = d * var[t - 1] + (1 - d) * r[t] ** 2
 
-    The volatility on date `t` is `sqrt(var[t])`, and only uses returns of
-    dates before `t`. The first variance comes from `start`: a backcast by
-    default, see `Backcast` and `StartingVol`. Dates before it are `NaN`.
+    The volatility on date `t` is `sqrt(var[t])`: the forecast for date
+    `t + 1`, using returns up to and including `t`. The first variance comes
+    from `start`: a backcast by default, see `Backcast` and `StartingVol`.
+    Dates before it are `NaN`.
 
     For a decay recalibrated along the returns, see `FittedEwmaVolatility`.
     """
@@ -412,7 +433,7 @@ class EwmaVolatility(VolatilityModel):
         Args:
             returns (TimeSeries): The returns time series.
             decay (TimeSeries): The decay factor on each date, with the dates
-                and shape of `returns`. The variance of date `t + 1` uses the
+                and shape of `returns`. The variance on date `t` uses the
                 decay factor of date `t`.
 
         Returns:
@@ -590,8 +611,11 @@ class FittedEwmaVolatility(VolatilityModel):
     `ugarchroll` with a moving window, and `arch`'s `forecast` after
     `fit(first_obs=..., last_obs=...)`.
 
-    The volatility on date `t` only uses returns of dates before `t`. It is
-    `NaN` up to and including the last date of the first training window.
+    Calibration `k` is used from the last date of its training window, the
+    date it is known on, up to the date before the next calibration. The
+    volatility on date `t` is the forecast for date `t + 1`, using returns up
+    to and including `t`. It is `NaN` before the last date of the first
+    training window.
     """
 
     def __init__(self, calibration: EwmaDecayCalibration) -> None:
@@ -645,14 +669,14 @@ class FittedEwmaVolatility(VolatilityModel):
 
         # Calibration k fits the training window of dates
         # [k * step, k * step + length - 1], and its decay factor is used for
-        # the volatilities of the `step` dates after that window.
+        # the volatilities of the `step` dates from the window's last date.
         window_ends = np.arange(length - 1, n, step)
         fitted = decay.values[window_ends]  # (n_fits, *batch)
 
-        # Segment k: the training window, then the `step` dates after it. The
-        # returns are padded with NaN so the last segments have full length;
-        # the padding only reaches volatilities after the last date.
-        segment_length = length + step
+        # Segment k: the training window, then the `step - 1` dates after it.
+        # The returns are padded with NaN so the last segments have full
+        # length; the padding only reaches volatilities after the last date.
+        segment_length = length + step - 1
         padded = np.concatenate([r, np.full((segment_length, *r.shape[1:]), np.nan)])
         strided = sliding_window_view(padded, segment_length, axis=0)
         segments = np.moveaxis(strided, -1, 0)[:, window_ends - (length - 1)]
@@ -661,18 +685,22 @@ class FittedEwmaVolatility(VolatilityModel):
         d = np.broadcast_to(fitted, segments.shape)
         var = _ewma_variance(segments, d, start)
 
-        # Row `length + j` of segment k is the variance of date
-        # `window_ends[k] + 1 + j`, for j in [0, step).
-        after_window = np.moveaxis(var[length:], 1, 0)  # (n_fits, step, *batch)
-        flat = after_window.reshape(-1, *r.shape[1:])
+        # Row `length - 1 + j` of segment k is the variance of date
+        # `window_ends[k] + j`, for j in [0, step).
+        used = np.moveaxis(var[length - 1 :], 1, 0)  # (n_fits, step, *batch)
+        flat = used.reshape(-1, *r.shape[1:])
         vols = np.full(r.shape, np.nan)
-        n_after = min(flat.shape[0], n - length)
-        vols[length : length + n_after] = np.sqrt(flat[:n_after])
+        n_used = min(flat.shape[0], n - (length - 1))
+        vols[length - 1 : length - 1 + n_used] = np.sqrt(flat[:n_used])
         return TimeSeries(dates=returns.dates, values=vols)
 
 
 class VolatilityFilter(Preprocessor):
-    """Returns divided by their volatility on the same date."""
+    """Returns divided by the volatility forecast for their date.
+
+    The return of date `t` is divided by the volatility on date `t - 1`, the
+    forecast for date `t`. The first date is `NaN`.
+    """
 
     def __init__(self, vol_model: VolatilityModel) -> None:
         self._vol_model = vol_model
@@ -687,14 +715,17 @@ class VolatilityFilter(Preprocessor):
         Args:
             returns (TimeSeries): The returns time series.
             vols (TimeSeries): The volatilities, with the same dates and shape as
-                `returns`.
+                `returns`. The volatility on date `t` is the forecast for `t + 1`.
 
         Returns:
-            TimeSeries: The filtered returns, `NaN` where the volatility is.
+            TimeSeries: The filtered returns, `NaN` on the first date and where
+                the volatility of the previous date is.
 
         """
         returns.check_aligned(vols)
-        return TimeSeries(dates=returns.dates, values=returns.values / vols.values)
+        values = np.full(returns.values.shape, np.nan)
+        values[1:] = returns.values[1:] / vols.values[:-1]
+        return TimeSeries(dates=returns.dates, values=values)
 
 
 class ValueAtRiskModel[T](ABC):
@@ -800,7 +831,16 @@ class HistoricalSimulationsModel(ValueAtRiskModel["FloatArray"]):
 
 
 class GaussianModel(ValueAtRiskModel[TimeSeries]):
-    """Value-at-risk of normally distributed returns."""
+    """Value-at-risk of normally distributed returns.
+
+    The value-at-risk on date `t` is the `1 - cf` quantile of a normal
+    distribution with the mean and volatility on date `t`:
+
+        VaR[t] = mean[t] + vol[t] * Phi^-1(1 - cf)
+
+    It is the forecast for the return of date `t + 1`, using data up to and
+    including `t`, like its inputs.
+    """
 
     _mean_model: MeanModel
     _vol_model: VolatilityModel
