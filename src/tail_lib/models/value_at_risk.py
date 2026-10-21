@@ -614,37 +614,16 @@ class HistoricalSimulationsModel(ValueAtRiskModel["FloatArray"]):
     """Value-at-risk as an empirical quantile of the returns."""
 
     _interpolation: InterpolationMethod
-    _is_weighted: bool
 
     def __init__(
         self,
         *,
         cf: float,
         interpolation: InterpolationMethod = "linear",
-        decay_factor: float = 1,
     ) -> None:
         super().__init__(cf=cf)
         self._interpolation = interpolation
-        self._df = decay_factor
-
-        if decay_factor < 0 or decay_factor > 1:
-            msg = "Decay factor has to be in [0,1]!"
-            raise ValueError(msg)
-
-        self._is_weighted = self._df < 1
         self._returns = Returns()
-
-    @classmethod
-    def from_half_life(
-        cls: type[HistoricalSimulationsModel],
-        *,
-        cf: float,
-        interpolation: InterpolationMethod,
-        half_life: int,
-    ) -> HistoricalSimulationsModel:
-        """Build the model from the half-life of the weights, in dates."""
-        decay_factor = np.exp(np.log(0.5) / half_life)
-        return cls(cf=cf, interpolation=interpolation, decay_factor=decay_factor)
 
     @property
     def preprocessors(self) -> Mapping[str, Preprocessor]:  # noqa: D102
