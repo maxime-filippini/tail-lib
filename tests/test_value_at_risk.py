@@ -198,19 +198,17 @@ def test_pool_computes_shared_preprocessors_once() -> None:
 
     returns = _returns()
     vol_model = CountingVolatility(0.01)
-    # Kept apart: the two model types do not output the same type yet (D2).
-    gaussians = {
+    models = {
         "gaussian_99": GaussianModel(cf=0.99, vol_model=vol_model),
         "gaussian_95": GaussianModel(cf=0.95, vol_model=vol_model),
+        "hs_99": HistoricalSimulationsModel(cf=0.99, window=Trailing(length=100)),
     }
-    hs = HistoricalSimulationsModel(cf=0.99, window=Trailing(length=100))
 
-    results = ModelPool({**gaussians, "hs_99": hs}).run(returns)
+    results = ModelPool(models).run(returns)
 
     assert CountingVolatility.n_calls == 1
-    for name, model in gaussians.items():
+    for name, model in models.items():
         np.testing.assert_allclose(results[name].values, model.run(returns).values)
-    np.testing.assert_allclose(results["hs_99"].values, hs.run(returns).values)
 
 
 def _simulate_ewma(decay_factor: np.ndarray, n: int) -> np.ndarray:
@@ -473,7 +471,7 @@ class _CountingVolatility(ConstantVolatility):
         return super().compute(returns)
 
 
-class _FilteredReturnsModel(ValueAtRiskModel[TimeSeries]):
+class _FilteredReturnsModel(ValueAtRiskModel):
     """Depends on a volatility model both directly and through a filter."""
 
     def __init__(self, *, cf: float, vol_model: VolatilityModel) -> None:

@@ -7,7 +7,6 @@ from abc import abstractmethod
 from dataclasses import dataclass
 from functools import partial
 from typing import TYPE_CHECKING
-from typing import Any
 from typing import Literal
 from typing import assert_never
 
@@ -728,7 +727,7 @@ class VolatilityFilter(Preprocessor):
         return TimeSeries(dates=returns.dates, values=values)
 
 
-class ValueAtRiskModel[T](ABC):
+class ValueAtRiskModel(ABC):
     """Base class for value-at-risk models.
 
     Subclasses implement `evaluate`, which gets the inputs of the model from a
@@ -746,7 +745,7 @@ class ValueAtRiskModel[T](ABC):
         self._cf = cf
 
     @abstractmethod
-    def evaluate(self, cache: Cache) -> T:
+    def evaluate(self, cache: Cache) -> TimeSeries:
         """Get the inputs from the cache, then compute the value-at-risk.
 
         Args:
@@ -754,18 +753,18 @@ class ValueAtRiskModel[T](ABC):
                 on them.
 
         Returns:
-            T: The value-at-risk.
+            TimeSeries: The value-at-risk on each date.
 
         """
 
-    def run(self, returns: TimeSeries) -> T:
+    def run(self, returns: TimeSeries) -> TimeSeries:
         """Compute the value-at-risk on the returns, with a fresh cache.
 
         Args:
             returns (TimeSeries): The returns time series.
 
         Returns:
-            T: The value-at-risk.
+            TimeSeries: The value-at-risk on each date.
 
         """
         return self.evaluate(Cache(returns))
@@ -778,24 +777,25 @@ class ModelPool:
     once across the pool.
     """
 
-    def __init__(self, models: Mapping[str, ValueAtRiskModel[Any]]) -> None:
+    def __init__(self, models: Mapping[str, ValueAtRiskModel]) -> None:
         self._models = dict(models)
 
-    def run(self, returns: TimeSeries) -> dict[str, Any]:
+    def run(self, returns: TimeSeries) -> dict[str, TimeSeries]:
         """Run every model of the pool on the returns.
 
         Args:
             returns (TimeSeries): The returns time series.
 
         Returns:
-            dict[str, Any]: The output of each model, keyed by model name.
+            dict[str, TimeSeries]: The value-at-risk of each model, keyed by
+                model name.
 
         """
         cache = Cache(returns)
         return {name: model.evaluate(cache) for name, model in self._models.items()}
 
 
-class HistoricalSimulationsModel(ValueAtRiskModel[TimeSeries]):
+class HistoricalSimulationsModel(ValueAtRiskModel):
     """Value-at-risk as an empirical quantile of the returns in a trailing window.
 
     The value-at-risk on the last date `t` of a window is the `1 - cf`
@@ -846,7 +846,7 @@ class HistoricalSimulationsModel(ValueAtRiskModel[TimeSeries]):
         )
 
 
-class GaussianModel(ValueAtRiskModel[TimeSeries]):
+class GaussianModel(ValueAtRiskModel):
     """Value-at-risk of normally distributed returns.
 
     The value-at-risk on date `t` is the `1 - cf` quantile of a normal
