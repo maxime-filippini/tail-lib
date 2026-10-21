@@ -13,6 +13,8 @@ Requirements are numbered so changes and reviews can cite them (e.g. "R4").
   expected shortfall (ES).
 - **R2** — Multivariate models will be added later. Design choices made now
   must leave room for them.
+- **R14** — VaR is expressed as a return quantile: negative for a loss. A
+  return overshoots the VaR when it is below it.
 
 ### Backtesting and comparison
 
@@ -102,12 +104,11 @@ The core developer needs to confirm them.
 ## Open questions
 
 - Which serialization format(s) should specs use: JSON, YAML, TOML?
-- Which backtests are needed (e.g. Kupiec POF, Christoffersen independence,
-  conditional coverage, Basel traffic light), and which ES backtests?
+- Which backtests are needed beyond Kupiec POF (e.g. Christoffersen
+  independence, conditional coverage, Basel traffic light), and which ES
+  backtests?
 - Which criteria should rank models in benchmarks (e.g. backtest p-values,
   quantile/tick loss, Diebold–Mariano tests)?
-- Sign convention: is VaR reported as a return quantile (negative) or as a
-  positive loss?
 - Forecast horizon: 1 day only, or multi-day with scaling?
 - Array convention for R2: today, trailing axes are independent series. Which
   axis will hold the assets of a multivariate model?

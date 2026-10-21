@@ -19,3 +19,4 @@ type ArrayAtLeast1D[DT: np.dtype] = np.ndarray[
 type FloatArray = ArrayAnyShape[np.dtype[NpFloat]]
 type FloatArrayAtLeast1D = ArrayAtLeast1D[np.dtype[NpFloat]]
 type DateArray1D = Array1D[np.dtype[np.datetime64]]
+type IntArray = ArrayAnyShape[np.dtype[np.int64]]
