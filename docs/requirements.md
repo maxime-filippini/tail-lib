@@ -89,6 +89,13 @@ The core developer needs to confirm them.
   node reads its inputs as of its own calculation date, i.e. their latest
   values on that date. A windowed model gets, for each window, the returns in
   the window and its inputs as of the window's last date.
+- **D7** — *Re-filtering after recalibration.* When an EWMA decay is
+  recalibrated on a training window, the volatility is re-filtered with the
+  new decay over that training window, starting from its backcast, and then
+  continues with that decay until the next calibration. The training window is
+  specified once, on the calibration, and is usually much longer than the
+  backcast (e.g. 250 days vs 20). This is how `rugarch` and `arch` produce
+  forecasts after a refit.
 
 ## Open questions
 
