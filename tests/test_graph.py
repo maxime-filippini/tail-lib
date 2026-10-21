@@ -2,11 +2,11 @@ import numpy as np
 import pytest
 
 from tail_lib.graph import Cache
+from tail_lib.graph import Pool
 from tail_lib.graph import Preprocessor
 from tail_lib.models.ewma import EwmaDecayCalibration
 from tail_lib.models.value_at_risk import GaussianModel
 from tail_lib.models.value_at_risk import HistoricalSimulationsModel
-from tail_lib.models.value_at_risk import ModelPool
 from tail_lib.models.value_at_risk import ValueAtRiskModel
 from tail_lib.models.volatility import ConstantVolatility
 from tail_lib.models.volatility import FittedEwmaVolatility
@@ -88,7 +88,7 @@ def test_pool_computes_shared_preprocessors_once() -> None:
         "hs_99": HistoricalSimulationsModel(cf=0.99, window=Trailing(length=100)),
     }
 
-    results = ModelPool(models).run(returns)
+    results = Pool(models).run(returns)
 
     assert CountingVolatility.n_calls == 1
     for name, model in models.items():
@@ -99,7 +99,7 @@ def test_pool_shares_nested_preprocessors_across_models() -> None:
     returns = returns_series(n=50)
     vol_model = _CountingVolatility(0.02)
 
-    ModelPool(
+    Pool(
         {
             "filtered": _FilteredReturnsModel(cf=0.99, vol_model=vol_model),
             "gaussian": GaussianModel(cf=0.99, vol_model=vol_model),
@@ -121,7 +121,7 @@ def test_pool_shares_decay_calibration_across_models() -> None:
     calibration = _CountingCalibration(Trailing(length=100, step=20))
 
     # Two volatility models, each a different node, on one calibration.
-    ModelPool(
+    Pool(
         {
             "gaussian_99": GaussianModel(
                 cf=0.99, vol_model=FittedEwmaVolatility(calibration)
@@ -133,3 +133,23 @@ def test_pool_shares_decay_calibration_across_models() -> None:
     ).run(returns)
 
     assert _CountingCalibration.n_calls == 1
+
+
+def test_pools_on_one_cache_share_nodes() -> None:
+    returns = returns_series(n=50)
+    vol_model = _CountingVolatility(0.02)
+    gaussian = GaussianModel(cf=0.99, vol_model=vol_model)
+    cache = Cache(returns)
+
+    first = Pool({"gaussian": gaussian}).evaluate(cache)
+    second = Pool({"vols": vol_model, "gaussian": gaussian}).evaluate(cache)
+
+    assert vol_model.n_calls == 1
+    assert second["gaussian"] is first["gaussian"]
+
+
+def test_var_model_output_is_cached() -> None:
+    cache = Cache(returns_series(n=50))
+    gaussian = GaussianModel(cf=0.99, vol_model=ConstantVolatility(0.02))
+
+    assert cache.get(gaussian) is cache.get(gaussian)

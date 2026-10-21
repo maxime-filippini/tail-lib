@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from abc import ABC
-from abc import abstractmethod
 from typing import TYPE_CHECKING
 from typing import Literal
 from typing import assert_never
@@ -12,6 +10,7 @@ import numpy as np
 from scipy import stats
 
 from tail_lib.graph import Cache
+from tail_lib.graph import Node
 from tail_lib.models.mean import MeanModel
 from tail_lib.models.mean import ZeroMean
 from tail_lib.time_series import TimeSeries
@@ -19,8 +18,6 @@ from tail_lib.windows import Trailing
 from tail_lib.windows import Windows
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
-
     from numpy.lib._function_base_impl import (
         _InterpolationMethod as NumpyInterpolationMethod,
     )
@@ -45,12 +42,13 @@ def _interp_to_numpy_quantile_method(
             assert_never(interp)
 
 
-class ValueAtRiskModel(ABC):
+class ValueAtRiskModel(Node[TimeSeries]):
     """Base class for value-at-risk models.
 
-    Subclasses implement `evaluate`, which gets the inputs of the model from a
-    `Cache`, then computes the value-at-risk. The computation itself usually
-    lives in a `compute` method, whose arguments are the inputs.
+    A value-at-risk model is a node whose output is the value-at-risk on each
+    date. Subclasses implement `evaluate`, which gets the inputs of the model
+    from a `Cache`, then computes the value-at-risk. The computation itself
+    usually lives in a `compute` method, whose arguments are the inputs.
     """
 
     _cf: float
@@ -61,56 +59,6 @@ class ValueAtRiskModel(ABC):
             raise ValueError(msg)
 
         self._cf = cf
-
-    @abstractmethod
-    def evaluate(self, cache: Cache) -> TimeSeries:
-        """Get the inputs from the cache, then compute the value-at-risk.
-
-        Args:
-            cache (Cache): Holds the returns, and the outputs of preprocessors
-                on them.
-
-        Returns:
-            TimeSeries: The value-at-risk on each date.
-
-        """
-
-    def run(self, returns: TimeSeries) -> TimeSeries:
-        """Compute the value-at-risk on the returns, with a fresh cache.
-
-        Args:
-            returns (TimeSeries): The returns time series.
-
-        Returns:
-            TimeSeries: The value-at-risk on each date.
-
-        """
-        return self.evaluate(Cache(returns))
-
-
-class ModelPool:
-    """A set of models run on the same returns.
-
-    The models share one cache, so each preprocessor instance is only computed
-    once across the pool.
-    """
-
-    def __init__(self, models: Mapping[str, ValueAtRiskModel]) -> None:
-        self._models = dict(models)
-
-    def run(self, returns: TimeSeries) -> dict[str, TimeSeries]:
-        """Run every model of the pool on the returns.
-
-        Args:
-            returns (TimeSeries): The returns time series.
-
-        Returns:
-            dict[str, TimeSeries]: The value-at-risk of each model, keyed by
-                model name.
-
-        """
-        cache = Cache(returns)
-        return {name: model.evaluate(cache) for name, model in self._models.items()}
 
 
 class HistoricalSimulationsModel(ValueAtRiskModel):
