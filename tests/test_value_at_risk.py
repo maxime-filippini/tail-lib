@@ -1,11 +1,11 @@
 import datetime
-from collections.abc import Mapping
 
 import numpy as np
 import pytest
 from numpy.lib.stride_tricks import sliding_window_view
 from scipy import stats
 
+from tail_lib.models.value_at_risk import Cache
 from tail_lib.models.value_at_risk import ConstantMean
 from tail_lib.models.value_at_risk import ConstantVolatility
 from tail_lib.models.value_at_risk import EwmaDecayCalibration
@@ -350,9 +350,10 @@ class _FilteredReturnsModel(ValueAtRiskModel[TimeSeries]):
         self._vol_model = vol_model
         self._filter = VolatilityFilter(vol_model)
 
-    @property
-    def preprocessors(self) -> Mapping[str, Preprocessor]:
-        return {"filtered": self._filter, "vols": self._vol_model}
+    def evaluate(self, returns: TimeSeries, cache: Cache) -> TimeSeries:
+        filtered = cache.get(self._filter, returns)
+        vols = cache.get(self._vol_model, returns)
+        return self.compute(filtered=filtered, vols=vols)
 
     def compute(self, *, filtered: TimeSeries, vols: TimeSeries) -> TimeSeries:
         return TimeSeries(dates=filtered.dates, values=filtered.values * vols.values)
@@ -410,11 +411,9 @@ def test_run_rejects_cyclic_preprocessors() -> None:
         def __init__(self) -> None:
             self.dependency: Preprocessor | None = None
 
-        @property
-        def preprocessors(self) -> Mapping[str, Preprocessor]:
-            return {} if self.dependency is None else {"vols": self.dependency}
-
-        def compute(self, returns: TimeSeries, **_: TimeSeries) -> TimeSeries:
+        def evaluate(self, returns: TimeSeries, cache: Cache) -> TimeSeries:
+            if self.dependency is not None:
+                cache.get(self.dependency, returns)
             return returns
 
     a, b = _Chained(), _Chained()

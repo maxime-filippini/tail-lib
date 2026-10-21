@@ -44,65 +44,81 @@ def _interp_to_numpy_quantile_method(
             assert_never(interp)
 
 
-class Preprocessor[**P](ABC):
+class Preprocessor(ABC):
     """A transformation of a returns time series into a model input.
 
-    `compute` takes the returns, plus the outputs of the preprocessors this one
-    depends on, as keyword arguments named after the keys of `preprocessors`.
-
-    Preprocessors are identified by instance: within a model, or across the
-    models of a `ModelPool`, each instance is only computed once.
+    Subclasses implement `evaluate`, which gets the inputs of the preprocessor
+    from a `Cache`, then computes its output. The computation itself usually
+    lives in a `compute` method, whose arguments are the inputs.
     """
 
-    # Declared as an attribute so subclasses can choose their own signature,
-    # `compute(self, returns, **outputs_of_preprocessors)`.
-    compute: Callable[..., TimeSeries]
+    @abstractmethod
+    def evaluate(self, returns: TimeSeries, cache: Cache) -> TimeSeries:
+        """Get the inputs from the cache, then compute the output.
 
-    @property
-    def preprocessors(self) -> Mapping[str, Preprocessor]:
-        """Preprocessors keyed by the `compute` argument they feed."""
-        return {}
+        Args:
+            returns (TimeSeries): The returns time series.
+            cache (Cache): Where to get the outputs of other preprocessors.
+
+        Returns:
+            TimeSeries: The output of this preprocessor.
+
+        """
 
     def run(self, returns: TimeSeries) -> TimeSeries:
-        """Compute the preprocessors this one depends on, then this one.
+        """Compute this preprocessor on the returns, with a fresh cache.
 
         Args:
             returns (TimeSeries): The returns time series.
 
         Returns:
-            TimeSeries: The output of `compute`.
+            TimeSeries: The output of this preprocessor.
 
         """
-        return _resolve(self, returns, cache={})
+        return Cache().get(self, returns)
 
 
-def _resolve(
-    preprocessor: Preprocessor,
-    returns: TimeSeries,
-    cache: dict[Preprocessor, TimeSeries],
-    pending: frozenset[Preprocessor] = frozenset(),
-) -> TimeSeries:
-    """Compute a preprocessor after its own preprocessors, reusing the cache."""
-    if preprocessor in cache:
-        return cache[preprocessor]
+class Cache:
+    """Outputs of preprocessors, each computed at most once.
 
-    if preprocessor in pending:
-        msg = f"{type(preprocessor).__name__} depends on itself!"
-        raise ValueError(msg)
+    Preprocessors are identified by instance: share one instance between
+    models to share its computation. A cache is only valid for one returns
+    time series: use a new cache for other returns.
+    """
 
-    inputs = {
-        name: _resolve(dependency, returns, cache, pending | {preprocessor})
-        for name, dependency in preprocessor.preprocessors.items()
-    }
-    cache[preprocessor] = preprocessor.compute(returns, **inputs)
-    return cache[preprocessor]
+    def __init__(self) -> None:
+        self._outputs: dict[Preprocessor, TimeSeries] = {}
+        self._pending: set[Preprocessor] = set()
 
+    def get(self, preprocessor: Preprocessor, returns: TimeSeries) -> TimeSeries:
+        """Get the output of a preprocessor, computing it on first request.
 
-class Returns(Preprocessor):
-    """Pass the returns through unchanged."""
+        Args:
+            preprocessor (Preprocessor): The preprocessor.
+            returns (TimeSeries): The returns time series.
 
-    def compute(self, returns: TimeSeries) -> TimeSeries:  # noqa: D102
-        return returns
+        Returns:
+            TimeSeries: The output of the preprocessor.
+
+        Raises:
+            ValueError: If the preprocessor needs its own output as an input.
+
+        """
+        if preprocessor in self._outputs:
+            return self._outputs[preprocessor]
+
+        if preprocessor in self._pending:
+            msg = f"{type(preprocessor).__name__} depends on itself!"
+            raise ValueError(msg)
+
+        self._pending.add(preprocessor)
+        try:
+            output = preprocessor.evaluate(returns, self)
+        finally:
+            self._pending.discard(preprocessor)
+
+        self._outputs[preprocessor] = output
+        return output
 
 
 class MeanModel(Preprocessor):
@@ -112,7 +128,11 @@ class MeanModel(Preprocessor):
 class ZeroMean(MeanModel):
     """A mean of zero on every date."""
 
-    def compute(self, returns: TimeSeries) -> TimeSeries:  # noqa: D102
+    def evaluate(self, returns: TimeSeries, cache: Cache) -> TimeSeries:  # noqa: ARG002, D102
+        return self.compute(returns)
+
+    def compute(self, returns: TimeSeries) -> TimeSeries:
+        """Compute the output from the returns."""
         return TimeSeries(
             dates=returns.dates,
             values=np.zeros(returns.values.shape),
@@ -125,7 +145,11 @@ class ConstantMean(MeanModel):
     def __init__(self, mean: FloatArray | float) -> None:
         self._mean = np.asarray(mean)
 
-    def compute(self, returns: TimeSeries) -> TimeSeries:  # noqa: D102
+    def evaluate(self, returns: TimeSeries, cache: Cache) -> TimeSeries:  # noqa: ARG002, D102
+        return self.compute(returns)
+
+    def compute(self, returns: TimeSeries) -> TimeSeries:
+        """Compute the output from the returns."""
         return TimeSeries(
             dates=returns.dates,
             values=np.broadcast_to(self._mean, returns.values.shape).copy(),
@@ -142,7 +166,11 @@ class ConstantVolatility(VolatilityModel):
     def __init__(self, vol: FloatArray | float) -> None:
         self._vol = np.asarray(vol)
 
-    def compute(self, returns: TimeSeries) -> TimeSeries:  # noqa: D102
+    def evaluate(self, returns: TimeSeries, cache: Cache) -> TimeSeries:  # noqa: ARG002, D102
+        return self.compute(returns)
+
+    def compute(self, returns: TimeSeries) -> TimeSeries:
+        """Compute the output from the returns."""
         return TimeSeries(
             dates=returns.dates,
             values=np.broadcast_to(self._vol, returns.values.shape).copy(),
@@ -184,7 +212,11 @@ class EwmaVolatility(VolatilityModel):
             msg = "Decay factor has to be in [0,1]!"
             raise ValueError(msg)
 
-    def compute(self, returns: TimeSeries) -> TimeSeries:  # noqa: D102
+    def evaluate(self, returns: TimeSeries, cache: Cache) -> TimeSeries:  # noqa: ARG002, D102
+        return self.compute(returns)
+
+    def compute(self, returns: TimeSeries) -> TimeSeries:
+        """Compute the output from the returns."""
         r = returns.values
         decay_path = self._decay_path(returns)
 
@@ -404,7 +436,11 @@ class EwmaDecayCalibration(Preprocessor):
         """The number of dates used for the starting variance of each fit."""
         return self._burn_in
 
-    def compute(self, returns: TimeSeries) -> TimeSeries:  # noqa: D102
+    def evaluate(self, returns: TimeSeries, cache: Cache) -> TimeSeries:  # noqa: ARG002, D102
+        return self.compute(returns)
+
+    def compute(self, returns: TimeSeries) -> TimeSeries:
+        """Compute the output from the returns."""
         return self._schedule.calibrate(
             returns,
             fit=partial(
@@ -437,9 +473,9 @@ class FittedEwmaVolatility(VolatilityModel):
         self._calibration = calibration
         self._starting_vol = starting_vol
 
-    @property
-    def preprocessors(self) -> Mapping[str, Preprocessor]:  # noqa: D102
-        return {"decay": self._calibration}
+    def evaluate(self, returns: TimeSeries, cache: Cache) -> TimeSeries:  # noqa: D102
+        decay = cache.get(self._calibration, returns)
+        return self.compute(returns, decay=decay)
 
     def compute(self, returns: TimeSeries, *, decay: TimeSeries) -> TimeSeries:
         """Compute the volatilities.
@@ -486,9 +522,9 @@ class VolatilityFilter(Preprocessor):
     def __init__(self, vol_model: VolatilityModel) -> None:
         self._vol_model = vol_model
 
-    @property
-    def preprocessors(self) -> Mapping[str, Preprocessor]:  # noqa: D102
-        return {"vols": self._vol_model}
+    def evaluate(self, returns: TimeSeries, cache: Cache) -> TimeSeries:  # noqa: D102
+        vols = cache.get(self._vol_model, returns)
+        return self.compute(returns, vols=vols)
 
     def compute(self, returns: TimeSeries, *, vols: TimeSeries) -> TimeSeries:
         """Filter the returns by their volatility.
@@ -509,16 +545,12 @@ class VolatilityFilter(Preprocessor):
 class ValueAtRiskModel[T](ABC):
     """Base class for value-at-risk models.
 
-    Each model declares its inputs as preprocessors, keyed by the name of the
-    `compute` argument they feed. `run` evaluates the preprocessors on the
-    returns, then calls `compute` with their outputs. `compute` signatures are
-    free to differ across models.
+    Subclasses implement `evaluate`, which gets the inputs of the model from a
+    `Cache`, then computes the value-at-risk. The computation itself usually
+    lives in a `compute` method, whose arguments are the inputs.
     """
 
     _cf: float
-
-    # Declared as an attribute so subclasses can choose their own signature.
-    compute: Callable[..., T]
 
     def __init__(self, cf: float) -> None:
         if cf <= 0 or cf >= 1:
@@ -527,46 +559,37 @@ class ValueAtRiskModel[T](ABC):
 
         self._cf = cf
 
-    def __init_subclass__(cls) -> None:
-        super().__init_subclass__()
-
-        if "compute" not in cls.__dict__:
-            msg = f"{cls.__name__} must define a `compute` method"
-            raise TypeError(msg)
-
-    @property
     @abstractmethod
-    def preprocessors(self) -> Mapping[str, Preprocessor]:
-        """Preprocessors keyed by the `compute` argument they feed."""
+    def evaluate(self, returns: TimeSeries, cache: Cache) -> T:
+        """Get the inputs from the cache, then compute the value-at-risk.
+
+        Args:
+            returns (TimeSeries): The returns time series.
+            cache (Cache): Where to get the outputs of preprocessors.
+
+        Returns:
+            T: The value-at-risk.
+
+        """
 
     def run(self, returns: TimeSeries) -> T:
-        """Preprocess the returns, then compute the value-at-risk.
+        """Compute the value-at-risk on the returns, with a fresh cache.
 
         Args:
             returns (TimeSeries): The returns time series.
 
         Returns:
-            T: The output of `compute`.
+            T: The value-at-risk.
 
         """
-        return self._run(returns, cache={})
-
-    def _run(
-        self,
-        returns: TimeSeries,
-        cache: dict[Preprocessor, TimeSeries],
-    ) -> T:
-        inputs = {
-            name: _resolve(preprocessor, returns, cache)
-            for name, preprocessor in self.preprocessors.items()
-        }
-        return self.compute(**inputs)
+        return self.evaluate(returns, Cache())
 
 
 class ModelPool:
     """A set of models run on the same returns.
 
-    Each distinct preprocessor instance is only computed once across the pool.
+    The models share one cache, so each preprocessor instance is only computed
+    once across the pool.
     """
 
     def __init__(self, models: Mapping[str, ValueAtRiskModel[Any]]) -> None:
@@ -582,10 +605,9 @@ class ModelPool:
             dict[str, Any]: The output of each model, keyed by model name.
 
         """
-        cache: dict[Preprocessor, TimeSeries] = {}
+        cache = Cache()
         return {
-            name: model._run(returns, cache=cache)  # noqa: SLF001
-            for name, model in self._models.items()
+            name: model.evaluate(returns, cache) for name, model in self._models.items()
         }
 
 
@@ -602,11 +624,9 @@ class HistoricalSimulationsModel(ValueAtRiskModel["FloatArray"]):
     ) -> None:
         super().__init__(cf=cf)
         self._interpolation = interpolation
-        self._returns = Returns()
 
-    @property
-    def preprocessors(self) -> Mapping[str, Preprocessor]:  # noqa: D102
-        return {"returns": self._returns}
+    def evaluate(self, returns: TimeSeries, cache: Cache) -> FloatArray:  # noqa: ARG002, D102
+        return self.compute(returns)
 
     def compute(self, returns: TimeSeries) -> FloatArray:
         """Compute the value-at-risk over the full returns sample.
@@ -643,9 +663,10 @@ class GaussianModel(ValueAtRiskModel[TimeSeries]):
         self._vol_model = vol_model
         self._mean_model = ZeroMean() if mean_model is None else mean_model
 
-    @property
-    def preprocessors(self) -> Mapping[str, Preprocessor]:  # noqa: D102
-        return {"means": self._mean_model, "vols": self._vol_model}
+    def evaluate(self, returns: TimeSeries, cache: Cache) -> TimeSeries:  # noqa: D102
+        means = cache.get(self._mean_model, returns)
+        vols = cache.get(self._vol_model, returns)
+        return self.compute(means=means, vols=vols)
 
     def compute(self, *, means: TimeSeries, vols: TimeSeries) -> TimeSeries:
         """Compute the value-at-risk on each date.
