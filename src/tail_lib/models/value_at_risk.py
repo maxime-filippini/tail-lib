@@ -138,13 +138,25 @@ class MeanModel(Preprocessor):
 
 
 class ZeroMean(MeanModel):
-    """A mean of zero on every date."""
+    """A mean of zero on every date.
+
+    The mean on date `t` is `0`, for every series. It uses no returns.
+    """
 
     def evaluate(self, cache: Cache) -> TimeSeries:  # noqa: D102
         return self.compute(cache.returns)
 
     def compute(self, returns: TimeSeries) -> TimeSeries:
-        """Compute the output from the returns."""
+        """Build the zero means on the dates of the returns.
+
+        Args:
+            returns (TimeSeries): The returns time series. Only its dates and
+                shape are used.
+
+        Returns:
+            TimeSeries: Zeros, with the dates and shape of `returns`.
+
+        """
         return TimeSeries(
             dates=returns.dates,
             values=np.zeros(returns.values.shape),
@@ -152,16 +164,35 @@ class ZeroMean(MeanModel):
 
 
 class ConstantMean(MeanModel):
-    """The same mean on every date."""
+    """The same mean on every date.
+
+    The mean on date `t` is `mean`, for every `t`. It uses no returns.
+    """
 
     def __init__(self, mean: FloatArray | float) -> None:
+        """Build the model.
+
+        Args:
+            mean (FloatArray | float): The mean, a single value or an array
+                broadcastable to the batch shape of the returns.
+
+        """
         self._mean = np.asarray(mean)
 
     def evaluate(self, cache: Cache) -> TimeSeries:  # noqa: D102
         return self.compute(cache.returns)
 
     def compute(self, returns: TimeSeries) -> TimeSeries:
-        """Compute the output from the returns."""
+        """Repeat the mean on every date of the returns.
+
+        Args:
+            returns (TimeSeries): The returns time series. Only its dates and
+                shape are used.
+
+        Returns:
+            TimeSeries: The mean, with the dates and shape of `returns`.
+
+        """
         return TimeSeries(
             dates=returns.dates,
             values=np.broadcast_to(self._mean, returns.values.shape).copy(),
@@ -173,16 +204,35 @@ class VolatilityModel(Preprocessor):
 
 
 class ConstantVolatility(VolatilityModel):
-    """The same volatility on every date."""
+    """The same volatility on every date.
+
+    The volatility on date `t` is `vol`, for every `t`. It uses no returns.
+    """
 
     def __init__(self, vol: FloatArray | float) -> None:
+        """Build the model.
+
+        Args:
+            vol (FloatArray | float): The volatility, a single value or an
+                array broadcastable to the batch shape of the returns.
+
+        """
         self._vol = np.asarray(vol)
 
     def evaluate(self, cache: Cache) -> TimeSeries:  # noqa: D102
         return self.compute(cache.returns)
 
     def compute(self, returns: TimeSeries) -> TimeSeries:
-        """Compute the output from the returns."""
+        """Repeat the volatility on every date of the returns.
+
+        Args:
+            returns (TimeSeries): The returns time series. Only its dates and
+                shape are used.
+
+        Returns:
+            TimeSeries: The volatility, with the dates and shape of `returns`.
+
+        """
         return TimeSeries(
             dates=returns.dates,
             values=np.broadcast_to(self._vol, returns.values.shape).copy(),
