@@ -53,12 +53,12 @@ class Preprocessor(ABC):
     """
 
     @abstractmethod
-    def evaluate(self, returns: TimeSeries, cache: Cache) -> TimeSeries:
+    def evaluate(self, cache: Cache) -> TimeSeries:
         """Get the inputs from the cache, then compute the output.
 
         Args:
-            returns (TimeSeries): The returns time series.
-            cache (Cache): Where to get the outputs of other preprocessors.
+            cache (Cache): Holds the returns, and the outputs of other
+                preprocessors on them.
 
         Returns:
             TimeSeries: The output of this preprocessor.
@@ -75,27 +75,38 @@ class Preprocessor(ABC):
             TimeSeries: The output of this preprocessor.
 
         """
-        return Cache().get(self, returns)
+        return Cache(returns).get(self)
 
 
 class Cache:
-    """Outputs of preprocessors, each computed at most once.
+    """Outputs of preprocessors on one returns time series.
 
-    Preprocessors are identified by instance: share one instance between
-    models to share its computation. A cache is only valid for one returns
-    time series: use a new cache for other returns.
+    Each preprocessor is computed at most once per cache. Preprocessors are
+    identified by instance: share one instance between models to share its
+    computation.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, returns: TimeSeries) -> None:
+        """Build an empty cache for a returns time series.
+
+        Args:
+            returns (TimeSeries): The returns every preprocessor is computed on.
+
+        """
+        self._returns = returns
         self._outputs: dict[Preprocessor, TimeSeries] = {}
         self._pending: set[Preprocessor] = set()
 
-    def get(self, preprocessor: Preprocessor, returns: TimeSeries) -> TimeSeries:
+    @property
+    def returns(self) -> TimeSeries:
+        """The returns every preprocessor is computed on."""
+        return self._returns
+
+    def get(self, preprocessor: Preprocessor) -> TimeSeries:
         """Get the output of a preprocessor, computing it on first request.
 
         Args:
             preprocessor (Preprocessor): The preprocessor.
-            returns (TimeSeries): The returns time series.
 
         Returns:
             TimeSeries: The output of the preprocessor.
@@ -113,7 +124,7 @@ class Cache:
 
         self._pending.add(preprocessor)
         try:
-            output = preprocessor.evaluate(returns, self)
+            output = preprocessor.evaluate(self)
         finally:
             self._pending.discard(preprocessor)
 
@@ -128,8 +139,8 @@ class MeanModel(Preprocessor):
 class ZeroMean(MeanModel):
     """A mean of zero on every date."""
 
-    def evaluate(self, returns: TimeSeries, cache: Cache) -> TimeSeries:  # noqa: ARG002, D102
-        return self.compute(returns)
+    def evaluate(self, cache: Cache) -> TimeSeries:  # noqa: D102
+        return self.compute(cache.returns)
 
     def compute(self, returns: TimeSeries) -> TimeSeries:
         """Compute the output from the returns."""
@@ -145,8 +156,8 @@ class ConstantMean(MeanModel):
     def __init__(self, mean: FloatArray | float) -> None:
         self._mean = np.asarray(mean)
 
-    def evaluate(self, returns: TimeSeries, cache: Cache) -> TimeSeries:  # noqa: ARG002, D102
-        return self.compute(returns)
+    def evaluate(self, cache: Cache) -> TimeSeries:  # noqa: D102
+        return self.compute(cache.returns)
 
     def compute(self, returns: TimeSeries) -> TimeSeries:
         """Compute the output from the returns."""
@@ -166,8 +177,8 @@ class ConstantVolatility(VolatilityModel):
     def __init__(self, vol: FloatArray | float) -> None:
         self._vol = np.asarray(vol)
 
-    def evaluate(self, returns: TimeSeries, cache: Cache) -> TimeSeries:  # noqa: ARG002, D102
-        return self.compute(returns)
+    def evaluate(self, cache: Cache) -> TimeSeries:  # noqa: D102
+        return self.compute(cache.returns)
 
     def compute(self, returns: TimeSeries) -> TimeSeries:
         """Compute the output from the returns."""
@@ -212,8 +223,8 @@ class EwmaVolatility(VolatilityModel):
             msg = "Decay factor has to be in [0,1]!"
             raise ValueError(msg)
 
-    def evaluate(self, returns: TimeSeries, cache: Cache) -> TimeSeries:  # noqa: ARG002, D102
-        return self.compute(returns)
+    def evaluate(self, cache: Cache) -> TimeSeries:  # noqa: D102
+        return self.compute(cache.returns)
 
     def compute(self, returns: TimeSeries) -> TimeSeries:
         """Compute the output from the returns."""
@@ -436,8 +447,8 @@ class EwmaDecayCalibration(Preprocessor):
         """The number of dates used for the starting variance of each fit."""
         return self._burn_in
 
-    def evaluate(self, returns: TimeSeries, cache: Cache) -> TimeSeries:  # noqa: ARG002, D102
-        return self.compute(returns)
+    def evaluate(self, cache: Cache) -> TimeSeries:  # noqa: D102
+        return self.compute(cache.returns)
 
     def compute(self, returns: TimeSeries) -> TimeSeries:
         """Compute the output from the returns."""
@@ -473,9 +484,9 @@ class FittedEwmaVolatility(VolatilityModel):
         self._calibration = calibration
         self._starting_vol = starting_vol
 
-    def evaluate(self, returns: TimeSeries, cache: Cache) -> TimeSeries:  # noqa: D102
-        decay = cache.get(self._calibration, returns)
-        return self.compute(returns, decay=decay)
+    def evaluate(self, cache: Cache) -> TimeSeries:  # noqa: D102
+        decay = cache.get(self._calibration)
+        return self.compute(cache.returns, decay=decay)
 
     def compute(self, returns: TimeSeries, *, decay: TimeSeries) -> TimeSeries:
         """Compute the volatilities.
@@ -522,9 +533,9 @@ class VolatilityFilter(Preprocessor):
     def __init__(self, vol_model: VolatilityModel) -> None:
         self._vol_model = vol_model
 
-    def evaluate(self, returns: TimeSeries, cache: Cache) -> TimeSeries:  # noqa: D102
-        vols = cache.get(self._vol_model, returns)
-        return self.compute(returns, vols=vols)
+    def evaluate(self, cache: Cache) -> TimeSeries:  # noqa: D102
+        vols = cache.get(self._vol_model)
+        return self.compute(cache.returns, vols=vols)
 
     def compute(self, returns: TimeSeries, *, vols: TimeSeries) -> TimeSeries:
         """Filter the returns by their volatility.
@@ -560,12 +571,12 @@ class ValueAtRiskModel[T](ABC):
         self._cf = cf
 
     @abstractmethod
-    def evaluate(self, returns: TimeSeries, cache: Cache) -> T:
+    def evaluate(self, cache: Cache) -> T:
         """Get the inputs from the cache, then compute the value-at-risk.
 
         Args:
-            returns (TimeSeries): The returns time series.
-            cache (Cache): Where to get the outputs of preprocessors.
+            cache (Cache): Holds the returns, and the outputs of preprocessors
+                on them.
 
         Returns:
             T: The value-at-risk.
@@ -582,7 +593,7 @@ class ValueAtRiskModel[T](ABC):
             T: The value-at-risk.
 
         """
-        return self.evaluate(returns, Cache())
+        return self.evaluate(Cache(returns))
 
 
 class ModelPool:
@@ -605,10 +616,8 @@ class ModelPool:
             dict[str, Any]: The output of each model, keyed by model name.
 
         """
-        cache = Cache()
-        return {
-            name: model.evaluate(returns, cache) for name, model in self._models.items()
-        }
+        cache = Cache(returns)
+        return {name: model.evaluate(cache) for name, model in self._models.items()}
 
 
 class HistoricalSimulationsModel(ValueAtRiskModel["FloatArray"]):
@@ -625,8 +634,8 @@ class HistoricalSimulationsModel(ValueAtRiskModel["FloatArray"]):
         super().__init__(cf=cf)
         self._interpolation = interpolation
 
-    def evaluate(self, returns: TimeSeries, cache: Cache) -> FloatArray:  # noqa: ARG002, D102
-        return self.compute(returns)
+    def evaluate(self, cache: Cache) -> FloatArray:  # noqa: D102
+        return self.compute(cache.returns)
 
     def compute(self, returns: TimeSeries) -> FloatArray:
         """Compute the value-at-risk over the full returns sample.
@@ -663,9 +672,9 @@ class GaussianModel(ValueAtRiskModel[TimeSeries]):
         self._vol_model = vol_model
         self._mean_model = ZeroMean() if mean_model is None else mean_model
 
-    def evaluate(self, returns: TimeSeries, cache: Cache) -> TimeSeries:  # noqa: D102
-        means = cache.get(self._mean_model, returns)
-        vols = cache.get(self._vol_model, returns)
+    def evaluate(self, cache: Cache) -> TimeSeries:  # noqa: D102
+        means = cache.get(self._mean_model)
+        vols = cache.get(self._vol_model)
         return self.compute(means=means, vols=vols)
 
     def compute(self, *, means: TimeSeries, vols: TimeSeries) -> TimeSeries:

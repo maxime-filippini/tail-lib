@@ -350,9 +350,9 @@ class _FilteredReturnsModel(ValueAtRiskModel[TimeSeries]):
         self._vol_model = vol_model
         self._filter = VolatilityFilter(vol_model)
 
-    def evaluate(self, returns: TimeSeries, cache: Cache) -> TimeSeries:
-        filtered = cache.get(self._filter, returns)
-        vols = cache.get(self._vol_model, returns)
+    def evaluate(self, cache: Cache) -> TimeSeries:
+        filtered = cache.get(self._filter)
+        vols = cache.get(self._vol_model)
         return self.compute(filtered=filtered, vols=vols)
 
     def compute(self, *, filtered: TimeSeries, vols: TimeSeries) -> TimeSeries:
@@ -411,10 +411,10 @@ def test_run_rejects_cyclic_preprocessors() -> None:
         def __init__(self) -> None:
             self.dependency: Preprocessor | None = None
 
-        def evaluate(self, returns: TimeSeries, cache: Cache) -> TimeSeries:
+        def evaluate(self, cache: Cache) -> TimeSeries:
             if self.dependency is not None:
-                cache.get(self.dependency, returns)
-            return returns
+                cache.get(self.dependency)
+            return cache.returns
 
     a, b = _Chained(), _Chained()
     a.dependency, b.dependency = b, a
