@@ -60,6 +60,11 @@ class ValueAtRiskModel(Node[TimeSeries]):
 
         self._cf = cf
 
+    @property
+    def cf(self) -> float:
+        """The confidence level of the value-at-risk."""
+        return self._cf
+
 
 class HistoricalSimulationsModel(ValueAtRiskModel):
     """Value-at-risk as an empirical quantile of the returns in a trailing window.

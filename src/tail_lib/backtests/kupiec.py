@@ -9,9 +9,14 @@ import numpy as np
 from scipy import special
 from scipy import stats
 
+from tail_lib.backtests.overshootings import Overshootings
+from tail_lib.graph import Node
+
 if TYPE_CHECKING:
     from tail_lib._typing import FloatArray
     from tail_lib._typing import IntArray
+    from tail_lib.graph import Cache
+    from tail_lib.models.value_at_risk import ValueAtRiskModel
     from tail_lib.time_series import TimeSeries
 
 
@@ -29,7 +34,7 @@ class KupiecResult:
     """Number of overshootings."""
 
     expected_rate: float
-    """Overshooting rate under the model, `1 - cf`."""
+    """Overshooting rate under the model, `1 - cf_var`."""
 
     observed_rate: FloatArray
     """Observed overshooting rate, `n_overshootings / n_obs`."""
@@ -41,12 +46,12 @@ class KupiecResult:
     """Probability of a statistic at least as large under the model."""
 
 
-def kupiec_pof(overshootings: TimeSeries, cf: float) -> KupiecResult:
+def kupiec_pof(overshootings: TimeSeries, cf_var: float) -> KupiecResult:
     """Test whether the overshooting rate matches the confidence level.
 
-    Under the model, each date is an overshooting with probability `p = 1 - cf`.
-    With `x` overshootings out of `n` dates, the likelihood ratio of the
-    model's rate `p` against the observed rate `x / n` is
+    Under the model, each date is an overshooting with probability
+    `p = 1 - cf_var`. With `x` overshootings out of `n` dates, the likelihood
+    ratio of the model's rate `p` against the observed rate `x / n` is
 
         LR = -2 * [ (n - x) * ln(1 - p) + x * ln(p)
                     - (n - x) * ln(1 - x / n) - x * ln(x / n) ]
@@ -61,24 +66,25 @@ def kupiec_pof(overshootings: TimeSeries, cf: float) -> KupiecResult:
     Args:
         overshootings (TimeSeries): The overshooting flags, see `overshootings`.
             `NaN` dates are left out.
-        cf (float): The confidence level of the value-at-risk, in (0,1).
+        cf_var (float): The confidence level of the value-at-risk tested, in
+            (0,1).
 
     Returns:
         KupiecResult: The test outcome, one value per series. A series with no
             flagged dates has `NaN` rates, statistic and p-value.
 
     Raises:
-        ValueError: If `cf` is not in (0,1).
+        ValueError: If `cf_var` is not in (0,1).
 
     """
-    if cf <= 0 or cf >= 1:
+    if cf_var <= 0 or cf_var >= 1:
         msg = "Confidence level has to be in (0,1)!"
         raise ValueError(msg)
 
     flags = overshootings.values
     n = np.sum(~np.isnan(flags), axis=0)
     x = np.nansum(flags, axis=0).astype(np.int64)
-    p = 1 - cf
+    p = 1 - cf_var
 
     with np.errstate(invalid="ignore", divide="ignore"):
         observed = x / n
@@ -94,3 +100,37 @@ def kupiec_pof(overshootings: TimeSeries, cf: float) -> KupiecResult:
         statistic=np.asarray(statistic),
         p_value=np.asarray(stats.chi2.sf(statistic, df=1)),
     )
+
+
+class KupiecTest(Node[KupiecResult]):
+    """Kupiec's proportion-of-failures test of a value-at-risk model, as a node.
+
+    Gets the model's overshootings from the cache, then tests them with
+    `kupiec_pof` at the model's confidence level.
+    """
+
+    def __init__(self, var_model: ValueAtRiskModel) -> None:
+        """Build the test of a model.
+
+        Args:
+            var_model (ValueAtRiskModel): The model to test. Its confidence
+                level sets the overshooting rate expected under the model.
+
+        """
+        self._overshootings = Overshootings(var_model)
+        self._cf_var = var_model.cf
+
+    def evaluate(self, cache: Cache) -> KupiecResult:  # noqa: D102
+        return self.compute(cache.get(self._overshootings))
+
+    def compute(self, overshootings: TimeSeries) -> KupiecResult:
+        """Run the test on overshooting flags, see `kupiec_pof`.
+
+        Args:
+            overshootings (TimeSeries): The overshooting flags of the model.
+
+        Returns:
+            KupiecResult: The test outcome, one value per series.
+
+        """
+        return kupiec_pof(overshootings, cf_var=self._cf_var)

@@ -3,6 +3,7 @@ import datetime
 import numpy as np
 import pytest
 
+from tail_lib.backtests.overshootings import Overshootings
 from tail_lib.backtests.overshootings import overshootings
 from tail_lib.models.value_at_risk import GaussianModel
 from tail_lib.models.volatility import ConstantVolatility
@@ -58,3 +59,13 @@ def test_overshootings_reject_var_on_other_dates() -> None:
 
     with pytest.raises(ValueError, match="dates"):
         overshootings(var, _series([0.0, 0.0, 0.0]))
+
+
+def test_overshootings_node_flags_the_model_var() -> None:
+    returns = returns_series(n=100, n_assets=2)
+    model = GaussianModel(cf=0.95, vol_model=ConstantVolatility(0.01))
+
+    hits = Overshootings(model).run(returns)
+
+    expected = overshootings(model.run(returns), returns)
+    np.testing.assert_array_equal(hits.values, expected.values)
