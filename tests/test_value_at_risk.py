@@ -1,4 +1,5 @@
 import datetime
+from typing import Literal
 
 import numpy as np
 import pytest
@@ -144,12 +145,47 @@ def test_constant_decay_rejects_decay_outside_unit_interval() -> None:
         ConstantDecay(1.1)
 
 
-def test_historical_simulations_run() -> None:
-    returns = _returns(n_assets=2)
+def test_historical_simulations_is_quantile_of_each_trailing_window() -> None:
+    returns = _returns(n=30, n_assets=2)
+    r = returns.values
 
-    var = HistoricalSimulationsModel(cf=0.99).run(returns)
+    var = HistoricalSimulationsModel(cf=0.9, window=Trailing(length=10)).run(returns)
 
-    np.testing.assert_allclose(var, np.quantile(returns.values, 0.01, axis=0))
+    np.testing.assert_array_equal(var.dates, returns.dates)
+    assert np.isnan(var.values[:9]).all()
+    for t in range(9, 30):
+        expected = np.quantile(r[t - 9 : t + 1], 0.1, axis=0)
+        np.testing.assert_allclose(var.values[t], expected)
+
+
+def test_historical_simulations_holds_value_until_next_window() -> None:
+    returns = _returns(n=30)
+    r = returns.values
+
+    var = HistoricalSimulationsModel(cf=0.9, window=Trailing(length=10, step=5)).run(
+        returns
+    )
+
+    for t in range(9, 30):
+        last_end = 9 + 5 * ((t - 9) // 5)
+        expected = np.quantile(r[last_end - 9 : last_end + 1], 0.1)
+        np.testing.assert_allclose(var.values[t], expected)
+
+
+@pytest.mark.parametrize(
+    ("interpolation", "numpy_method"), [("below", "lower"), ("above", "higher")]
+)
+def test_historical_simulations_interpolation(
+    interpolation: Literal["below", "above"], numpy_method: Literal["lower", "higher"]
+) -> None:
+    returns = _returns(n=20)
+
+    var = HistoricalSimulationsModel(
+        cf=0.9, window=Trailing(length=20), interpolation=interpolation
+    ).run(returns)
+
+    expected = np.quantile(returns.values, 0.1, method=numpy_method)
+    np.testing.assert_allclose(var.values[-1], expected)
 
 
 def test_pool_computes_shared_preprocessors_once() -> None:
@@ -167,14 +203,14 @@ def test_pool_computes_shared_preprocessors_once() -> None:
         "gaussian_99": GaussianModel(cf=0.99, vol_model=vol_model),
         "gaussian_95": GaussianModel(cf=0.95, vol_model=vol_model),
     }
-    hs = HistoricalSimulationsModel(cf=0.99)
+    hs = HistoricalSimulationsModel(cf=0.99, window=Trailing(length=100))
 
     results = ModelPool({**gaussians, "hs_99": hs}).run(returns)
 
     assert CountingVolatility.n_calls == 1
     for name, model in gaussians.items():
         np.testing.assert_allclose(results[name].values, model.run(returns).values)
-    np.testing.assert_allclose(results["hs_99"], hs.run(returns))
+    np.testing.assert_allclose(results["hs_99"].values, hs.run(returns).values)
 
 
 def _simulate_ewma(decay_factor: np.ndarray, n: int) -> np.ndarray:

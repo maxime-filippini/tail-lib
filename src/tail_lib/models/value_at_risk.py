@@ -795,38 +795,54 @@ class ModelPool:
         return {name: model.evaluate(cache) for name, model in self._models.items()}
 
 
-class HistoricalSimulationsModel(ValueAtRiskModel["FloatArray"]):
-    """Value-at-risk as an empirical quantile of the returns."""
+class HistoricalSimulationsModel(ValueAtRiskModel[TimeSeries]):
+    """Value-at-risk as an empirical quantile of the returns in a trailing window.
 
+    The value-at-risk on the last date `t` of a window is the `1 - cf`
+    empirical quantile of the returns in that window, i.e. of the `length`
+    returns up to and including `t`:
+
+        VaR[t] = Q_{1 - cf}(r[t - length + 1], ..., r[t])
+
+    It is the forecast for the return of date `t + 1`. With a `step` above 1,
+    each value-at-risk is held until the next window ends. Dates before the
+    first full window are `NaN`.
+
+    The quantile interpolates between order statistics as set by
+    `interpolation`: "linear" (numpy's default), "below" (the order statistic
+    at or below the quantile) or "above" (the one at or above it).
+    """
+
+    _window: Trailing
     _interpolation: InterpolationMethod
 
     def __init__(
         self,
         *,
         cf: float,
+        window: Trailing,
         interpolation: InterpolationMethod = "linear",
     ) -> None:
         super().__init__(cf=cf)
+        self._window = window
         self._interpolation = interpolation
 
-    def evaluate(self, cache: Cache) -> FloatArray:  # noqa: D102
+    def evaluate(self, cache: Cache) -> TimeSeries:  # noqa: D102
         return self.compute(cache.returns)
 
-    def compute(self, returns: TimeSeries) -> FloatArray:
-        """Compute the value-at-risk over the full returns sample.
+    def compute(self, returns: TimeSeries) -> TimeSeries:
+        """Compute the value-at-risk on each window.
 
         Args:
             returns (TimeSeries): The returns time series.
 
         Returns:
-            FloatArray: The value-at-risk, one value per series.
+            TimeSeries: The value-at-risk, on the dates of the returns.
 
         """
-        return np.quantile(
-            returns.values,
-            q=1 - self._cf,
-            method=_interp_to_numpy_quantile_method(self._interpolation),
-            axis=0,
+        method = _interp_to_numpy_quantile_method(self._interpolation)
+        return Windows(returns, self._window).apply(
+            lambda w: np.quantile(w, q=1 - self._cf, method=method, axis=0)
         )
 
 

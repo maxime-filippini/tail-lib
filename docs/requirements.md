@@ -71,7 +71,9 @@ The core developer needs to confirm them.
   return on `t`.
 - **D2** — *Uniform forecast output.* Every VaR/ES model produces one forecast
   per date in the same form, so backtests (R3) and comparisons (R4, R5) treat
-  all models the same way.
+  all models the same way. Models whose estimate uses a sample of past returns
+  (e.g. historical simulation) compute it on a trailing window (D5), so they
+  too give one forecast per date.
 - **D3** — *Shared preprocessors.* Identical preprocessor specs share one
   computation within a run, even across separately written model specs (R6,
   R9a). Wanted, but the design needs fleshing out before implementing.
