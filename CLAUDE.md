@@ -22,6 +22,10 @@ orchestration and the methodology (R10). Work in small increments:
   timing convention (which dates feed the forecast for date `t`) and its
   parameters. It also cites a reference when the method comes from the
   literature.
+- **Nodes for estimable parameters.** A model parameter that can be estimated
+  from the returns (a volatility, a decay factor) is an input node, read from
+  the `Cache`. A parameter always set by hand (a confidence level, a window
+  length, fit bounds) is a constructor argument.
 - **Green checks.** Before proposing a change, run `uv run ty check`,
   `uv run ruff check` and `uv run pytest`. Hand off with all three passing, or
   list each remaining failure and why it remains.
