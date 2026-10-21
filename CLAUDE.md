@@ -25,7 +25,12 @@ orchestration and the methodology (R10). Work in small increments:
 - **Nodes for estimable parameters.** A model parameter that can be estimated
   from the returns (a volatility, a decay factor) is an input node, read from
   the `Cache`. A parameter always set by hand (a confidence level, a window
-  length, fit bounds) is a constructor argument.
+  length, fit bounds) is a constructor argument. If any variant of an input
+  can be estimated, every variant is a node, e.g. `ConstantDecay` next to
+  `EwmaDecayCalibration`.
+- **Pure `compute`.** A node's `compute` uses only its arguments and the node's
+  own constructor settings, never the cache or another node's settings.
+  `evaluate` gathers everything else from the cache and passes it to `compute`.
 - **Green checks.** Before proposing a change, run `uv run ty check`,
   `uv run ruff check` and `uv run pytest`. Hand off with all three passing, or
   list each remaining failure and why it remains.
