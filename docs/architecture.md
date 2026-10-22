@@ -131,7 +131,10 @@ last 250 days only, as of the last date. Every window, a model's or a
 backtest's, is `trailing` or `last`, and needs its `type`. A model with a
 `last` window, or with an input that has one, gives one value, on the last
 date, e.g. today's VaR without computing every window. It can't be
-backtested: that value is the forecast for a date after the data.
+backtested: that value is the forecast for a date after the data. So
+`RunSpec` rejects a run with backtests and such a model, giving the path to
+the window, e.g. `models.today.vol.calibration.window` (`find_last_window`
+in `specs.py`).
 
 Every backtest runs on every model (R4). Backtests are named, so two
 versions of one test can sit side by side.

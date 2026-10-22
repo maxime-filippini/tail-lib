@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 from typing import Annotated
 
 from pydantic import Field
+from pydantic import model_validator
 
 from tail_lib.build import BacktestResult
 from tail_lib.build import Builder
@@ -21,6 +22,7 @@ from tail_lib.specs import BacktestSpec
 from tail_lib.specs import Name
 from tail_lib.specs import Spec
 from tail_lib.specs import ValueAtRiskSpec
+from tail_lib.specs import find_last_window
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -33,10 +35,30 @@ class RunSpec(Spec):
 
     The run inputs are not listed here: they are the input specs used in the
     models, e.g. `{"type": "input", "name": "var_ext", "cf": 0.99}`.
+
+    A model with a `last` window, or with an input that has one, gives one
+    value-at-risk, the forecast for a date after the data. It has nothing to
+    backtest, so a run with backtests rejects it.
     """
 
     models: Annotated[dict[Name, ValueAtRiskSpec], Field(min_length=1)]
     backtests: dict[Name, BacktestSpec] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _check_backtested_models_have_a_history(self) -> RunSpec:
+        if not self.backtests:
+            return self
+        for name, model in self.models.items():
+            path = find_last_window(model)
+            if path is not None:
+                msg = (
+                    f"Model {name!r} has a `last` window, at "
+                    f"`models.{name}.{path}`, so it gives one forecast and can't "
+                    f"be backtested, but the run has backtests "
+                    f"{sorted(self.backtests)}!"
+                )
+                raise ValueError(msg)
+        return self
 
 
 @dataclass(frozen=True)

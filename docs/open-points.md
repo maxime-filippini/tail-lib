@@ -10,8 +10,8 @@ Working rules, from `CLAUDE.md` and the developer:
 - Commit only when the developer says so. Commits have no co-author trailer.
 
 State as of 2026-10-22: branch `feat/model-api`, not pushed, all checks
-green (ty, ruff, 137 tests). Rolling backtests, with `Last`, are done and
-committed. Steps 1 and 2 of `Last` windows for models are committed.
+green (ty, ruff, 140 tests). Rolling backtests, with `Last`, are done and
+committed. Steps 1 to 3 of `Last` windows for models are committed.
 
 ## Next up
 
@@ -89,8 +89,11 @@ picked B. Steps, one change each:
 2. Done: model specs take `last` windows. Every window slot is a
    `WindowSpec`, and needs its `type` (the developer chose strict, as for
    R9a, over a missing `type` defaulting to `trailing`).
-3. The builder rejects a backtest on a model with a `Last` window anywhere
-   in its inputs, naming the model.
+3. Done: `RunSpec` rejects a run with backtests and a model with a `last`
+   window anywhere in its spec, naming the model and the window's path.
+   It's checked when the spec is parsed (R9b), not in the `Builder`, so
+   `Builder.backtest` used directly in Python doesn't check it. Step 4 will
+   narrow the check to the models each backtest runs on.
 4. Per-backtest model filter: a backtest spec takes `"models": [...]`, so a
    run can hold both `Last` models and backtests (today every backtest runs
    on every model, R4).

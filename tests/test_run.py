@@ -11,6 +11,7 @@ from tail_lib.run import Run
 from tail_lib.run import RunSpec
 from tail_lib.specs import HistoricalSimulationsSpec
 from tail_lib.specs import TrailingSpec
+from tail_lib.specs import find_last_window
 from tail_lib.time_series import TimeSeries
 from tail_lib.windows import Last
 from tail_lib.windows import Trailing
@@ -215,6 +216,51 @@ def test_a_window_needs_its_type(
 
     with pytest.raises(ValueError, match=path + r".*window\n.*Unable to extract tag"):
         RunSpec.model_validate(spec)
+
+
+_LAST = {"type": "last", "length": 100}
+_GAUSS_ON_LAST_CALIBRATION = {
+    "type": "gaussian",
+    "cf": 0.99,
+    "vol": {"type": "fitted_ewma", "calibration": {"window": _LAST}},
+}
+
+
+def test_a_model_with_a_last_window_can_not_be_backtested() -> None:
+    spec = {
+        "models": {"today": _GAUSS_ON_LAST_CALIBRATION},
+        "backtests": {"kupiec": {"type": "kupiec"}},
+    }
+
+    with pytest.raises(
+        ValueError,
+        match=r"Model 'today' has a `last` window, at "
+        r"`models\.today\.vol\.calibration\.window`.*\['kupiec'\]",
+    ):
+        RunSpec.model_validate(spec)
+
+
+def test_a_run_without_backtests_computes_last_window_models() -> None:
+    spec = RunSpec.model_validate(
+        {
+            "models": {
+                "today": _GAUSS_ON_LAST_CALIBRATION,
+                "hs_today": {"type": "historical", "cf": 0.99, "window": _LAST},
+            }
+        }
+    )
+
+    result = Run(spec).run(returns_series(n=300))
+
+    for var in result.models.values():
+        assert np.isnan(var.values[:-1]).all()
+        assert not np.isnan(var.values[-1])
+
+
+def test_find_last_window_gives_none_without_one() -> None:
+    model = HistoricalSimulationsSpec(cf=0.99, window=TrailingSpec(length=100))
+
+    assert find_last_window(model) is None
 
 
 def test_a_run_is_reusable_on_other_returns() -> None:

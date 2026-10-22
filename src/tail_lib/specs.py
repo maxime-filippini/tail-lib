@@ -96,6 +96,30 @@ type WindowSpec = Annotated[TrailingSpec | LastSpec, Field(discriminator="type")
 """Trailing windows, or one window on the last dates only."""
 
 
+def find_last_window(spec: Spec) -> str | None:
+    """Find a `last` window in a spec or in the specs it holds.
+
+    A model with a `last` window, or with an input that has one, gives one
+    value, on the last date.
+
+    Args:
+        spec (Spec): The spec to search, e.g. a model's.
+
+    Returns:
+        str | None: The dotted path to the first `last` window found, e.g.
+            `vol.calibration.window`, or `None` if there is none.
+
+    """
+    for name, value in spec:
+        if isinstance(value, LastSpec):
+            return name
+        if isinstance(value, Spec):
+            inner = find_last_window(value)
+            if inner is not None:
+                return f"{name}.{inner}"
+    return None
+
+
 class BackcastSpec(Spec):
     """Spec of a `Backcast` start of the EWMA recursion."""
 
