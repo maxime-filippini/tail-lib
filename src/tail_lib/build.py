@@ -171,7 +171,7 @@ class Builder:
             case HistoricalSimulationsSpec():
                 return HistoricalSimulationsModel(
                     cf=spec.cf,
-                    window=_trailing(spec.window),
+                    window=_window(spec.window),
                     interpolation=spec.interpolation,
                 )
             case GaussianSpec():
@@ -221,21 +221,17 @@ def _build_constant_decay(spec: ConstantDecaySpec) -> ConstantDecay:
 
 def _build_calibration(spec: EwmaDecayCalibrationSpec) -> EwmaDecayCalibration:
     return EwmaDecayCalibration(
-        _trailing(spec.window),
+        _window(spec.window),
         bounds=spec.bounds,
         start=_ewma_start(spec.start),
         n_iter=spec.n_iter,
     )
 
 
-def _trailing(spec: TrailingSpec) -> Trailing:
-    return Trailing(length=spec.length, step=spec.step)
-
-
 def _window(spec: WindowSpec) -> Trailing | Last:
     match spec:
         case TrailingSpec():
-            return _trailing(spec)
+            return Trailing(length=spec.length, step=spec.step)
         case LastSpec():
             return Last(length=spec.length)
         case _:

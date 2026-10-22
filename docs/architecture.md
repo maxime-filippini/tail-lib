@@ -98,8 +98,10 @@ Example:
   "models": {
     "gauss_99": {"type": "gaussian", "cf": 0.99,
                  "vol": {"type": "fitted_ewma",
-                         "calibration": {"window": {"length": 250}}}},
-    "hs_99": {"type": "historical", "cf": 0.99, "window": {"length": 250}},
+                         "calibration": {"window": {"type": "trailing",
+                                                    "length": 250}}}},
+    "hs_99": {"type": "historical", "cf": 0.99,
+              "window": {"type": "trailing", "length": 250}},
     "ext_99": {"type": "input", "name": "var_ext", "cf": 0.99}
   },
   "backtests": {
@@ -125,10 +127,11 @@ ending on the last date, hence `p_value[0]`. With a `window`, the test runs
 on trailing windows of the overshootings, which start on the first flag
 (R15, R16): `kupiec_250` has one result per date from 250 days after it.
 A `last` window is one window on the last dates: `kupiec_last` tests the
-last 250 days only, as of the last date. A backtest's window needs its
-`type`, since it can be either. A model's window is always trailing in
-specs, so it needs none. In Python, models take a `Last` window too: they
-then give one value, on the last date, which can't be backtested.
+last 250 days only, as of the last date. Every window, a model's or a
+backtest's, is `trailing` or `last`, and needs its `type`. A model with a
+`last` window, or with an input that has one, gives one value, on the last
+date, e.g. today's VaR without computing every window. It can't be
+backtested: that value is the forecast for a date after the data.
 
 Every backtest runs on every model (R4). Backtests are named, so two
 versions of one test can sit side by side.

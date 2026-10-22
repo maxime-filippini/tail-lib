@@ -10,8 +10,8 @@ Working rules, from `CLAUDE.md` and the developer:
 - Commit only when the developer says so. Commits have no co-author trailer.
 
 State as of 2026-10-22: branch `feat/model-api`, not pushed, all checks
-green (ty, ruff, 135 tests). Rolling backtests, with `Last`, are done and
-committed. Step 1 of `Last` windows for models is committed.
+green (ty, ruff, 137 tests). Rolling backtests, with `Last`, are done and
+committed. Steps 1 and 2 of `Last` windows for models are committed.
 
 ## Next up
 
@@ -86,10 +86,9 @@ picked B. Steps, one change each:
    `FittedEwmaVolatility` take `Trailing | Last` in Python. The fitted EWMA
    now takes its window ends from `Windows.end_indices`, the calibration's
    own windows.
-2. Model specs take `last` windows. To decide: model windows become a
-   tagged union, so either every model window needs `"type": "trailing"`
-   (strict, as agreed for R9a), or a missing `type` defaults to `trailing`
-   (a callable discriminator, like `Values`), in every window slot.
+2. Done: model specs take `last` windows. Every window slot is a
+   `WindowSpec`, and needs its `type` (the developer chose strict, as for
+   R9a, over a missing `type` defaulting to `trailing`).
 3. The builder rejects a backtest on a model with a `Last` window anywhere
    in its inputs, naming the model.
 4. Per-backtest model filter: a backtest spec takes `"models": [...]`, so a

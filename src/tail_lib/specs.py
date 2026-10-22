@@ -93,11 +93,7 @@ class LastSpec(Spec):
 
 
 type WindowSpec = Annotated[TrailingSpec | LastSpec, Field(discriminator="type")]
-"""The window of a backtest: trailing windows, or the last dates only.
-
-Models take only trailing windows, so their `window` is a `TrailingSpec` and
-needs no `type`.
-"""
+"""Trailing windows, or one window on the last dates only."""
 
 
 class BackcastSpec(Spec):
@@ -152,7 +148,7 @@ class EwmaDecayCalibrationSpec(Spec):
     """Spec of an `EwmaDecayCalibration`."""
 
     type: Literal["ewma_calibration"] = "ewma_calibration"
-    window: TrailingSpec
+    window: WindowSpec
     bounds: tuple[DecayFactor, DecayFactor] = DEFAULT_DECAY_BOUNDS
     start: EwmaStartSpec = BackcastSpec()
     n_iter: Count = DEFAULT_FIT_ITERATIONS
@@ -224,7 +220,7 @@ class HistoricalSimulationsSpec(Spec):
 
     type: Literal["historical"] = "historical"
     cf: ConfidenceLevel
-    window: TrailingSpec
+    window: WindowSpec
     interpolation: InterpolationMethod = "linear"
 
 

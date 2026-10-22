@@ -22,7 +22,10 @@ _SPEC = """
     "gauss_99": {
       "type": "gaussian", "cf": 0.99, "vol": {"type": "input", "name": "vol"}
     },
-    "hs_99": {"type": "historical", "cf": 0.99, "window": {"length": 100}},
+    "hs_99": {
+      "type": "historical", "cf": 0.99,
+      "window": {"type": "trailing", "length": 100}
+    },
     "ext_95": {"type": "input", "name": "var_ext", "cf": 0.95}
   },
   "backtests": {"kupiec": {"type": "kupiec"}}
@@ -97,7 +100,11 @@ def test_identical_backtests_under_two_names_give_the_same_result() -> None:
     spec = RunSpec.model_validate(
         {
             "models": {
-                "hs": {"type": "historical", "cf": 0.99, "window": {"length": 50}}
+                "hs": {
+                    "type": "historical",
+                    "cf": 0.99,
+                    "window": {"type": "trailing", "length": 50},
+                }
             },
             "backtests": {"a": {"type": "kupiec"}, "b": {"type": "kupiec"}},
         }
@@ -111,7 +118,12 @@ def test_identical_backtests_under_two_names_give_the_same_result() -> None:
 def test_rolling_backtests_run_side_by_side_on_shared_overshootings() -> None:
     spec = RunSpec.model_validate_json("""
     {
-      "models": {"hs": {"type": "historical", "cf": 0.99, "window": {"length": 50}}},
+      "models": {
+        "hs": {
+          "type": "historical", "cf": 0.99,
+          "window": {"type": "trailing", "length": 50}
+        }
+      },
       "backtests": {
         "kupiec": {"type": "kupiec"},
         "kupiec_100": {
@@ -162,7 +174,11 @@ def test_rolling_backtests_of_a_model_share_its_overshootings(
     spec = RunSpec.model_validate(
         {
             "models": {
-                "hs": {"type": "historical", "cf": 0.99, "window": {"length": 50}}
+                "hs": {
+                    "type": "historical",
+                    "cf": 0.99,
+                    "window": {"type": "trailing", "length": 50},
+                }
             },
             "backtests": {
                 "kupiec_100": {
@@ -182,19 +198,36 @@ def test_rolling_backtests_of_a_model_share_its_overshootings(
     assert len(calls) == 1
 
 
-def test_a_backtest_window_needs_its_type() -> None:
+@pytest.mark.parametrize(
+    ("model_window", "backtest_window", "path"),
+    [
+        ({"length": 50}, {"type": "trailing", "length": 100}, r"models\.hs\."),
+        ({"type": "trailing", "length": 50}, {"length": 100}, r"backtests\.k\."),
+    ],
+)
+def test_a_window_needs_its_type(
+    model_window: dict, backtest_window: dict, path: str
+) -> None:
     spec = {
-        "models": {"hs": {"type": "historical", "cf": 0.99, "window": {"length": 50}}},
-        "backtests": {"k": {"type": "kupiec", "window": {"length": 100}}},
+        "models": {"hs": {"type": "historical", "cf": 0.99, "window": model_window}},
+        "backtests": {"k": {"type": "kupiec", "window": backtest_window}},
     }
 
-    with pytest.raises(ValueError, match=r"backtests\.k\.window"):
+    with pytest.raises(ValueError, match=path + r".*window\n.*Unable to extract tag"):
         RunSpec.model_validate(spec)
 
 
 def test_a_run_is_reusable_on_other_returns() -> None:
     spec = RunSpec.model_validate(
-        {"models": {"hs": {"type": "historical", "cf": 0.99, "window": {"length": 50}}}}
+        {
+            "models": {
+                "hs": {
+                    "type": "historical",
+                    "cf": 0.99,
+                    "window": {"type": "trailing", "length": 50},
+                }
+            }
+        }
     )
     run = Run(spec)
 

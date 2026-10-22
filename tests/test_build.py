@@ -15,6 +15,7 @@ from tail_lib.specs import GaussianSpec
 from tail_lib.specs import TrailingSpec
 from tail_lib.specs import ValueAtRiskSpec
 from tail_lib.time_series import TimeSeries
+from tail_lib.windows import Last
 from tail_lib.windows import Trailing
 from tests.helpers import returns_series
 from tests.helpers import simulated_returns
@@ -23,7 +24,7 @@ _VAR_SPEC: TypeAdapter[ValueAtRiskSpec] = TypeAdapter(ValueAtRiskSpec)
 
 _FITTED_EWMA = {
     "type": "fitted_ewma",
-    "calibration": {"window": {"length": 100, "step": 50}},
+    "calibration": {"window": {"type": "trailing", "length": 100, "step": 50}},
 }
 
 
@@ -45,7 +46,7 @@ def test_gaussian_spec_builds_the_same_model_as_python() -> None:
 def test_historical_spec_builds_the_same_model_as_python() -> None:
     returns = returns_series(n=200)
     spec = _VAR_SPEC.validate_python(
-        {"type": "historical", "cf": 0.95, "window": {"length": 50}}
+        {"type": "historical", "cf": 0.95, "window": {"type": "trailing", "length": 50}}
     )
 
     built = Builder().var_model(spec).run(returns)
@@ -56,12 +57,38 @@ def test_historical_spec_builds_the_same_model_as_python() -> None:
     np.testing.assert_array_equal(built.values, expected.values)
 
 
+def test_last_windows_in_model_specs_build_as_in_python() -> None:
+    returns = simulated_returns(n=300)
+    last = {"type": "last", "length": 100}
+    hs = _VAR_SPEC.validate_python({"type": "historical", "cf": 0.95, "window": last})
+    gauss = _VAR_SPEC.validate_python(
+        {
+            "type": "gaussian",
+            "cf": 0.99,
+            "vol": {"type": "fitted_ewma", "calibration": {"window": last}},
+        }
+    )
+    builder = Builder()
+
+    built_hs = builder.var_model(hs).run(returns)
+    built_gauss = builder.var_model(gauss).run(returns)
+
+    expected_hs = HistoricalSimulationsModel(cf=0.95, window=Last(length=100))
+    calibration = EwmaDecayCalibration(Last(length=100))
+    expected_gauss = GaussianModel(cf=0.99, vol_model=FittedEwmaVolatility(calibration))
+    np.testing.assert_array_equal(built_hs.values, expected_hs.run(returns).values)
+    np.testing.assert_array_equal(
+        built_gauss.values, expected_gauss.run(returns).values
+    )
+    assert np.isnan(built_gauss.values[:-1]).all()
+
+
 def test_identical_specs_written_separately_share_one_node() -> None:
     builder = Builder()
     spec_99 = GaussianSpec.model_validate({"cf": 0.99, "vol": _FITTED_EWMA})
     spec_95 = GaussianSpec.model_validate_json(
         '{"cf": 0.95, "vol": {"type": "fitted_ewma",'
-        ' "calibration": {"window": {"length": 100, "step": 50}}}}'
+        ' "calibration": {"window": {"type": "trailing", "length": 100, "step": 50}}}}'
     )
 
     model_99 = builder.var_model(spec_99)
@@ -164,8 +191,12 @@ _CONSTANT_VOL = {"type": "constant", "vol": 0.01}
             r"gaussian\.vol\.constant\.vol\.list\n",
         ),
         (
-            {"type": "historical", "cf": 0.99, "window": {"length": 0}},
-            r"historical\.window\.length\n",
+            {
+                "type": "historical",
+                "cf": 0.99,
+                "window": {"type": "trailing", "length": 0},
+            },
+            r"historical\.window\.trailing\.length\n",
         ),
         (
             {
@@ -174,7 +205,7 @@ _CONSTANT_VOL = {"type": "constant", "vol": 0.01}
                 "vol": {
                     "type": "fitted_ewma",
                     "calibration": {
-                        "window": {"length": 100},
+                        "window": {"type": "trailing", "length": 100},
                         "bounds": [0.99, 0.9],
                     },
                 },
