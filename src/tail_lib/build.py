@@ -155,7 +155,8 @@ class Builder:
     ) -> Node[BacktestResult]:
         match spec:
             case KupiecSpec():
-                return KupiecTest(self.overshootings(model))
+                window = None if spec.window is None else _trailing(spec.window)
+                return KupiecTest(self.overshootings(model), window=window)
             case _:
                 assert_never(spec)
 

@@ -2,6 +2,7 @@ import numpy as np
 import pytest
 
 from tail_lib.backtests.kupiec import kupiec_pof
+from tail_lib.backtests.overshootings import Overshootings
 from tail_lib.backtests.overshootings import overshootings
 from tail_lib.build import Builder
 from tail_lib.models.value_at_risk import HistoricalSimulationsModel
@@ -10,6 +11,7 @@ from tail_lib.run import Run
 from tail_lib.run import RunSpec
 from tail_lib.specs import HistoricalSimulationsSpec
 from tail_lib.specs import TrailingSpec
+from tail_lib.time_series import TimeSeries
 from tail_lib.windows import Trailing
 from tests.helpers import returns_series
 
@@ -103,6 +105,65 @@ def test_identical_backtests_under_two_names_give_the_same_result() -> None:
     result = Run(spec).run(returns_series(n=200))
 
     assert result.backtests["hs"]["a"] is result.backtests["hs"]["b"]
+
+
+def test_rolling_backtests_run_side_by_side_on_shared_overshootings() -> None:
+    spec = RunSpec.model_validate_json("""
+    {
+      "models": {"hs": {"type": "historical", "cf": 0.99, "window": {"length": 50}}},
+      "backtests": {
+        "kupiec": {"type": "kupiec"},
+        "kupiec_100": {"type": "kupiec", "window": {"length": 100}},
+        "kupiec_150": {"type": "kupiec", "window": {"length": 150, "step": 5}}
+      }
+    }
+    """)
+    returns = returns_series(n=400)
+    run = Run(spec)
+
+    result = run.run(returns)
+
+    flags = overshootings(result.models["hs"], returns)
+    for name, window in [
+        ("kupiec_100", Trailing(length=100)),
+        ("kupiec_150", Trailing(length=150, step=5)),
+    ]:
+        expected = kupiec_pof(flags, cf_var=0.99, window=window)
+        got = result.backtests["hs"][name]
+        np.testing.assert_array_equal(got.end_dates, expected.end_dates)
+        np.testing.assert_array_equal(got.statistic, expected.statistic)
+    assert result.backtests["hs"]["kupiec"].p_value.shape == (1,)
+    assert result.backtests["hs"]["kupiec_100"].p_value.shape == (400 - 50 - 99,)
+
+
+def test_rolling_backtests_of_a_model_share_its_overshootings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = []
+    compute = Overshootings.compute
+
+    def counting(
+        self: Overshootings, returns: TimeSeries, *, var: TimeSeries
+    ) -> TimeSeries:
+        calls.append(self)
+        return compute(self, returns, var=var)
+
+    monkeypatch.setattr(Overshootings, "compute", counting)
+    spec = RunSpec.model_validate(
+        {
+            "models": {
+                "hs": {"type": "historical", "cf": 0.99, "window": {"length": 50}}
+            },
+            "backtests": {
+                "kupiec_100": {"type": "kupiec", "window": {"length": 100}},
+                "kupiec_200": {"type": "kupiec", "window": {"length": 200}},
+            },
+        }
+    )
+
+    Run(spec).run(returns_series(n=300))
+
+    assert len(calls) == 1
 
 
 def test_a_run_is_reusable_on_other_returns() -> None:

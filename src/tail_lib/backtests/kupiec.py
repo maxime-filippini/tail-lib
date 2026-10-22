@@ -10,6 +10,7 @@ from scipy import special
 from scipy import stats
 
 from tail_lib.graph import Node
+from tail_lib.windows import Windows
 
 if TYPE_CHECKING:
     from tail_lib._typing import DateArray1D
@@ -18,6 +19,7 @@ if TYPE_CHECKING:
     from tail_lib.backtests.overshootings import Overshootings
     from tail_lib.graph import Cache
     from tail_lib.time_series import TimeSeries
+    from tail_lib.windows import Trailing
 
 
 @dataclass(frozen=True)
@@ -53,7 +55,9 @@ class KupiecResult:
     """Probability of a statistic at least as large under the model."""
 
 
-def kupiec_pof(overshootings: TimeSeries, cf_var: float) -> KupiecResult:
+def kupiec_pof(
+    overshootings: TimeSeries, cf_var: float, window: Trailing | None = None
+) -> KupiecResult:
     """Test whether the overshooting rate matches the confidence level.
 
     Under the model, each date is an overshooting with probability
@@ -67,6 +71,12 @@ def kupiec_pof(overshootings: TimeSeries, cf_var: float) -> KupiecResult:
     distribution with 1 degree of freedom. The test only looks at how many
     overshootings there are, not at when they happen.
 
+    The test runs on the whole sample, or on each of trailing `window`s of
+    the flags. The windows start on the first date where every series has a
+    flag (R16). The window ending on date `t` holds the flags of dates
+    `t - length + 1` to `t`, which compare the value-at-risk up to `t - 1`
+    with the returns up to `t`. Its result belongs to `t`.
+
     Reference: Kupiec, P. H. (1995). Techniques for verifying the accuracy of
     risk measurement models. The Journal of Derivatives, 3(2), 73-84.
 
@@ -75,23 +85,33 @@ def kupiec_pof(overshootings: TimeSeries, cf_var: float) -> KupiecResult:
             `NaN` dates are left out.
         cf_var (float): The confidence level of the value-at-risk tested, in
             (0,1).
+        window (Trailing | None): The windows to test on. `None`, the default,
+            tests the whole sample.
 
     Returns:
-        KupiecResult: The test outcome on the whole sample: one window, ending
-            on the last date, so every array has the shape (1, *batch). A series
+        KupiecResult: The test outcome, of shape (n_windows, *batch). On the
+            whole sample, it is one window ending on the last date. A window
             with no flagged dates has `NaN` rates, statistic and p-value.
 
     Raises:
-        ValueError: If `cf_var` is not in (0,1).
+        ValueError: If `cf_var` is not in (0,1), or if a window is longer than
+            the flags from the first date every series has one.
 
     """
     if cf_var <= 0 or cf_var >= 1:
         msg = "Confidence level has to be in (0,1)!"
         raise ValueError(msg)
 
-    # The whole sample as one window: the dates inside the window on the first
-    # axis, then the windows (here one), then the series.
-    flags = overshootings.values[:, np.newaxis]
+    # The flags of each window: the dates inside the window on the first axis,
+    # then the windows, then the series.
+    if window is None:
+        flags = overshootings.values[:, np.newaxis]
+        end_dates = overshootings.dates[-1:]
+    else:
+        windows = Windows(overshootings, window, skip_leading_nan=True)
+        flags = windows.values
+        end_dates = windows.end_dates
+
     n = np.sum(~np.isnan(flags), axis=0)
     x = np.nansum(flags, axis=0).astype(np.int64)
     p = 1 - cf_var
@@ -103,7 +123,7 @@ def kupiec_pof(overshootings: TimeSeries, cf_var: float) -> KupiecResult:
     statistic = -2 * (log_l_model - log_l_observed)
 
     return KupiecResult(
-        end_dates=overshootings.dates[-1:],
+        end_dates=end_dates,
         n_obs=np.asarray(n, dtype=np.int64),
         n_overshootings=np.asarray(x),
         expected_rate=p,
@@ -117,20 +137,26 @@ class KupiecTest(Node[KupiecResult]):
     """Kupiec's proportion-of-failures test of a value-at-risk model, as a node.
 
     Gets the model's overshootings from the cache, then tests them with
-    `kupiec_pof` at the model's confidence level.
+    `kupiec_pof` at the model's confidence level, on the whole sample or on
+    trailing windows.
     """
 
-    def __init__(self, overshootings: Overshootings) -> None:
+    def __init__(
+        self, overshootings: Overshootings, *, window: Trailing | None = None
+    ) -> None:
         """Build the test of a model.
 
         Args:
             overshootings (Overshootings): The overshootings of the model to
                 test. Their confidence level `cf_var` sets the overshooting
                 rate expected under the model.
+            window (Trailing | None): The windows to test on, see `kupiec_pof`.
+                `None`, the default, tests the whole sample.
 
         """
         self._overshootings = overshootings
         self._cf_var = overshootings.cf_var
+        self._window = window
 
     def evaluate(self, cache: Cache) -> KupiecResult:  # noqa: D102
         return self.compute(cache.get(self._overshootings))
@@ -142,8 +168,7 @@ class KupiecTest(Node[KupiecResult]):
             overshootings (TimeSeries): The overshooting flags of the model.
 
         Returns:
-            KupiecResult: The test outcome on the whole sample, see
-                `kupiec_pof`.
+            KupiecResult: The test outcome on each window, see `kupiec_pof`.
 
         """
-        return kupiec_pof(overshootings, cf_var=self._cf_var)
+        return kupiec_pof(overshootings, cf_var=self._cf_var, window=self._window)

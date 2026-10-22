@@ -102,7 +102,10 @@ Example:
     "hs_99": {"type": "historical", "cf": 0.99, "window": {"length": 250}},
     "ext_99": {"type": "input", "name": "var_ext", "cf": 0.99}
   },
-  "backtests": {"kupiec": {"type": "kupiec"}}
+  "backtests": {
+    "kupiec": {"type": "kupiec"},
+    "kupiec_250": {"type": "kupiec", "window": {"length": 250}}
+  }
 }
 ```
 
@@ -115,7 +118,9 @@ result.backtests["hs_99"]["kupiec"].p_value[0]
 A backtest result has one value per window and series: its arrays have the
 shape (n_windows, *batch), and `end_dates` gives the date each window's
 result belongs to, its last date. A test on the whole sample is one window,
-ending on the last date, hence `p_value[0]`.
+ending on the last date, hence `p_value[0]`. With a `window`, the test runs
+on trailing windows of the overshootings, which start on the first flag
+(R15, R16): `kupiec_250` has one result per date from 250 days after it.
 
 Every backtest runs on every model (R4). Backtests are named, so two
 versions of one test can sit side by side.

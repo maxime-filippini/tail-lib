@@ -10,7 +10,7 @@ Working rules, from `CLAUDE.md` and the developer:
 - Commit only when the developer says so. Commits have no co-author trailer.
 
 State as of 2026-10-22: branch `feat/model-api`, not pushed, all checks
-green (ty, ruff, 120 tests). Steps 1 and 2 of rolling backtests are
+green (ty, ruff, 126 tests). Rolling backtests are done and
 committed.
 
 ## Next up
@@ -49,12 +49,22 @@ Steps, one change each:
    first date where every series has a value. It's opt-in, so historical
    simulation and the decay calibration don't change. A usable part shorter
    than one window raises `ValueError`.
-3. `KupiecTest(ovs, window=Trailing(...))` and `window` on `KupiecSpec`.
-   Test 250 and 500 side by side on one shared `Overshootings`.
+3. Done: `kupiec_pof(..., window=...)`, `KupiecTest(ovs, window=...)` and
+   `window` on `KupiecSpec`. Windowed tests of a model run side by side on
+   one shared `Overshootings`.
 
-Still open: `NaN` in the middle of a window (e.g. a missing return). The
-proposal is to keep counting the usable flags (`n_obs < length`). Also
-maybe a `to_series()` that puts window results on the returns' dates.
+Still open:
+
+- One test on the last `length` dates only, e.g. the last 250 days as of
+  the last date (asked by the developer). Options: (A) a rolling test with
+  step 1, reading `[-1]`, with no new API but every window computed; (B) a
+  `Last(length)` window, making `window` a tagged union in the spec
+  (recommended); (C) windows counted back from the last date, which moves
+  past windows whenever a date is added, so results stop being
+  reproducible (D4).
+- `NaN` in the middle of a window (e.g. a missing return). The proposal is
+  to keep counting the usable flags (`n_obs < length`).
+- Maybe a `to_series()` that puts window results on the returns' dates.
 
 Timing: the window of overshootings ending on `t` uses VaR up to `t - 1`
 and returns up to `t` (D1).

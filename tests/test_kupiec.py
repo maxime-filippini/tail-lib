@@ -88,6 +88,40 @@ def test_kupiec_without_observations_is_nan() -> None:
     assert np.isnan(result.p_value[0])
 
 
+def test_kupiec_on_windows_matches_the_test_on_each_window() -> None:
+    # Two leading NaN flags (a warm-up): windows start on date 2.
+    values = np.r_[np.nan, np.nan, (np.arange(20) % 7 == 0).astype(float)]
+    flags = TimeSeries.from_first_date(FIRST_DATE, values=values)
+
+    result = kupiec_pof(flags, cf_var=0.9, window=Trailing(length=6, step=3))
+
+    ends = np.arange(2 + 6 - 1, 22, 3)  # 7, 10, ..., 19
+    np.testing.assert_array_equal(result.end_dates, flags.dates[ends])
+    np.testing.assert_array_equal(result.n_obs, np.full(ends.size, 6))
+    for k, end in enumerate(ends):
+        alone = kupiec_pof(flags[end - 5 : end + 1], cf_var=0.9)
+        assert result.n_overshootings[k] == alone.n_overshootings[0]
+        assert result.statistic[k] == pytest.approx(alone.statistic[0])
+        assert result.p_value[k] == pytest.approx(alone.p_value[0])
+
+
+def test_kupiec_on_windows_keeps_the_batch_axes() -> None:
+    flags = TimeSeries.from_first_date(FIRST_DATE, values=np.zeros((30, 2)))
+
+    result = kupiec_pof(flags, cf_var=0.99, window=Trailing(length=10))
+
+    assert result.p_value.shape == (21, 2)
+    assert result.end_dates.shape == (21,)
+
+
+def test_kupiec_rejects_a_window_longer_than_the_flags() -> None:
+    values = np.r_[np.nan, np.zeros(5)]
+    flags = TimeSeries.from_first_date(FIRST_DATE, values=values)
+
+    with pytest.raises(ValueError, match="longer"):
+        kupiec_pof(flags, cf_var=0.99, window=Trailing(length=6))
+
+
 @pytest.mark.parametrize("cf_var", [0.0, 1.0])
 def test_kupiec_rejects_confidence_outside_unit_interval(cf_var: float) -> None:
     with pytest.raises(ValueError, match=r"\(0,1\)"):
@@ -103,6 +137,21 @@ def test_kupiec_test_node_matches_functions() -> None:
     expected = kupiec_pof(overshootings(model.run(returns), returns), cf_var=0.95)
     np.testing.assert_array_equal(result.n_obs, expected.n_obs)
     np.testing.assert_array_equal(result.n_overshootings, expected.n_overshootings)
+    np.testing.assert_allclose(result.p_value, expected.p_value)
+
+
+def test_kupiec_test_node_on_windows_matches_functions() -> None:
+    returns = returns_series(n=300)
+    model = HistoricalSimulationsModel(cf=0.95, window=Trailing(length=100))
+    window = Trailing(length=50, step=10)
+
+    result = KupiecTest(Overshootings(model), window=window).run(returns)
+
+    flags = overshootings(model.run(returns), returns)
+    expected = kupiec_pof(flags, cf_var=0.95, window=window)
+    # HS gives its first VaR on date 99, so the first flag is on date 100.
+    assert result.end_dates[0] == returns.dates[100 + 50 - 1]
+    np.testing.assert_array_equal(result.end_dates, expected.end_dates)
     np.testing.assert_allclose(result.p_value, expected.p_value)
 
 

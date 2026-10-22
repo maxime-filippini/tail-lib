@@ -231,9 +231,13 @@ type ValueAtRiskSpec = Annotated[
 
 
 class KupiecSpec(Spec):
-    """Spec of a `KupiecTest`, run on the overshootings of a model."""
+    """Spec of a `KupiecTest`, run on the overshootings of a model.
+
+    Without a `window`, the test runs on the whole sample.
+    """
 
     type: Literal["kupiec"] = "kupiec"
+    window: TrailingSpec | None = None
 
 
 # A tagged union, like the other roles, once there is a second backtest.
