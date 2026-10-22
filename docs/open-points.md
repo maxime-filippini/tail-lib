@@ -10,7 +10,7 @@ Working rules, from `CLAUDE.md` and the developer:
 - Commit only when the developer says so. Commits have no co-author trailer.
 
 State as of 2026-10-22: branch `feat/model-api`, not pushed, all checks
-green (ty, ruff, 126 tests). Rolling backtests are done and
+green (ty, ruff, 131 tests). Rolling backtests, with `Last`, are done and
 committed.
 
 ## Next up
@@ -52,16 +52,15 @@ Steps, one change each:
 3. Done: `kupiec_pof(..., window=...)`, `KupiecTest(ovs, window=...)` and
    `window` on `KupiecSpec`. Windowed tests of a model run side by side on
    one shared `Overshootings`.
+4. Done: a `Last(length)` window, one window on the last dates, e.g. a test
+   on the last 250 days as of the last date (option B, picked by the
+   developer). A backtest's `window` is a tagged union, `trailing` or
+   `last`. Rejected: reading `[-1]` of a rolling test (computes every
+   window), and windows counted back from the last date (past windows move
+   when a date is added, so results aren't reproducible, D4).
 
 Still open:
 
-- One test on the last `length` dates only, e.g. the last 250 days as of
-  the last date (asked by the developer). Options: (A) a rolling test with
-  step 1, reading `[-1]`, with no new API but every window computed; (B) a
-  `Last(length)` window, making `window` a tagged union in the spec
-  (recommended); (C) windows counted back from the last date, which moves
-  past windows whenever a date is added, so results stop being
-  reproducible (D4).
 - `NaN` in the middle of a window (e.g. a missing return). The proposal is
   to keep counting the usable flags (`n_obs < length`).
 - Maybe a `to_series()` that puts window results on the returns' dates.

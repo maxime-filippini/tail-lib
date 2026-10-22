@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 
 from tail_lib.time_series import TimeSeries
+from tail_lib.windows import Last
 from tail_lib.windows import Trailing
 from tail_lib.windows import Windows
 
@@ -105,6 +106,31 @@ def test_windows_keep_leading_nan_by_default() -> None:
 
     assert windows.end_dates[0] == series.dates[2]
     assert np.isnan(windows.values[0, 0]).all()
+
+
+def test_last_is_one_window_on_the_last_dates() -> None:
+    series = _series(8)
+
+    windows = Windows(series, Last(length=3))
+
+    assert windows.n_windows == 1
+    np.testing.assert_array_equal(windows.end_dates, series.dates[-1:])
+    np.testing.assert_array_equal(windows.values[:, 0], series.values[5:])
+    out = windows.to_series(np.array([7.0]))
+    np.testing.assert_array_equal(out.values, [np.nan] * 7 + [7.0])
+
+
+def test_last_has_to_start_after_the_leading_nan() -> None:
+    series = _with_leading_nan(8, [5])
+
+    Windows(series, Last(length=3), skip_leading_nan=True)
+    with pytest.raises(ValueError, match="first date where every series"):
+        Windows(series, Last(length=4), skip_leading_nan=True)
+
+
+def test_last_rejects_an_empty_length() -> None:
+    with pytest.raises(ValueError, match="at least 1"):
+        Last(length=0)
 
 
 def test_to_series_holds_each_result_until_the_next_window() -> None:

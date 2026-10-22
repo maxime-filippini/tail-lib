@@ -12,6 +12,7 @@ from tail_lib.run import RunSpec
 from tail_lib.specs import HistoricalSimulationsSpec
 from tail_lib.specs import TrailingSpec
 from tail_lib.time_series import TimeSeries
+from tail_lib.windows import Last
 from tail_lib.windows import Trailing
 from tests.helpers import returns_series
 
@@ -113,8 +114,13 @@ def test_rolling_backtests_run_side_by_side_on_shared_overshootings() -> None:
       "models": {"hs": {"type": "historical", "cf": 0.99, "window": {"length": 50}}},
       "backtests": {
         "kupiec": {"type": "kupiec"},
-        "kupiec_100": {"type": "kupiec", "window": {"length": 100}},
-        "kupiec_150": {"type": "kupiec", "window": {"length": 150, "step": 5}}
+        "kupiec_100": {
+          "type": "kupiec", "window": {"type": "trailing", "length": 100}
+        },
+        "kupiec_150": {
+          "type": "kupiec", "window": {"type": "trailing", "length": 150, "step": 5}
+        },
+        "kupiec_last": {"type": "kupiec", "window": {"type": "last", "length": 250}}
       }
     }
     """)
@@ -132,6 +138,10 @@ def test_rolling_backtests_run_side_by_side_on_shared_overshootings() -> None:
         got = result.backtests["hs"][name]
         np.testing.assert_array_equal(got.end_dates, expected.end_dates)
         np.testing.assert_array_equal(got.statistic, expected.statistic)
+    last = result.backtests["hs"]["kupiec_last"]
+    expected_last = kupiec_pof(flags, cf_var=0.99, window=Last(length=250))
+    np.testing.assert_array_equal(last.end_dates, returns.dates[-1:])
+    np.testing.assert_array_equal(last.statistic, expected_last.statistic)
     assert result.backtests["hs"]["kupiec"].p_value.shape == (1,)
     assert result.backtests["hs"]["kupiec_100"].p_value.shape == (400 - 50 - 99,)
 
@@ -155,8 +165,14 @@ def test_rolling_backtests_of_a_model_share_its_overshootings(
                 "hs": {"type": "historical", "cf": 0.99, "window": {"length": 50}}
             },
             "backtests": {
-                "kupiec_100": {"type": "kupiec", "window": {"length": 100}},
-                "kupiec_200": {"type": "kupiec", "window": {"length": 200}},
+                "kupiec_100": {
+                    "type": "kupiec",
+                    "window": {"type": "trailing", "length": 100},
+                },
+                "kupiec_last": {
+                    "type": "kupiec",
+                    "window": {"type": "last", "length": 200},
+                },
             },
         }
     )
@@ -164,6 +180,16 @@ def test_rolling_backtests_of_a_model_share_its_overshootings(
     Run(spec).run(returns_series(n=300))
 
     assert len(calls) == 1
+
+
+def test_a_backtest_window_needs_its_type() -> None:
+    spec = {
+        "models": {"hs": {"type": "historical", "cf": 0.99, "window": {"length": 50}}},
+        "backtests": {"k": {"type": "kupiec", "window": {"length": 100}}},
+    }
+
+    with pytest.raises(ValueError, match=r"backtests\.k\.window"):
+        RunSpec.model_validate(spec)
 
 
 def test_a_run_is_reusable_on_other_returns() -> None:

@@ -80,8 +80,24 @@ class Spec(BaseModel):
 class TrailingSpec(Spec):
     """Spec of `Trailing` windows."""
 
+    type: Literal["trailing"] = "trailing"
     length: Count
     step: Count = 1
+
+
+class LastSpec(Spec):
+    """Spec of a `Last` window."""
+
+    type: Literal["last"] = "last"
+    length: Count
+
+
+type WindowSpec = Annotated[TrailingSpec | LastSpec, Field(discriminator="type")]
+"""The window of a backtest: trailing windows, or the last dates only.
+
+Models take only trailing windows, so their `window` is a `TrailingSpec` and
+needs no `type`.
+"""
 
 
 class BackcastSpec(Spec):
@@ -237,7 +253,7 @@ class KupiecSpec(Spec):
     """
 
     type: Literal["kupiec"] = "kupiec"
-    window: TrailingSpec | None = None
+    window: WindowSpec | None = None
 
 
 # A tagged union, like the other roles, once there is a second backtest.

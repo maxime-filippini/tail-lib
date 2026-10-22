@@ -11,6 +11,7 @@ from tail_lib.models.value_at_risk import GaussianModel
 from tail_lib.models.value_at_risk import HistoricalSimulationsModel
 from tail_lib.models.volatility import ConstantVolatility
 from tail_lib.time_series import TimeSeries
+from tail_lib.windows import Last
 from tail_lib.windows import Trailing
 from tests.helpers import FIRST_DATE
 from tests.helpers import returns_series
@@ -120,6 +121,18 @@ def test_kupiec_rejects_a_window_longer_than_the_flags() -> None:
 
     with pytest.raises(ValueError, match="longer"):
         kupiec_pof(flags, cf_var=0.99, window=Trailing(length=6))
+
+
+def test_kupiec_on_the_last_dates_matches_the_test_on_them() -> None:
+    values = np.r_[np.nan, (np.arange(30) % 9 == 0).astype(float)]
+    flags = TimeSeries.from_first_date(FIRST_DATE, values=values)
+
+    result = kupiec_pof(flags, cf_var=0.9, window=Last(length=12))
+
+    alone = kupiec_pof(flags[-12:], cf_var=0.9)
+    np.testing.assert_array_equal(result.end_dates, flags.dates[-1:])
+    np.testing.assert_array_equal(result.n_obs, [12])
+    np.testing.assert_allclose(result.p_value, alone.p_value)
 
 
 @pytest.mark.parametrize("cf_var", [0.0, 1.0])

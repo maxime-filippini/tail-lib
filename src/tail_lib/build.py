@@ -48,6 +48,7 @@ from tail_lib.specs import FittedEwmaVolatilitySpec
 from tail_lib.specs import GaussianSpec
 from tail_lib.specs import HistoricalSimulationsSpec
 from tail_lib.specs import KupiecSpec
+from tail_lib.specs import LastSpec
 from tail_lib.specs import MeanSpec
 from tail_lib.specs import StartingVolSpec
 from tail_lib.specs import TrailingSpec
@@ -56,7 +57,9 @@ from tail_lib.specs import ValueAtRiskSpec
 from tail_lib.specs import Values
 from tail_lib.specs import VolatilityInputSpec
 from tail_lib.specs import VolatilitySpec
+from tail_lib.specs import WindowSpec
 from tail_lib.specs import ZeroMeanSpec
+from tail_lib.windows import Last
 from tail_lib.windows import Trailing
 
 if TYPE_CHECKING:
@@ -155,7 +158,7 @@ class Builder:
     ) -> Node[BacktestResult]:
         match spec:
             case KupiecSpec():
-                window = None if spec.window is None else _trailing(spec.window)
+                window = None if spec.window is None else _window(spec.window)
                 return KupiecTest(self.overshootings(model), window=window)
             case _:
                 assert_never(spec)
@@ -227,6 +230,16 @@ def _build_calibration(spec: EwmaDecayCalibrationSpec) -> EwmaDecayCalibration:
 
 def _trailing(spec: TrailingSpec) -> Trailing:
     return Trailing(length=spec.length, step=spec.step)
+
+
+def _window(spec: WindowSpec) -> Trailing | Last:
+    match spec:
+        case TrailingSpec():
+            return _trailing(spec)
+        case LastSpec():
+            return Last(length=spec.length)
+        case _:
+            assert_never(spec)
 
 
 def _ewma_start(spec: EwmaStartSpec) -> EwmaStart:

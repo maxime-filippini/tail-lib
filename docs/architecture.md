@@ -20,7 +20,7 @@ How tail-lib is organized, and how a call flows from a spec to the numbers
 | Module | Contents |
 |---|---|
 | `time_series.py`, `calendar.py` | `TimeSeries`, and the calendar behind its date helpers (R8a). |
-| `windows.py` | `Trailing` window specs, and `Windows`: the windows over a series, `apply` and `to_series` (D5). With `skip_leading_nan=True`, the windows start on the first date where every series has a value (R16). |
+| `windows.py` | `Trailing` and `Last` window specs, and `Windows`: the windows over a series, `apply` and `to_series` (D5). With `skip_leading_nan=True`, the windows start on the first date where every series has a value (R16). |
 | `graph.py` | `Node`, `Preprocessor`, `Cache`, `Pool`: the computation graph. |
 | `models/mean.py` | `MeanModel`, `ZeroMean`, `ConstantMean`. |
 | `models/ewma.py` | EWMA start specs (`Backcast`, `StartingVol`), the recursion (`ewma_update`, `ewma_variance`), decay nodes (`ConstantDecay`, `EwmaDecayCalibration`) and the decay fit. |
@@ -104,7 +104,10 @@ Example:
   },
   "backtests": {
     "kupiec": {"type": "kupiec"},
-    "kupiec_250": {"type": "kupiec", "window": {"length": 250}}
+    "kupiec_250": {"type": "kupiec",
+                   "window": {"type": "trailing", "length": 250}},
+    "kupiec_last": {"type": "kupiec",
+                    "window": {"type": "last", "length": 250}}
   }
 }
 ```
@@ -121,6 +124,10 @@ result belongs to, its last date. A test on the whole sample is one window,
 ending on the last date, hence `p_value[0]`. With a `window`, the test runs
 on trailing windows of the overshootings, which start on the first flag
 (R15, R16): `kupiec_250` has one result per date from 250 days after it.
+A `last` window is one window on the last dates: `kupiec_last` tests the
+last 250 days only, as of the last date. A backtest's window needs its
+`type`, since it can be either. A model's window is always trailing, so it
+needs none.
 
 Every backtest runs on every model (R4). Backtests are named, so two
 versions of one test can sit side by side.

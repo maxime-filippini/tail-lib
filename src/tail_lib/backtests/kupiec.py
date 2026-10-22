@@ -19,6 +19,7 @@ if TYPE_CHECKING:
     from tail_lib.backtests.overshootings import Overshootings
     from tail_lib.graph import Cache
     from tail_lib.time_series import TimeSeries
+    from tail_lib.windows import Last
     from tail_lib.windows import Trailing
 
 
@@ -56,7 +57,9 @@ class KupiecResult:
 
 
 def kupiec_pof(
-    overshootings: TimeSeries, cf_var: float, window: Trailing | None = None
+    overshootings: TimeSeries,
+    cf_var: float,
+    window: Trailing | Last | None = None,
 ) -> KupiecResult:
     """Test whether the overshooting rate matches the confidence level.
 
@@ -71,11 +74,12 @@ def kupiec_pof(
     distribution with 1 degree of freedom. The test only looks at how many
     overshootings there are, not at when they happen.
 
-    The test runs on the whole sample, or on each of trailing `window`s of
-    the flags. The windows start on the first date where every series has a
-    flag (R16). The window ending on date `t` holds the flags of dates
-    `t - length + 1` to `t`, which compare the value-at-risk up to `t - 1`
-    with the returns up to `t`. Its result belongs to `t`.
+    The test runs on the whole sample, on each of trailing `window`s of the
+    flags, or on the `Last` `length` flags only. The windows start on or
+    after the first date where every series has a flag (R16). The window
+    ending on date `t` holds the flags of dates `t - length + 1` to `t`,
+    which compare the value-at-risk up to `t - 1` with the returns up to `t`.
+    Its result belongs to `t`.
 
     Reference: Kupiec, P. H. (1995). Techniques for verifying the accuracy of
     risk measurement models. The Journal of Derivatives, 3(2), 73-84.
@@ -85,8 +89,8 @@ def kupiec_pof(
             `NaN` dates are left out.
         cf_var (float): The confidence level of the value-at-risk tested, in
             (0,1).
-        window (Trailing | None): The windows to test on. `None`, the default,
-            tests the whole sample.
+        window (Trailing | Last | None): The windows to test on. `None`, the
+            default, tests the whole sample.
 
     Returns:
         KupiecResult: The test outcome, of shape (n_windows, *batch). On the
@@ -137,12 +141,12 @@ class KupiecTest(Node[KupiecResult]):
     """Kupiec's proportion-of-failures test of a value-at-risk model, as a node.
 
     Gets the model's overshootings from the cache, then tests them with
-    `kupiec_pof` at the model's confidence level, on the whole sample or on
-    trailing windows.
+    `kupiec_pof` at the model's confidence level, on the whole sample, on
+    trailing windows or on the last dates.
     """
 
     def __init__(
-        self, overshootings: Overshootings, *, window: Trailing | None = None
+        self, overshootings: Overshootings, *, window: Trailing | Last | None = None
     ) -> None:
         """Build the test of a model.
 
@@ -150,7 +154,8 @@ class KupiecTest(Node[KupiecResult]):
             overshootings (Overshootings): The overshootings of the model to
                 test. Their confidence level `cf_var` sets the overshooting
                 rate expected under the model.
-            window (Trailing | None): The windows to test on, see `kupiec_pof`.
+            window (Trailing | Last | None): The windows to test on, see
+                `kupiec_pof`.
                 `None`, the default, tests the whole sample.
 
         """

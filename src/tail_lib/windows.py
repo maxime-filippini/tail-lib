@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
+from typing import assert_never
 
 import numpy as np
 from numpy.lib.stride_tricks import sliding_window_view
@@ -38,6 +39,18 @@ class Trailing:
             raise ValueError(msg)
 
 
+@dataclass(frozen=True)
+class Last:
+    """One window: the last `length` dates, ending on the last date."""
+
+    length: int
+
+    def __post_init__(self) -> None:
+        if self.length < 1:
+            msg = f"Window length has to be at least 1, got {self.length}!"
+            raise ValueError(msg)
+
+
 class Windows:
     """The windows of a time series, and how to put results back on its dates.
 
@@ -53,17 +66,22 @@ class Windows:
 
     With `skip_leading_nan`, the windows start on the first date where every
     series has a value, so no window holds the leading `NaN`s of a warm-up
-    (R16). The step is counted from there.
+    (R16). For `Trailing` windows, the step is counted from there. A `Last`
+    window has to start on or after it.
     """
 
     def __init__(
-        self, series: TimeSeries, spec: Trailing, *, skip_leading_nan: bool = False
+        self,
+        series: TimeSeries,
+        spec: Trailing | Last,
+        *,
+        skip_leading_nan: bool = False,
     ) -> None:
         """Cut the windows of a series.
 
         Args:
             series (TimeSeries): The time series.
-            spec (Trailing): The windows to cut.
+            spec (Trailing | Last): The windows to cut.
             skip_leading_nan (bool): Start the windows on the first date where
                 every series has a value, rather than on the first date.
 
@@ -72,13 +90,23 @@ class Windows:
                 part from the first date with a value for every series.
 
         """
-        n, length, step = series.n_dates, spec.length, spec.step
-        start = _first_full_date(series) if skip_leading_nan else 0
-        if n - start < length:
-            msg = f"Window of {length} dates is longer than the {n - start} dates"
+        n, length = series.n_dates, spec.length
+        first = _first_full_date(series) if skip_leading_nan else 0
+        if n - first < length:
+            msg = f"Window of {length} dates is longer than the {n - first} dates"
             if skip_leading_nan:
                 msg += " from the first date where every series has a value"
             raise ValueError(msg + "!")
+
+        # The windows are cut from `start`, one every `step` dates.
+        match spec:
+            case Trailing():
+                start, step = first, spec.step
+            case Last():
+                # Only one window fits from there: the last one.
+                start, step = n - length, 1
+            case _:
+                assert_never(spec)
 
         self._series_dates = series.dates
         # Index of the last date of each window.
