@@ -109,8 +109,13 @@ Example:
 ```python
 run = Run(RunSpec.model_validate_json(text))
 result = run.run(returns, inputs={"var_ext": precomputed_var})
-result.backtests["hs_99"]["kupiec"].p_value
+result.backtests["hs_99"]["kupiec"].p_value[0]
 ```
+
+A backtest result has one value per window and series: its arrays have the
+shape (n_windows, *batch), and `end_dates` gives the date each window's
+result belongs to, its last date. A test on the whole sample is one window,
+ending on the last date, hence `p_value[0]`.
 
 Every backtest runs on every model (R4). Backtests are named, so two
 versions of one test can sit side by side.

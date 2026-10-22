@@ -43,8 +43,8 @@ def test_run_computes_models_and_their_backtests() -> None:
     # The input model is backtested at its declared confidence level.
     expected = kupiec_pof(overshootings(inputs["var_ext"], returns), cf_var=0.95)
     kupiec = result.backtests["ext_95"]["kupiec"]
-    assert kupiec.n_overshootings == expected.n_overshootings
-    assert kupiec.statistic == expected.statistic
+    np.testing.assert_array_equal(kupiec.n_overshootings, expected.n_overshootings)
+    np.testing.assert_array_equal(kupiec.statistic, expected.statistic)
     np.testing.assert_array_equal(
         result.models["ext_95"].values, inputs["var_ext"].values
     )

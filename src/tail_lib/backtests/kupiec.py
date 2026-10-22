@@ -12,6 +12,7 @@ from scipy import stats
 from tail_lib.graph import Node
 
 if TYPE_CHECKING:
+    from tail_lib._typing import DateArray1D
     from tail_lib._typing import FloatArray
     from tail_lib._typing import IntArray
     from tail_lib.backtests.overshootings import Overshootings
@@ -21,10 +22,17 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True)
 class KupiecResult:
-    """The outcome of a Kupiec test, one value per series.
+    """The outcome of a Kupiec test, one value per window and series.
 
-    Every array has the batch shape of the overshootings tested.
+    The test runs on windows of the overshootings, and each window's result
+    belongs to its last date, `end_dates`. Every array has the shape
+    (n_windows, *batch): the windows first, then the batch shape of the
+    overshootings tested. A test on the whole sample is one window, ending on
+    the last date.
     """
+
+    end_dates: DateArray1D
+    """The last date of each window, which its result belongs to."""
 
     n_obs: IntArray
     """Number of dates with an overshooting flag (1.0 or 0.0)."""
@@ -69,8 +77,9 @@ def kupiec_pof(overshootings: TimeSeries, cf_var: float) -> KupiecResult:
             (0,1).
 
     Returns:
-        KupiecResult: The test outcome, one value per series. A series with no
-            flagged dates has `NaN` rates, statistic and p-value.
+        KupiecResult: The test outcome on the whole sample: one window, ending
+            on the last date, so every array has the shape (1, *batch). A series
+            with no flagged dates has `NaN` rates, statistic and p-value.
 
     Raises:
         ValueError: If `cf_var` is not in (0,1).
@@ -80,7 +89,9 @@ def kupiec_pof(overshootings: TimeSeries, cf_var: float) -> KupiecResult:
         msg = "Confidence level has to be in (0,1)!"
         raise ValueError(msg)
 
-    flags = overshootings.values
+    # The whole sample as one window: the dates inside the window on the first
+    # axis, then the windows (here one), then the series.
+    flags = overshootings.values[:, np.newaxis]
     n = np.sum(~np.isnan(flags), axis=0)
     x = np.nansum(flags, axis=0).astype(np.int64)
     p = 1 - cf_var
@@ -92,6 +103,7 @@ def kupiec_pof(overshootings: TimeSeries, cf_var: float) -> KupiecResult:
     statistic = -2 * (log_l_model - log_l_observed)
 
     return KupiecResult(
+        end_dates=overshootings.dates[-1:],
         n_obs=np.asarray(n, dtype=np.int64),
         n_overshootings=np.asarray(x),
         expected_rate=p,
@@ -130,7 +142,8 @@ class KupiecTest(Node[KupiecResult]):
             overshootings (TimeSeries): The overshooting flags of the model.
 
         Returns:
-            KupiecResult: The test outcome, one value per series.
+            KupiecResult: The test outcome on the whole sample, see
+                `kupiec_pof`.
 
         """
         return kupiec_pof(overshootings, cf_var=self._cf_var)

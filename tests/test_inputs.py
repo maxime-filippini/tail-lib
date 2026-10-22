@@ -26,8 +26,8 @@ def test_var_input_is_backtested_like_the_model_it_came_from() -> None:
     )
 
     expected = kupiec_pof(overshootings(precomputed, returns), cf_var=0.99)
-    assert from_input.n_overshootings == expected.n_overshootings
-    assert from_input.statistic == expected.statistic
+    np.testing.assert_array_equal(from_input.n_overshootings, expected.n_overshootings)
+    np.testing.assert_array_equal(from_input.statistic, expected.statistic)
 
 
 def test_volatility_input_feeds_a_model() -> None:

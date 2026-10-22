@@ -10,11 +10,11 @@ Working rules, from `CLAUDE.md` and the developer:
 - Commit only when the developer says so. Commits have no co-author trailer.
 
 State as of 2026-10-22: branch `feat/model-api`, not pushed, all checks
-green (ty, ruff, 115 tests).
+green (ty, ruff, 116 tests). Step 1 of rolling backtests is committed.
 
 ## Next up
 
-### 1. Rolling backtests (R15)
+### 1. Rolling backtests (R15, R16)
 
 The developer wants backtests on their own windows, e.g. Kupiec on rolling
 250 and 500 days, side by side in one run:
@@ -26,21 +26,36 @@ The developer wants backtests on their own windows, e.g. Kupiec on rolling
 }
 ```
 
-Agreed so far: the setting goes on the backtest spec, and named backtests
-let both versions coexist. Both should share the model's `Overshootings`.
+Decided with the developer:
 
-To design with the developer: what a rolling test returns. Today
-`KupiecResult` has one value per series. A rolling test has one per window.
-Options to present:
+- The setting goes on the backtest spec. Named backtests let both versions
+  coexist, and both share the model's `Overshootings`.
+- Results have one value per window (option C): every `KupiecResult` array
+  has the shape (n_windows, *batch), and `end_dates` gives each window's
+  last date. A whole-sample test is one window ending on the last date.
+  Rejected: results as time series on the returns' dates (mostly `NaN` for a
+  whole-sample test), and a separate rolling result type (a union per test).
+- Windows start on the first available value of the series being windowed
+  (R16), so no window holds warm-up `NaN`s. With several series in the
+  batch, all share one set of windows, which starts once every series has a
+  value.
 
-- `KupiecResult` fields become time series on the window end dates, held
-  until the next window like `Windows.to_series` (D5). A whole-sample test
-  is then the special case of one window.
-- A separate rolling result type next to `KupiecResult`. That's simpler per
-  type, but `BacktestResult` becomes a union.
+Steps, one change each:
 
-Check the timing: the window of overshootings ending on `t` uses VaR up to
-`t - 1` and returns up to `t` (D1).
+1. Done: `KupiecResult` gets the windows axis and `end_dates`, whole sample
+   only, no change in the numbers.
+2. `Windows` skips leading `NaN`, opt-in (e.g. `skip_leading_nan=True`), so
+   historical simulation and the decay calibration don't change. A usable
+   part shorter than one window raises `ValueError`.
+3. `KupiecTest(ovs, window=Trailing(...))` and `window` on `KupiecSpec`.
+   Test 250 and 500 side by side on one shared `Overshootings`.
+
+Still open: `NaN` in the middle of a window (e.g. a missing return). The
+proposal is to keep counting the usable flags (`n_obs < length`). Also
+maybe a `to_series()` that puts window results on the returns' dates.
+
+Timing: the window of overshootings ending on `t` uses VaR up to `t - 1`
+and returns up to `t` (D1).
 
 ### 2. JSON round trip (R9, spec increment 3)
 
@@ -60,7 +75,8 @@ shape.
 
 The gain is composability, not reuse:
 
-- filtered HS as HS on `VolatilityFilter` output;
+- filtered HS as HS on `VolatilityFilter` output, whose first window then
+  starts after the volatility warm-up (R16);
 - demeaned or portfolio returns (R5, R2);
 - backtesting against a different P&L series.
 

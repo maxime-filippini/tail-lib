@@ -28,27 +28,37 @@ def test_kupiec_matches_hand_computed_statistic() -> None:
     n, x = 250, 5
     result = kupiec_pof(_flags(n, x), cf_var=0.99)
 
-    assert result.n_obs == n
-    assert result.n_overshootings == x
+    assert result.n_obs[0] == n
+    assert result.n_overshootings[0] == x
     assert result.expected_rate == pytest.approx(0.01)
-    assert result.observed_rate == pytest.approx(0.02)
-    assert result.statistic == pytest.approx(1.956809788230622)
-    assert result.p_value == pytest.approx(0.1618549171960387)
+    assert result.observed_rate[0] == pytest.approx(0.02)
+    assert result.statistic[0] == pytest.approx(1.956809788230622)
+    assert result.p_value[0] == pytest.approx(0.1618549171960387)
+
+
+def test_kupiec_on_the_whole_sample_is_one_window_ending_on_the_last_date() -> None:
+    flags = TimeSeries.from_first_date(FIRST_DATE, values=np.zeros((250, 3)))
+
+    result = kupiec_pof(flags, cf_var=0.99)
+
+    np.testing.assert_array_equal(result.end_dates, flags.dates[-1:])
+    for field in ("n_obs", "n_overshootings", "observed_rate", "statistic", "p_value"):
+        assert getattr(result, field).shape == (1, 3)
 
 
 def test_kupiec_without_overshootings() -> None:
     # With x = 0 the observed term is 0: LR = -2 n ln(1 - p).
     result = kupiec_pof(_flags(250, 0), cf_var=0.99)
 
-    assert result.statistic == pytest.approx(-2 * 250 * np.log(0.99))
+    assert result.statistic[0] == pytest.approx(-2 * 250 * np.log(0.99))
 
 
 def test_kupiec_with_every_date_an_overshooting() -> None:
     # With x = n the observed term is 0: LR = -2 n ln(p).
     result = kupiec_pof(_flags(250, 250), cf_var=0.99)
 
-    assert result.statistic == pytest.approx(-2 * 250 * np.log(0.01))
-    assert result.p_value == pytest.approx(0.0)
+    assert result.statistic[0] == pytest.approx(-2 * 250 * np.log(0.01))
+    assert result.p_value[0] == pytest.approx(0.0)
 
 
 def test_kupiec_per_series_leaves_out_nan_dates() -> None:
@@ -61,9 +71,11 @@ def test_kupiec_per_series_leaves_out_nan_dates() -> None:
     result = kupiec_pof(flags, cf_var=0.99)
     alone = kupiec_pof(_flags(200, 0), cf_var=0.99)
 
-    np.testing.assert_array_equal(result.n_obs, [250, 200])
-    np.testing.assert_array_equal(result.n_overshootings, [5, 0])
-    np.testing.assert_allclose(result.statistic, [1.956809788230622, alone.statistic])
+    np.testing.assert_array_equal(result.n_obs, [[250, 200]])
+    np.testing.assert_array_equal(result.n_overshootings, [[5, 0]])
+    np.testing.assert_allclose(
+        result.statistic, [[1.956809788230622, alone.statistic[0]]]
+    )
 
 
 def test_kupiec_without_observations_is_nan() -> None:
@@ -71,9 +83,9 @@ def test_kupiec_without_observations_is_nan() -> None:
 
     result = kupiec_pof(flags, cf_var=0.99)
 
-    assert result.n_obs == 0
-    assert np.isnan(result.statistic)
-    assert np.isnan(result.p_value)
+    assert result.n_obs[0] == 0
+    assert np.isnan(result.statistic[0])
+    assert np.isnan(result.p_value[0])
 
 
 @pytest.mark.parametrize("cf_var", [0.0, 1.0])
@@ -125,7 +137,7 @@ def test_backtests_reuse_var_computed_in_the_same_cache() -> None:
     assert _CountingGaussian.n_calls == 1
     assert set(var) == set(tests) == {"gaussian", "hs"}
     # The first date has no previous VaR to compare with.
-    assert tests["gaussian"].n_obs == n - 1
+    assert tests["gaussian"].n_obs[0] == n - 1
 
 
 def test_backtests_of_a_model_share_its_overshootings() -> None:

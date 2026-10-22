@@ -26,6 +26,12 @@ Requirements are numbered so changes and reviews can cite them (e.g. "R4").
   results.
 - **R15** — Backtests may need their own computation windows, e.g. a Kupiec
   test on rolling 250 days and on rolling 500 days, side by side in one run.
+- **R16** — Windows don't start where the series being windowed is still
+  `NaN`. A node's warm-up (e.g. an EWMA backcast, a VaR's first window) shows
+  up as leading `NaN` in its output, and the first window of the next node
+  starts on the first available value. For example, filtered historical
+  simulation on 500 days, filtered by an EWMA volatility with a 20-day
+  backcast, has its first window on filtered returns 20 to 519.
 
 ### Performance
 
