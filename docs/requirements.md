@@ -24,6 +24,8 @@ Requirements are numbered so changes and reviews can cite them (e.g. "R4").
 - **R4** — Benchmark models against each other using their backtest results.
 - **R5** — Apply several models to the same portfolio and compare their
   results.
+- **R15** — Backtests may need their own computation windows, e.g. a Kupiec
+  test on rolling 250 days and on rolling 500 days, side by side in one run.
 
 ### Performance
 
@@ -43,6 +45,10 @@ Requirements are numbered so changes and reviews can cite them (e.g. "R4").
   valid, and users can customize it (e.g. weekends, holidays). The default
   calendar is Monday to Friday, without holidays.
 - **R9** — Users can write model specs in a serialized data format.
+- **R9b** — An invalid spec is reported precisely: the error says which
+  field or value is wrong and what was expected (e.g. a confidence level
+  outside (0, 1)), so users know exactly where they went wrong. Checking
+  values in the spec as well as in the nodes is fine.
 - **R9a** — Users specify models. The library builds the preprocessors those
   models need (e.g. volatility models, calibrations).
 - **R12** — After a run, users can serialize its results: model outputs and
@@ -78,7 +84,10 @@ The core developer needs to confirm them.
   too give one forecast per date.
 - **D3** — *Shared preprocessors.* Identical preprocessor specs share one
   computation within a run, even across separately written model specs (R6,
-  R9a). Wanted, but the design needs fleshing out before implementing.
+  R9a). Implemented two ways: in Python, nodes given the same instance share
+  its computation (e.g. backtests given one `Overshootings`); from specs, one
+  `Builder` gives one node per distinct spec value, so identical parts of
+  separately written specs are computed once.
 - **D4** — *Reusing saved results.* Results saved from earlier runs (R12) can
   be loaded back to skip work. Loading them never changes a result, only the
   time a run takes. Wanted, but the design needs fleshing out before
@@ -103,7 +112,12 @@ The core developer needs to confirm them.
 
 ## Open questions
 
-- Which serialization format(s) should specs use: JSON, YAML, TOML?
+Work items and design questions in progress are tracked in
+`docs/open-points.md`.
+
+- Should specs offer shorthands and defaults, so users only write the models
+  and the library fills in their preprocessors (R9a)? Today every node is
+  spelled out.
 - Which backtests are needed beyond Kupiec POF (e.g. Christoffersen
   independence, conditional coverage, Basel traffic light), and which ES
   backtests?
