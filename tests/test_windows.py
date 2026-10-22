@@ -60,6 +60,53 @@ def test_windows_reject_window_longer_than_series() -> None:
         Windows(_series(3), Trailing(length=4))
 
 
+def _with_leading_nan(n: int, n_nan: list[int]) -> TimeSeries:
+    values = np.arange(n * len(n_nan), dtype=float).reshape(n, len(n_nan))
+    for j, k in enumerate(n_nan):
+        values[:k, j] = np.nan
+    return TimeSeries.from_first_date(FIRST_DATE, values=values)
+
+
+def test_windows_skipping_leading_nan_start_on_the_first_value() -> None:
+    series = _with_leading_nan(10, [3])
+    v, d = series.values, series.dates
+
+    windows = Windows(series, Trailing(length=3, step=2), skip_leading_nan=True)
+
+    # The first value is on date 3: windows end on 5, 7 and 9.
+    np.testing.assert_array_equal(windows.end_dates, d[[5, 7, 9]])
+    np.testing.assert_array_equal(windows.values[:, 0], v[3:6])
+    np.testing.assert_array_equal(windows.dates[:, 0], d[3:6])
+    assert not np.isnan(windows.values).any()
+
+
+def test_windows_skipping_leading_nan_wait_for_every_series() -> None:
+    series = _with_leading_nan(8, [1, 4])
+
+    windows = Windows(series, Trailing(length=2), skip_leading_nan=True)
+
+    np.testing.assert_array_equal(windows.values[:, 0], series.values[4:6])
+    out = windows.to_series(np.arange(windows.n_windows, dtype=float))
+    np.testing.assert_array_equal(out.values, [np.nan] * 5 + [0, 1, 2])
+
+
+def test_windows_skipping_leading_nan_reject_too_short_a_rest() -> None:
+    with pytest.raises(ValueError, match="first date where every series"):
+        Windows(_with_leading_nan(6, [4]), Trailing(length=3), skip_leading_nan=True)
+
+    with pytest.raises(ValueError, match="longer"):
+        Windows(_with_leading_nan(3, [3]), Trailing(length=1), skip_leading_nan=True)
+
+
+def test_windows_keep_leading_nan_by_default() -> None:
+    series = _with_leading_nan(6, [2])
+
+    windows = Windows(series, Trailing(length=3))
+
+    assert windows.end_dates[0] == series.dates[2]
+    assert np.isnan(windows.values[0, 0]).all()
+
+
 def test_to_series_holds_each_result_until_the_next_window() -> None:
     series = _series(8)
     windows = Windows(series, Trailing(length=3, step=2))  # ends on 2, 4, 6

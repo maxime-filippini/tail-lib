@@ -20,7 +20,7 @@ How tail-lib is organized, and how a call flows from a spec to the numbers
 | Module | Contents |
 |---|---|
 | `time_series.py`, `calendar.py` | `TimeSeries`, and the calendar behind its date helpers (R8a). |
-| `windows.py` | `Trailing` window specs, and `Windows`: the windows over a series, `apply` and `to_series` (D5). |
+| `windows.py` | `Trailing` window specs, and `Windows`: the windows over a series, `apply` and `to_series` (D5). With `skip_leading_nan=True`, the windows start on the first date where every series has a value (R16). |
 | `graph.py` | `Node`, `Preprocessor`, `Cache`, `Pool`: the computation graph. |
 | `models/mean.py` | `MeanModel`, `ZeroMean`, `ConstantMean`. |
 | `models/ewma.py` | EWMA start specs (`Backcast`, `StartingVol`), the recursion (`ewma_update`, `ewma_variance`), decay nodes (`ConstantDecay`, `EwmaDecayCalibration`) and the decay fit. |

@@ -10,7 +10,8 @@ Working rules, from `CLAUDE.md` and the developer:
 - Commit only when the developer says so. Commits have no co-author trailer.
 
 State as of 2026-10-22: branch `feat/model-api`, not pushed, all checks
-green (ty, ruff, 116 tests). Step 1 of rolling backtests is committed.
+green (ty, ruff, 120 tests). Steps 1 and 2 of rolling backtests are
+committed.
 
 ## Next up
 
@@ -44,9 +45,10 @@ Steps, one change each:
 
 1. Done: `KupiecResult` gets the windows axis and `end_dates`, whole sample
    only, no change in the numbers.
-2. `Windows` skips leading `NaN`, opt-in (e.g. `skip_leading_nan=True`), so
-   historical simulation and the decay calibration don't change. A usable
-   part shorter than one window raises `ValueError`.
+2. Done: `Windows(..., skip_leading_nan=True)` starts the windows on the
+   first date where every series has a value. It's opt-in, so historical
+   simulation and the decay calibration don't change. A usable part shorter
+   than one window raises `ValueError`.
 3. `KupiecTest(ovs, window=Trailing(...))` and `window` on `KupiecSpec`.
    Test 250 and 500 side by side on one shared `Overshootings`.
 

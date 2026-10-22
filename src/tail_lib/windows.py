@@ -50,33 +50,45 @@ class Windows:
     results back on the dates of the series: each date holds the result of the
     last window ending on or before it, and dates before the first window are
     `NaN`.
+
+    With `skip_leading_nan`, the windows start on the first date where every
+    series has a value, so no window holds the leading `NaN`s of a warm-up
+    (R16). The step is counted from there.
     """
 
-    def __init__(self, series: TimeSeries, spec: Trailing) -> None:
+    def __init__(
+        self, series: TimeSeries, spec: Trailing, *, skip_leading_nan: bool = False
+    ) -> None:
         """Cut the windows of a series.
 
         Args:
             series (TimeSeries): The time series.
             spec (Trailing): The windows to cut.
+            skip_leading_nan (bool): Start the windows on the first date where
+                every series has a value, rather than on the first date.
 
         Raises:
-            ValueError: If a window is longer than the series.
+            ValueError: If a window is longer than the series, or than its
+                part from the first date with a value for every series.
 
         """
         n, length, step = series.n_dates, spec.length, spec.step
-        if n < length:
-            msg = f"Window of {length} dates is longer than the {n} dates!"
-            raise ValueError(msg)
+        start = _first_full_date(series) if skip_leading_nan else 0
+        if n - start < length:
+            msg = f"Window of {length} dates is longer than the {n - start} dates"
+            if skip_leading_nan:
+                msg += " from the first date where every series has a value"
+            raise ValueError(msg + "!")
 
         self._series_dates = series.dates
         # Index of the last date of each window.
-        self._ends = np.arange(length - 1, n, step)
+        self._ends = np.arange(start + length - 1, n, step)
 
         # sliding_window_view puts the dates inside a window on the last axis:
         # move them first. These are read-only views, not copies.
-        strided = sliding_window_view(series.values, length, axis=0)
+        strided = sliding_window_view(series.values[start:], length, axis=0)
         self._values = np.moveaxis(strided, -1, 0)[:, ::step]
-        self._dates = sliding_window_view(series.dates, length).T[:, ::step]
+        self._dates = sliding_window_view(series.dates[start:], length).T[:, ::step]
 
     @property
     def n_windows(self) -> int:
@@ -145,3 +157,13 @@ class Windows:
 
         """
         return self.to_series(fn(self._values))
+
+
+def _first_full_date(series: TimeSeries) -> int:
+    """Find the first date where every series has a value, as an index.
+
+    Returns the number of dates if there is none.
+    """
+    values = series.values.reshape(series.n_dates, -1)
+    full = ~np.isnan(values).any(axis=1)
+    return int(np.argmax(full)) if full.any() else series.n_dates
