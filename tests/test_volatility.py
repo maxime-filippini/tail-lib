@@ -13,6 +13,7 @@ from tail_lib.models.volatility import EwmaVolatility
 from tail_lib.models.volatility import FittedEwmaVolatility
 from tail_lib.models.volatility import VolatilityFilter
 from tail_lib.time_series import TimeSeries
+from tail_lib.windows import Last
 from tail_lib.windows import Trailing
 from tests.helpers import FIRST_DATE
 from tests.helpers import ewma
@@ -216,3 +217,22 @@ def test_volatility_filter_rejects_mismatched_vols() -> None:
 
     with pytest.raises(ValueError, match="dates"):
         VolatilityFilter(ConstantVolatility(0.01)).compute(returns, vols=vols)
+
+
+def test_fitted_ewma_on_last_window_is_the_last_rolling_value() -> None:
+    returns = simulated_returns(n=160)
+
+    last = FittedEwmaVolatility(EwmaDecayCalibration(Last(length=100))).run(returns)
+    rolling = FittedEwmaVolatility(EwmaDecayCalibration(Trailing(length=100)))
+
+    assert np.isnan(last.values[:-1]).all()
+    np.testing.assert_allclose(last.values[-1], rolling.run(returns).values[-1])
+
+
+def test_gaussian_on_a_last_calibration_gives_one_value_at_risk() -> None:
+    vol = FittedEwmaVolatility(EwmaDecayCalibration(Last(length=100)))
+
+    var = GaussianModel(cf=0.99, vol_model=vol).run(simulated_returns(n=160))
+
+    assert np.isnan(var.values[:-1]).all()
+    assert not np.isnan(var.values[-1]).any()

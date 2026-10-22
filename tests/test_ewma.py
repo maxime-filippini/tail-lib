@@ -7,6 +7,7 @@ from tail_lib.models.ewma import ConstantDecay
 from tail_lib.models.ewma import EwmaDecayCalibration
 from tail_lib.models.ewma import StartingVol
 from tail_lib.models.ewma import fit_ewma_decay
+from tail_lib.windows import Last
 from tail_lib.windows import Trailing
 from tests.helpers import simulate_ewma
 from tests.helpers import simulated_returns
@@ -97,3 +98,13 @@ def test_decay_calibration_fits_trailing_windows() -> None:
 def test_decay_calibration_rejects_window_longer_than_returns() -> None:
     with pytest.raises(ValueError, match="longer"):
         EwmaDecayCalibration(Trailing(length=200)).run(simulated_returns())
+
+
+def test_calibration_on_last_window_fits_once_on_the_last_dates() -> None:
+    returns = simulated_returns(n=160)
+
+    last = EwmaDecayCalibration(Last(length=100)).run(returns)
+    rolling = EwmaDecayCalibration(Trailing(length=100)).run(returns)
+
+    assert np.isnan(last.values[:-1]).all()
+    np.testing.assert_array_equal(last.values[-1], rolling.values[-1])

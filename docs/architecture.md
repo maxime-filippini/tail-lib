@@ -126,8 +126,9 @@ on trailing windows of the overshootings, which start on the first flag
 (R15, R16): `kupiec_250` has one result per date from 250 days after it.
 A `last` window is one window on the last dates: `kupiec_last` tests the
 last 250 days only, as of the last date. A backtest's window needs its
-`type`, since it can be either. A model's window is always trailing, so it
-needs none.
+`type`, since it can be either. A model's window is always trailing in
+specs, so it needs none. In Python, models take a `Last` window too: they
+then give one value, on the last date, which can't be backtested.
 
 Every backtest runs on every model (R4). Backtests are named, so two
 versions of one test can sit side by side.

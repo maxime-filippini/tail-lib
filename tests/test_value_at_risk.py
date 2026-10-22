@@ -10,6 +10,7 @@ from tail_lib.models.value_at_risk import GaussianModel
 from tail_lib.models.value_at_risk import HistoricalSimulationsModel
 from tail_lib.models.volatility import ConstantVolatility
 from tail_lib.time_series import TimeSeries
+from tail_lib.windows import Last
 from tail_lib.windows import Trailing
 from tests.helpers import FIRST_DATE
 from tests.helpers import returns_series
@@ -106,3 +107,13 @@ def test_historical_simulations_interpolation(
 
     expected = np.quantile(returns.values, 0.1, method=numpy_method)
     np.testing.assert_allclose(var.values[-1], expected)
+
+
+def test_historical_on_last_window_is_the_last_rolling_value() -> None:
+    returns = returns_series(n=300, n_assets=2)
+
+    last = HistoricalSimulationsModel(cf=0.99, window=Last(length=100)).run(returns)
+    rolling = HistoricalSimulationsModel(cf=0.99, window=Trailing(length=100))
+
+    assert np.isnan(last.values[:-1]).all()
+    np.testing.assert_array_equal(last.values[-1], rolling.run(returns).values[-1])

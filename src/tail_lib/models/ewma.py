@@ -12,6 +12,7 @@ import numpy as np
 from tail_lib.graph import Cache
 from tail_lib.graph import Preprocessor
 from tail_lib.time_series import TimeSeries
+from tail_lib.windows import Last
 from tail_lib.windows import Trailing
 from tail_lib.windows import Windows
 
@@ -277,13 +278,14 @@ class EwmaDecayCalibration(DecayModel):
     Each window of returns, see `Windows`, is fitted with `fit_ewma_decay`. The
     decay factor on a date is the fit of the last window ending on or before
     it, so it only uses returns up to and including that date, and is `NaN`
-    before the first window ends. Share one instance between the models that
+    before the first window ends. With a `Last` window, there is one fit, on
+    the last date. Share one instance between the models that
     should use the same calibration, so it is only fitted once.
     """
 
     def __init__(
         self,
-        window: Trailing,
+        window: Trailing | Last,
         *,
         bounds: tuple[float, float] = DEFAULT_DECAY_BOUNDS,
         start: EwmaStart = DEFAULT_EWMA_START,
@@ -292,8 +294,9 @@ class EwmaDecayCalibration(DecayModel):
         """Build the calibration.
 
         Args:
-            window (Trailing): The training windows: how many dates each fit
-                uses, and how many dates apart the fits are.
+            window (Trailing | Last): The training windows: how many dates
+                each fit uses, and how many dates apart the fits are. `Last`
+                fits once, on the last dates.
             bounds (tuple[float, float]): The search interval for the decay.
             start (EwmaStart): How the variance recursion of each fit gets its
                 first value. A backcast uses the first dates of each window.
@@ -306,7 +309,7 @@ class EwmaDecayCalibration(DecayModel):
         self._n_iter = n_iter
 
     @property
-    def window(self) -> Trailing:
+    def window(self) -> Trailing | Last:
         """The training windows of the fits."""
         return self._window
 

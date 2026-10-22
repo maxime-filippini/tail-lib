@@ -10,8 +10,8 @@ Working rules, from `CLAUDE.md` and the developer:
 - Commit only when the developer says so. Commits have no co-author trailer.
 
 State as of 2026-10-22: branch `feat/model-api`, not pushed, all checks
-green (ty, ruff, 131 tests). Rolling backtests, with `Last`, are done and
-committed.
+green (ty, ruff, 135 tests). Rolling backtests, with `Last`, are done and
+committed. Step 1 of `Last` windows for models is committed.
 
 ## Next up
 
@@ -22,8 +22,8 @@ The developer wants backtests on their own windows, e.g. Kupiec on rolling
 
 ```json
 "backtests": {
-  "kupiec_250": {"type": "kupiec", "window": {"length": 250}},
-  "kupiec_500": {"type": "kupiec", "window": {"length": 500}}
+  "kupiec_250": {"type": "kupiec", "window": {"type": "trailing", "length": 250}},
+  "kupiec_500": {"type": "kupiec", "window": {"type": "trailing", "length": 500}}
 }
 ```
 
@@ -68,7 +68,35 @@ Still open:
 Timing: the window of overshootings ending on `t` uses VaR up to `t - 1`
 and returns up to `t` (D1).
 
-### 2. JSON round trip (R9, spec increment 3)
+### 2. `Last` windows for models (option B)
+
+A model with a `Last` window gives one value, on the last date, e.g. today's
+VaR in a daily production run, without computing every window (R6, R7). It
+can't be backtested: its only VaR is the forecast for a date after the data,
+so it has no overshootings. The same holds for a model whose inputs have a
+`Last` window, e.g. a Gaussian VaR on a fitted EWMA with a `Last`
+calibration.
+
+Options shown to the developer: (A) keep models trailing-only, and read the
+last value of the rolling model; (B) let models take `Last`, and reject
+backtests on them clearly; (C) like B, but skip them silently. The developer
+picked B. Steps, one change each:
+
+1. Done: `HistoricalSimulationsModel`, `EwmaDecayCalibration` and
+   `FittedEwmaVolatility` take `Trailing | Last` in Python. The fitted EWMA
+   now takes its window ends from `Windows.end_indices`, the calibration's
+   own windows.
+2. Model specs take `last` windows. To decide: model windows become a
+   tagged union, so either every model window needs `"type": "trailing"`
+   (strict, as agreed for R9a), or a missing `type` defaults to `trailing`
+   (a callable discriminator, like `Values`), in every window slot.
+3. The builder rejects a backtest on a model with a `Last` window anywhere
+   in its inputs, naming the model.
+4. Per-backtest model filter: a backtest spec takes `"models": [...]`, so a
+   run can hold both `Last` models and backtests (today every backtest runs
+   on every model, R4).
+
+### 3. JSON round trip (R9, spec increment 3)
 
 Parsing already works. What's left is a test that `RunSpec.model_dump_json()`
 parses back to an equal spec (lists come back as tuples), and maybe a small
@@ -112,11 +140,6 @@ spec.
 Also an open question in the requirements. The developer agreed to start
 strict, with every node spelled out. Candidates: `"decay": 0.94` for a
 constant decay, and default preprocessors for a model.
-
-### Per-backtest model filter
-
-Today every backtest runs on every model. A backtest spec could later take
-`"models": [...]`. Leave it out until it's needed.
 
 ## Features not started
 

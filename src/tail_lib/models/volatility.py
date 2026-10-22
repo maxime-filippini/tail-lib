@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
+from typing import assert_never
 
 import numpy as np
 from numpy.lib.stride_tricks import sliding_window_view
@@ -15,10 +16,12 @@ from tail_lib.models.ewma import EwmaDecayCalibration
 from tail_lib.models.ewma import EwmaStart
 from tail_lib.models.ewma import ewma_variance
 from tail_lib.time_series import TimeSeries
+from tail_lib.windows import Last
+from tail_lib.windows import Trailing
+from tail_lib.windows import Windows
 
 if TYPE_CHECKING:
     from tail_lib._typing import FloatArray
-    from tail_lib.windows import Trailing
 
 
 class VolatilityModel(Preprocessor):
@@ -168,7 +171,8 @@ class FittedEwmaVolatility(VolatilityModel):
     date it is known on, up to the date before the next calibration. The
     volatility on date `t` is the forecast for date `t + 1`, using returns up
     to and including `t`. It is `NaN` before the last date of the first
-    training window.
+    training window. With a `Last` training window, there is one
+    calibration, so one volatility, on the last date.
     """
 
     def __init__(self, calibration: EwmaDecayCalibration) -> None:
@@ -195,7 +199,7 @@ class FittedEwmaVolatility(VolatilityModel):
         returns: TimeSeries,
         *,
         decay: TimeSeries,
-        window: Trailing,
+        window: Trailing | Last,
         start: EwmaStart,
     ) -> TimeSeries:
         """Compute the volatilities.
@@ -204,7 +208,8 @@ class FittedEwmaVolatility(VolatilityModel):
             returns (TimeSeries): The returns time series.
             decay (TimeSeries): The decay factor fitted on the training windows
                 `window` of `returns`, as output by an `EwmaDecayCalibration`.
-            window (Trailing): The training windows the decay was fitted on.
+            window (Trailing | Last): The training windows the decay was
+                fitted on.
             start (EwmaStart): How the recursion gets its first variance, at
                 the start of each training window.
 
@@ -218,12 +223,19 @@ class FittedEwmaVolatility(VolatilityModel):
         returns.check_aligned(decay)
         r = returns.values
         n = returns.n_dates
-        length, step = window.length, window.step
+        length = window.length
+        match window:
+            case Trailing():
+                step = window.step
+            case Last():
+                step = 1  # One calibration, used on the last date only.
+            case _:
+                assert_never(window)
 
-        # Calibration k fits the training window of dates
-        # [k * step, k * step + length - 1], and its decay factor is used for
-        # the volatilities of the `step` dates from the window's last date.
-        window_ends = np.arange(length - 1, n, step)
+        # Calibration k fits the training window ending on `window_ends[k]`,
+        # the same windows as the calibration's, and its decay factor is used
+        # for the volatilities of the `step` dates from the window's last date.
+        window_ends = Windows(returns, window).end_indices
         fitted = decay.values[window_ends]  # (n_fits, *batch)
 
         # Segment k: the training window, then the `step - 1` dates after it.
@@ -239,12 +251,14 @@ class FittedEwmaVolatility(VolatilityModel):
         var = ewma_variance(segments, d, start)
 
         # Row `length - 1 + j` of segment k is the variance of date
-        # `window_ends[k] + j`, for j in [0, step).
+        # `window_ends[k] + j`, for j in [0, step). The segments follow each
+        # other, so they fill the dates from the first window's last date.
         used = np.moveaxis(var[length - 1 :], 1, 0)  # (n_fits, step, *batch)
         flat = used.reshape(-1, *r.shape[1:])
         vols = np.full(r.shape, np.nan)
-        n_used = min(flat.shape[0], n - (length - 1))
-        vols[length - 1 : length - 1 + n_used] = np.sqrt(flat[:n_used])
+        first = window_ends[0]
+        n_used = min(flat.shape[0], n - first)
+        vols[first : first + n_used] = np.sqrt(flat[:n_used])
         return TimeSeries(dates=returns.dates, values=vols)
 
 

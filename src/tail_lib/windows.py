@@ -16,6 +16,7 @@ if TYPE_CHECKING:
 
     from tail_lib._typing import DateArray1D
     from tail_lib._typing import FloatArray
+    from tail_lib._typing import IntArray
 
 
 @dataclass(frozen=True)
@@ -132,6 +133,11 @@ class Windows:
     def dates(self) -> np.ndarray:
         """The dates inside every window, of shape (length, n_windows)."""
         return self._dates
+
+    @property
+    def end_indices(self) -> IntArray:
+        """The index of the last date of every window, in the series."""
+        return self._ends
 
     @property
     def end_dates(self) -> DateArray1D:

@@ -14,6 +14,7 @@ from tail_lib.graph import Node
 from tail_lib.models.mean import MeanModel
 from tail_lib.models.mean import ZeroMean
 from tail_lib.time_series import TimeSeries
+from tail_lib.windows import Last
 from tail_lib.windows import Trailing
 from tail_lib.windows import Windows
 
@@ -108,21 +109,22 @@ class HistoricalSimulationsModel(ValueAtRiskModel):
 
     It is the forecast for the return of date `t + 1`. With a `step` above 1,
     each value-at-risk is held until the next window ends. Dates before the
-    first full window are `NaN`.
+    first full window are `NaN`. With a `Last` window, there is one
+    value-at-risk, on the last date.
 
     The quantile interpolates between order statistics as set by
     `interpolation`: "linear" (numpy's default), "below" (the order statistic
     at or below the quantile) or "above" (the one at or above it).
     """
 
-    _window: Trailing
+    _window: Trailing | Last
     _interpolation: InterpolationMethod
 
     def __init__(
         self,
         *,
         cf: float,
-        window: Trailing,
+        window: Trailing | Last,
         interpolation: InterpolationMethod = "linear",
     ) -> None:
         super().__init__(cf=cf)
