@@ -4,7 +4,11 @@ description = "Risk measure computation library"
 readme = "README.md"
 authors = [{ name = "Maxime Filippini", email = "maxime.filippini@gmail.com" }]
 requires-python = ">=3.12"
-dependencies = ["numpy>=2.2", "scipy>=1.18.1"]
+dependencies = [
+    "numpy>=2.2",
+    "pydantic>=2.13",
+    "scipy>=1.18.1",
+]
 dynamic = ["version"]
 
 [build-system]

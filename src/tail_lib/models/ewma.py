@@ -57,6 +57,12 @@ type EwmaStart = Backcast | StartingVol
 
 DEFAULT_EWMA_START = Backcast(window=20)
 
+DEFAULT_DECAY_BOUNDS = (0.8, 0.9999)
+"""The default search interval of a decay factor fit."""
+
+DEFAULT_FIT_ITERATIONS = 40
+"""The default number of golden-section iterations of a decay factor fit."""
+
 
 def starting_variance(r: FloatArray, start: EwmaStart) -> tuple[int, FloatArray]:
     """Date the EWMA recursion starts on, and the variance on that date.
@@ -218,9 +224,9 @@ def ewma_neg_log_likelihood(
 def fit_ewma_decay(
     r: FloatArray,
     *,
-    bounds: tuple[float, float] = (0.8, 0.9999),
+    bounds: tuple[float, float] = DEFAULT_DECAY_BOUNDS,
     start: EwmaStart = DEFAULT_EWMA_START,
-    n_iter: int = 40,
+    n_iter: int = DEFAULT_FIT_ITERATIONS,
 ) -> FloatArray:
     """Fit EWMA decay factors by maximum likelihood.
 
@@ -279,9 +285,9 @@ class EwmaDecayCalibration(DecayModel):
         self,
         window: Trailing,
         *,
-        bounds: tuple[float, float] = (0.8, 0.9999),
+        bounds: tuple[float, float] = DEFAULT_DECAY_BOUNDS,
         start: EwmaStart = DEFAULT_EWMA_START,
-        n_iter: int = 40,
+        n_iter: int = DEFAULT_FIT_ITERATIONS,
     ) -> None:
         """Build the calibration.
 
