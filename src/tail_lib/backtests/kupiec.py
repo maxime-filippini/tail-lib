@@ -9,14 +9,13 @@ import numpy as np
 from scipy import special
 from scipy import stats
 
-from tail_lib.backtests.overshootings import Overshootings
 from tail_lib.graph import Node
 
 if TYPE_CHECKING:
     from tail_lib._typing import FloatArray
     from tail_lib._typing import IntArray
+    from tail_lib.backtests.overshootings import Overshootings
     from tail_lib.graph import Cache
-    from tail_lib.models.value_at_risk import ValueAtRiskModel
     from tail_lib.time_series import TimeSeries
 
 
@@ -109,16 +108,17 @@ class KupiecTest(Node[KupiecResult]):
     `kupiec_pof` at the model's confidence level.
     """
 
-    def __init__(self, var_model: ValueAtRiskModel) -> None:
+    def __init__(self, overshootings: Overshootings) -> None:
         """Build the test of a model.
 
         Args:
-            var_model (ValueAtRiskModel): The model to test. Its confidence
-                level sets the overshooting rate expected under the model.
+            overshootings (Overshootings): The overshootings of the model to
+                test. Their confidence level `cf_var` sets the overshooting
+                rate expected under the model.
 
         """
-        self._overshootings = Overshootings(var_model)
-        self._cf_var = var_model.cf
+        self._overshootings = overshootings
+        self._cf_var = overshootings.cf_var
 
     def evaluate(self, cache: Cache) -> KupiecResult:  # noqa: D102
         return self.compute(cache.get(self._overshootings))

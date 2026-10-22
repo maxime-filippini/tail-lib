@@ -3,6 +3,7 @@ import pytest
 
 from tail_lib.backtests.kupiec import KupiecTest
 from tail_lib.backtests.kupiec import kupiec_pof
+from tail_lib.backtests.overshootings import Overshootings
 from tail_lib.backtests.overshootings import overshootings
 from tail_lib.graph import Cache
 from tail_lib.graph import Pool
@@ -85,7 +86,7 @@ def test_kupiec_test_node_matches_functions() -> None:
     returns = returns_series(n=300, n_assets=2)
     model = HistoricalSimulationsModel(cf=0.95, window=Trailing(length=100))
 
-    result = KupiecTest(model).run(returns)
+    result = KupiecTest(Overshootings(model)).run(returns)
 
     expected = kupiec_pof(overshootings(model.run(returns), returns), cf_var=0.95)
     np.testing.assert_array_equal(result.n_obs, expected.n_obs)
@@ -96,7 +97,7 @@ def test_kupiec_test_node_matches_functions() -> None:
 def test_kupiec_test_uses_the_model_confidence_level() -> None:
     model = GaussianModel(cf=0.975, vol_model=ConstantVolatility(0.01))
 
-    result = KupiecTest(model).run(returns_series(n=50))
+    result = KupiecTest(Overshootings(model)).run(returns_series(n=50))
 
     assert result.expected_rate == pytest.approx(0.025)
 
@@ -117,9 +118,27 @@ def test_backtests_reuse_var_computed_in_the_same_cache() -> None:
     cache = Cache(returns_series(n=n))
 
     var = Pool(models).evaluate(cache)
-    tests = Pool({name: KupiecTest(m) for name, m in models.items()}).evaluate(cache)
+    tests = Pool(
+        {name: KupiecTest(Overshootings(m)) for name, m in models.items()}
+    ).evaluate(cache)
 
     assert _CountingGaussian.n_calls == 1
     assert set(var) == set(tests) == {"gaussian", "hs"}
     # The first date has no previous VaR to compare with.
     assert tests["gaussian"].n_obs == n - 1
+
+
+def test_backtests_of_a_model_share_its_overshootings() -> None:
+    class _CountingOvershootings(Overshootings):
+        n_calls = 0
+
+        def compute(self, returns: TimeSeries, *, var: TimeSeries) -> TimeSeries:
+            _CountingOvershootings.n_calls += 1
+            return super().compute(returns, var=var)
+
+    model = GaussianModel(cf=0.99, vol_model=ConstantVolatility(0.01))
+    ovs = _CountingOvershootings(model)
+
+    Pool({"a": KupiecTest(ovs), "b": KupiecTest(ovs)}).run(returns_series(n=50))
+
+    assert _CountingOvershootings.n_calls == 1

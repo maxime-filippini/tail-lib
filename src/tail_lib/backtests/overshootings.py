@@ -51,7 +51,8 @@ class Overshootings(Preprocessor):
     """The overshootings of a value-at-risk model, as a node.
 
     Computes the model's value-at-risk, then flags its overshootings with
-    `overshootings`.
+    `overshootings`. Backtests take this node rather than the model: pass one
+    instance to several backtests of a model to flag its overshootings once.
     """
 
     def __init__(self, var_model: ValueAtRiskModel) -> None:
@@ -62,6 +63,11 @@ class Overshootings(Preprocessor):
 
         """
         self._var_model = var_model
+
+    @property
+    def cf_var(self) -> float:
+        """The confidence level of the value-at-risk model."""
+        return self._var_model.cf
 
     def evaluate(self, cache: Cache) -> TimeSeries:  # noqa: D102
         return self.compute(cache.returns, var=cache.get(self._var_model))

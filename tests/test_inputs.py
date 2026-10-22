@@ -3,6 +3,7 @@ import pytest
 
 from tail_lib.backtests.kupiec import KupiecTest
 from tail_lib.backtests.kupiec import kupiec_pof
+from tail_lib.backtests.overshootings import Overshootings
 from tail_lib.backtests.overshootings import overshootings
 from tail_lib.graph import Pool
 from tail_lib.models.value_at_risk import GaussianModel
@@ -20,7 +21,7 @@ def test_var_input_is_backtested_like_the_model_it_came_from() -> None:
     hs = HistoricalSimulationsModel(cf=0.99, window=Trailing(length=100))
     precomputed = hs.run(returns)
 
-    from_input = KupiecTest(ValueAtRiskInput("var_99", cf=0.99)).run(
+    from_input = KupiecTest(Overshootings(ValueAtRiskInput("var_99", cf=0.99))).run(
         returns, inputs={"var_99": precomputed}
     )
 
