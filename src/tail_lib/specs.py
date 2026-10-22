@@ -225,3 +225,16 @@ type ValueAtRiskSpec = Annotated[
     ValueAtRiskInputSpec | HistoricalSimulationsSpec | GaussianSpec,
     Field(discriminator="type"),
 ]
+
+
+# Backtests.
+
+
+class KupiecSpec(Spec):
+    """Spec of a `KupiecTest`, run on the overshootings of a model."""
+
+    type: Literal["kupiec"] = "kupiec"
+
+
+# A tagged union, like the other roles, once there is a second backtest.
+type BacktestSpec = KupiecSpec

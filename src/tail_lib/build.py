@@ -4,6 +4,9 @@ A `Builder` turns each spec into its node, building the node's inputs from
 the nested specs first. It remembers the node built for each spec, so
 identical specs, even written separately, give one node instance, which a
 `Cache` then computes once (D3).
+
+The builder also records the run inputs (R13) its specs read, so a run can
+check they are all given before computing anything.
 """
 
 from __future__ import annotations
@@ -13,6 +16,9 @@ from typing import assert_never
 
 import numpy as np
 
+from tail_lib.backtests.kupiec import KupiecResult
+from tail_lib.backtests.kupiec import KupiecTest
+from tail_lib.backtests.overshootings import Overshootings
 from tail_lib.models.ewma import Backcast
 from tail_lib.models.ewma import ConstantDecay
 from tail_lib.models.ewma import EwmaDecayCalibration
@@ -31,6 +37,7 @@ from tail_lib.models.volatility import FittedEwmaVolatility
 from tail_lib.models.volatility import VolatilityInput
 from tail_lib.models.volatility import VolatilityModel
 from tail_lib.specs import BackcastSpec
+from tail_lib.specs import BacktestSpec
 from tail_lib.specs import ConstantDecaySpec
 from tail_lib.specs import ConstantMeanSpec
 from tail_lib.specs import ConstantVolatilitySpec
@@ -40,6 +47,7 @@ from tail_lib.specs import EwmaVolatilitySpec
 from tail_lib.specs import FittedEwmaVolatilitySpec
 from tail_lib.specs import GaussianSpec
 from tail_lib.specs import HistoricalSimulationsSpec
+from tail_lib.specs import KupiecSpec
 from tail_lib.specs import MeanSpec
 from tail_lib.specs import StartingVolSpec
 from tail_lib.specs import TrailingSpec
@@ -55,6 +63,10 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
     from tail_lib._typing import FloatArray
+    from tail_lib.graph import Node
+
+# A union, like the specs, once there is a second backtest.
+type BacktestResult = KupiecResult
 
 
 class Builder:
@@ -72,6 +84,16 @@ class Builder:
         self._means: dict[MeanSpec, MeanModel] = {}
         self._constant_decays: dict[ConstantDecaySpec, ConstantDecay] = {}
         self._calibrations: dict[EwmaDecayCalibrationSpec, EwmaDecayCalibration] = {}
+        self._overshootings: dict[ValueAtRiskSpec, Overshootings] = {}
+        self._backtests: dict[
+            tuple[BacktestSpec, ValueAtRiskSpec], Node[BacktestResult]
+        ] = {}
+        self._inputs: dict[str, ValueAtRiskInputSpec | VolatilityInputSpec] = {}
+
+    @property
+    def input_names(self) -> frozenset[str]:
+        """The names of the run inputs read by the nodes built so far."""
+        return frozenset(self._inputs)
 
     def var_model(self, spec: ValueAtRiskSpec) -> ValueAtRiskModel:
         """Get the value-at-risk model of a spec, building it on first request."""
@@ -93,9 +115,54 @@ class Builder:
         """Get the decay calibration of a spec, building it on first request."""
         return _get_or_build(self._calibrations, spec, _build_calibration)
 
+    def overshootings(self, spec: ValueAtRiskSpec) -> Overshootings:
+        """Get the overshootings of a model, building them on first request.
+
+        All the backtests of a model share them.
+        """
+        return _get_or_build(
+            self._overshootings, spec, lambda s: Overshootings(self.var_model(s))
+        )
+
+    def backtest(
+        self, spec: BacktestSpec, model: ValueAtRiskSpec
+    ) -> Node[BacktestResult]:
+        """Get a backtest of a model, building it on first request.
+
+        Args:
+            spec (BacktestSpec): The backtest.
+            model (ValueAtRiskSpec): The model it tests.
+
+        Returns:
+            Node[BacktestResult]: The backtest of the model.
+
+        """
+        return _get_or_build(
+            self._backtests, (spec, model), lambda key: self._build_backtest(*key)
+        )
+
+    def _declare_input(self, spec: ValueAtRiskInputSpec | VolatilityInputSpec) -> None:
+        declared = self._inputs.setdefault(spec.name, spec)
+        if declared != spec:
+            msg = (
+                f"Input {spec.name!r} is declared twice, differently: "
+                f"{declared!r} and {spec!r}!"
+            )
+            raise ValueError(msg)
+
+    def _build_backtest(
+        self, spec: BacktestSpec, model: ValueAtRiskSpec
+    ) -> Node[BacktestResult]:
+        match spec:
+            case KupiecSpec():
+                return KupiecTest(self.overshootings(model))
+            case _:
+                assert_never(spec)
+
     def _build_var_model(self, spec: ValueAtRiskSpec) -> ValueAtRiskModel:
         match spec:
             case ValueAtRiskInputSpec():
+                self._declare_input(spec)
                 return ValueAtRiskInput(spec.name, cf=spec.cf)
             case HistoricalSimulationsSpec():
                 return HistoricalSimulationsModel(
@@ -115,6 +182,7 @@ class Builder:
     def _build_volatility(self, spec: VolatilitySpec) -> VolatilityModel:
         match spec:
             case VolatilityInputSpec():
+                self._declare_input(spec)
                 return VolatilityInput(spec.name)
             case ConstantVolatilitySpec():
                 return ConstantVolatility(_values(spec.vol))
