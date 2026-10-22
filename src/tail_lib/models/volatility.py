@@ -29,6 +29,32 @@ class VolatilityModel(Preprocessor):
     """
 
 
+class VolatilityInput(VolatilityModel):
+    """Volatilities passed in at run time, under a name (R13).
+
+    The volatility on date `t` is the input's value on date `t`. Like every
+    volatility model's, it should be the forecast for date `t + 1`, using data
+    up to and including `t`: the library cannot check this.
+    """
+
+    def __init__(self, name: str) -> None:
+        """Build the model.
+
+        Args:
+            name (str): The name of the input, as passed to `run`.
+
+        """
+        self._name = name
+
+    @property
+    def name(self) -> str:
+        """The name of the input."""
+        return self._name
+
+    def evaluate(self, cache: Cache) -> TimeSeries:  # noqa: D102
+        return cache.input(self._name)
+
+
 class ConstantVolatility(VolatilityModel):
     """The same volatility on every date.
 

@@ -4,6 +4,10 @@ A node is one computation on a returns time series: a preprocessor (a model
 input such as a volatility), a value-at-risk model, or a backtest. A node gets
 its inputs, the outputs of other nodes, from a `Cache`, which computes each
 node at most once.
+
+Data from outside a run, e.g. value-at-risk forecasts computed earlier, enters
+it as named inputs (R13): the caller passes them to the cache by name, and an
+input node reads its own name.
 """
 
 from __future__ import annotations
@@ -40,17 +44,23 @@ class Node[T](ABC):
 
         """
 
-    def run(self, returns: TimeSeries) -> T:
+    def run(
+        self,
+        returns: TimeSeries,
+        inputs: Mapping[str, TimeSeries] | None = None,
+    ) -> T:
         """Compute this node on the returns, with a fresh cache.
 
         Args:
             returns (TimeSeries): The returns time series.
+            inputs (Mapping[str, TimeSeries] | None): The named inputs of the
+                run, each with the dates and shape of `returns`.
 
         Returns:
             T: The output of this node.
 
         """
-        return Cache(returns).get(self)
+        return Cache(returns, inputs).get(self)
 
 
 class Preprocessor(Node[TimeSeries]):
@@ -62,16 +72,26 @@ class Cache:
 
     Each node is computed at most once per cache. Nodes are identified by
     instance: share one instance between nodes to share its computation.
+
+    The cache also holds the named inputs of the run. Inputs no node reads are
+    ignored.
     """
 
-    def __init__(self, returns: TimeSeries) -> None:
+    def __init__(
+        self,
+        returns: TimeSeries,
+        inputs: Mapping[str, TimeSeries] | None = None,
+    ) -> None:
         """Build an empty cache for a returns time series.
 
         Args:
             returns (TimeSeries): The returns every node is computed on.
+            inputs (Mapping[str, TimeSeries] | None): The named inputs of the
+                run, each with the dates and shape of `returns`.
 
         """
         self._returns = returns
+        self._inputs = {} if inputs is None else dict(inputs)
         # Nodes have different output types: `get` restores the type of each.
         self._outputs: dict[Node[Any], Any] = {}
         self._pending: set[Node[Any]] = set()
@@ -80,6 +100,32 @@ class Cache:
     def returns(self) -> TimeSeries:
         """The returns every node is computed on."""
         return self._returns
+
+    def input(self, name: str) -> TimeSeries:
+        """Get a named input of the run.
+
+        Args:
+            name (str): The name of the input.
+
+        Returns:
+            TimeSeries: The input, with the dates and shape of the returns.
+
+        Raises:
+            KeyError: If no input has this name.
+            ValueError: If the input does not match the returns.
+
+        """
+        if name not in self._inputs:
+            msg = f"Missing input {name!r}! Inputs given: {sorted(self._inputs)}."
+            raise KeyError(msg)
+
+        value = self._inputs[name]
+        try:
+            self._returns.check_aligned(value)
+        except ValueError as error:
+            msg = f"Input {name!r} does not match the returns: {error}"
+            raise ValueError(msg) from error
+        return value
 
     def get[T](self, node: Node[T]) -> T:
         """Get the output of a node, computing it on first request.
@@ -133,14 +179,20 @@ class Pool[T]:
         """
         return {name: cache.get(node) for name, node in self._nodes.items()}
 
-    def run(self, returns: TimeSeries) -> dict[str, T]:
+    def run(
+        self,
+        returns: TimeSeries,
+        inputs: Mapping[str, TimeSeries] | None = None,
+    ) -> dict[str, T]:
         """Compute every node of the pool on the returns, with a fresh cache.
 
         Args:
             returns (TimeSeries): The returns time series.
+            inputs (Mapping[str, TimeSeries] | None): The named inputs of the
+                run, each with the dates and shape of `returns`.
 
         Returns:
             dict[str, T]: The output of each node, keyed by name.
 
         """
-        return self.evaluate(Cache(returns))
+        return self.evaluate(Cache(returns, inputs))

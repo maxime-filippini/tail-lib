@@ -66,6 +66,37 @@ class ValueAtRiskModel(Node[TimeSeries]):
         return self._cf
 
 
+class ValueAtRiskInput(ValueAtRiskModel):
+    """Value-at-risk forecasts passed in at run time, under a name (R13).
+
+    The value-at-risk on date `t` is the input's value on date `t`. Like every
+    value-at-risk model's, it should be the forecast for date `t + 1`, using
+    data up to and including `t`, at confidence level `cf`: the library cannot
+    check this. Backtests read `cf` from here.
+    """
+
+    _name: str
+
+    def __init__(self, name: str, *, cf: float) -> None:
+        """Build the model.
+
+        Args:
+            name (str): The name of the input, as passed to `run`.
+            cf (float): The confidence level the forecasts were computed at.
+
+        """
+        super().__init__(cf=cf)
+        self._name = name
+
+    @property
+    def name(self) -> str:
+        """The name of the input."""
+        return self._name
+
+    def evaluate(self, cache: Cache) -> TimeSeries:  # noqa: D102
+        return cache.input(self._name)
+
+
 class HistoricalSimulationsModel(ValueAtRiskModel):
     """Value-at-risk as an empirical quantile of the returns in a trailing window.
 
