@@ -10,8 +10,9 @@ Working rules, from `CLAUDE.md` and the developer:
 - Commit only when the developer says so. Commits have no co-author trailer.
 
 State as of 2026-10-22: branch `feat/model-api`, not pushed, all checks
-green (ty, ruff, 140 tests). Rolling backtests, with `Last`, are done and
-committed. Steps 1 to 3 of `Last` windows for models are committed.
+green (ty, ruff, 142 tests). Rolling backtests, with `Last`, are done and
+committed. `Last` windows for models are done and committed. The docs
+closing them, and the JSON round trip test, are not committed.
 
 ## Next up
 
@@ -92,20 +93,35 @@ picked B. Steps, one change each:
 3. Done: `RunSpec` rejects a run with backtests and a model with a `last`
    window anywhere in its spec, naming the model and the window's path.
    It's checked when the spec is parsed (R9b), not in the `Builder`, so
-   `Builder.backtest` used directly in Python doesn't check it. Step 4 will
-   narrow the check to the models each backtest runs on.
-4. Per-backtest model filter: a backtest spec takes `"models": [...]`, so a
-   run can hold both `Last` models and backtests (today every backtest runs
-   on every model, R4).
+   `Builder.backtest` used directly in Python doesn't check it.
+
+Done. Every backtest still runs on every model (R4), so `last` models and
+backtests go in separate runs: a backtesting run of rolling models, and a
+production run of `last` models (e.g. today's VaR) without backtests. They
+share almost no work, so splitting them costs little. A per-backtest model
+filter was considered and declined for now, see below.
 
 ### 3. JSON round trip (R9, spec increment 3)
 
-Parsing already works. What's left is a test that `RunSpec.model_dump_json()`
-parses back to an equal spec (lists come back as tuples), and maybe a small
-`load_run_spec(path)` helper. Note: `RunSpec` holds dicts, so it is frozen
-but not hashable, which is fine since only sub-specs are table keys.
+Done: a test dumps two run specs, which hold every spec class between them,
+and parses them back to equal specs and the same text. The dump spells out
+every default. Not done: a `load_run_spec(path)` helper (new public API, to
+propose if wanted). Note: `RunSpec` holds dicts, so it is frozen but not
+hashable, which is fine since only sub-specs are table keys.
 
 ## Design questions, not started
+
+### Per-backtest model filter (declined for now)
+
+Every backtest runs on every model (R4). A filter would let one run hold
+both `last` models and backtests, or run different tests on different
+models. Declined by the developer: separate runs cover the `last` case.
+If it's needed later, the options were: (A) `"models": [...]` on the
+backtest spec, which breaks "a spec's fields mirror its node's arguments"
+and the sharing of identical backtests; (B) a run-level entry wrapping the
+test, `{"test": {...}, "models": [...]}` (recommended for different tests
+on different models); (C) one `backtested_models` list on the run. The
+`last`-window check in `RunSpec` would then apply only to backtested models.
 
 ### Returns as a node (pinned by the developer)
 
