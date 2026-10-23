@@ -263,6 +263,79 @@ def test_find_last_window_gives_none_without_one() -> None:
     assert find_last_window(model) is None
 
 
+_TRAILING = {"type": "trailing", "length": 100, "step": 5}
+
+# Between them, the two runs hold every spec class, and lists of values.
+_BACKTESTING_RUN = {
+    "models": {
+        "fitted": {
+            "type": "gaussian",
+            "cf": 0.99,
+            "vol": {
+                "type": "fitted_ewma",
+                "calibration": {
+                    "type": "ewma_calibration",
+                    "window": _TRAILING,
+                    "bounds": [0.8, 0.99],
+                    "start": {"type": "backcast", "window": 10},
+                    "n_iter": 30,
+                },
+            },
+            "mean": {"type": "constant", "mean": [0.0, 0.001]},
+        },
+        "ewma": {
+            "type": "gaussian",
+            "cf": 0.975,
+            "vol": {
+                "type": "ewma",
+                "decay": {"type": "constant", "value": [0.94, 0.97]},
+                "start": {"type": "starting_vol", "vol": 0.01},
+            },
+        },
+        "constant": {
+            "type": "gaussian",
+            "cf": 0.95,
+            "vol": {"type": "constant", "vol": [0.01, 0.02]},
+        },
+        "on_input": {
+            "type": "gaussian",
+            "cf": 0.99,
+            "vol": {"type": "input", "name": "v"},
+        },
+        "hs": {
+            "type": "historical",
+            "cf": 0.99,
+            "window": _TRAILING,
+            "interpolation": "below",
+        },
+        "ext": {"type": "input", "name": "var_ext", "cf": 0.99},
+    },
+    "backtests": {
+        "kupiec": {"type": "kupiec"},
+        "kupiec_250": {"type": "kupiec", "window": {"type": "trailing", "length": 250}},
+        "kupiec_last": {"type": "kupiec", "window": {"type": "last", "length": 250}},
+    },
+}
+
+_PRODUCTION_RUN = {
+    "models": {
+        "today": _GAUSS_ON_LAST_CALIBRATION,
+        "hs_today": {"type": "historical", "cf": 0.99, "window": _LAST},
+    }
+}
+
+
+@pytest.mark.parametrize("spec", [_BACKTESTING_RUN, _PRODUCTION_RUN])
+def test_a_run_spec_round_trips_through_json(spec: dict) -> None:
+    parsed = RunSpec.model_validate(spec)
+
+    text = parsed.model_dump_json()
+
+    assert RunSpec.model_validate_json(text) == parsed
+    # Writing it again gives the same text: nothing is lost or added.
+    assert RunSpec.model_validate_json(text).model_dump_json() == text
+
+
 def test_a_run_is_reusable_on_other_returns() -> None:
     spec = RunSpec.model_validate(
         {

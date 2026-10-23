@@ -75,7 +75,9 @@ parsed by pydantic. YAML could later be a loader producing dicts.
    ...). Field names, types and value ranges are all checked here, and an
    error gives the path to the faulty value, e.g.
    `vol.ewma.decay.value.list.1` (R9b). `Values[T]` is a single value or a
-   non-empty list (one value per series).
+   non-empty list (one value per series). `spec.model_dump_json()` writes a
+   spec back, with every default spelled out (e.g. `"step": 1`,
+   `"window": null`), and parses back to an equal spec.
 2. **Build.** `Run(spec)` uses a `Builder`, which turns each spec into its
    node with a plain `match`, one typed method per role (`var_model`,
    `volatility`, `mean`, `constant_decay`, `calibration`, `overshootings`,
