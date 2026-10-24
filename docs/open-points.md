@@ -12,7 +12,7 @@ Working rules, from `CLAUDE.md` and the developer:
 - Commit only when the developer says so. Commits have no co-author trailer.
 
 State as of 2026-10-24: branch `feat/model-api`, not pushed, all checks
-green (ty, ruff, 168 tests), nothing uncommitted. The example
+green (ty, ruff, 185 tests), nothing uncommitted. The example
 script `examples/backtest_hs_fhs.py` is to be rewritten with nodes in
 step 3 below.
 
@@ -43,6 +43,9 @@ step 3 below.
    `Distribution`, and have `GaussianModel` use `Gaussian().quantile(...)`
    instead of `stats.norm.ppf`. A Student-t VaR, and ES, would then reuse
    the same classes.
+5. **Simulator, step 2.** Replace `simulate_ewma` in `tests/helpers.py` and
+   `simulate_garch_returns` in `examples/backtest_hs_fhs.py` with the
+   `Simulator`.
 
 ## Decisions on finished work
 
@@ -160,7 +163,8 @@ shape.
 
 The gain is composability, not reuse:
 
-- demeaned or portfolio returns (R5, R2);
+- demeaned or portfolio returns (R5, R2), e.g. to filter back the
+  volatilities of a simulation with an AR mean (R18);
 - backtesting against a different P&L series.
 
 Alternatives: B, returns as a named input (`run(inputs={"returns": ...})`),
@@ -173,6 +177,30 @@ node instead: `FilteredHistoricalSimulationsModel` takes a `VolatilityFilter`
 (`(r[t] - mean[t - 1]) / vol[t - 1]`, zero mean by default), and rescales the
 quantile with the filter's mean and volatility. One filter can be shared by
 several FHS models, e.g. on 500 and 750 dates.
+
+### Simulator and estimation models (R18)
+
+The shocks are a `Distribution` subclass (`distributions.py`), chosen by
+the developer over a `Shocks` union, a `Protocol`, one class with a name
+field, and wrapped SciPy distributions (loose types, R11).
+
+Chosen by the developer (option A): the simulator's processes
+(`ArProcess`, `EwmaProcess`, `GarchProcess`) are separate from the model
+nodes, and share only the one-step recursions (`ewma_update`,
+`garch_update`). Rejected (B): a `simulate` method on the volatility nodes,
+whose parameters are nodes, and some of which (`FittedEwmaVolatility`,
+`VolatilityInput`, a `Backcast` start) can't simulate.
+
+For later (option C, noted by the developer): shared parameter objects,
+e.g. `GarchParams(omega, alpha, beta)`, output by a future GARCH
+calibration node and taken by the simulator, so a fit can be simulated
+from. To revisit when GARCH estimation lands. The library has no GARCH
+volatility model yet, nor an AR mean model.
+
+The simulator's recursions run on the residuals `r - mu`, while the
+volatility models run on the raw returns. A model only filters back the
+simulated volatilities with a zero mean, until the volatility models can
+read demeaned returns: see "Returns as a node".
 
 ### Spec shorthands and defaults (R9a)
 
@@ -200,5 +228,8 @@ different models); (C) one `backtested_models` list on the run. The
   the shared `Overshootings` node and an optional `window`, like Kupiec. See
   "Adding a node type" in `docs/architecture.md`.
 - **Expected shortfall (R1).**
+- **GARCH volatility and AR mean models:** estimation nodes using
+  `garch_update`, and an AR mean model. See "Simulator and estimation
+  models" for option C.
 - **Benchmarking (R4):** ranking criteria are an open question.
 - **Multivariate models (R2):** the axis convention is an open question.

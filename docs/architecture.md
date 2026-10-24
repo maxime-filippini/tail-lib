@@ -24,11 +24,13 @@ How tail-lib is organized, and how a call flows from a spec to the numbers
 | `graph.py` | `Node`, `Preprocessor`, `Cache`, `Pool`: the computation graph. |
 | `models/mean.py` | `MeanModel`, `ZeroMean`, `ConstantMean`. |
 | `models/ewma.py` | EWMA start specs (`Backcast`, `StartingVol`), the recursion (`ewma_update`, `ewma_variance`), decay nodes (`ConstantDecay`, `EwmaDecayCalibration`) and the decay fit. |
+| `models/garch.py` | The GARCH(1, 1) recursion (`garch_update`), shared by the simulator and a future GARCH volatility model. |
 | `models/volatility.py` | `VolatilityModel`, `VolatilityInput`, `ConstantVolatility`, `EwmaVolatility`, `FittedEwmaVolatility` (D7), `VolatilityFilter`. |
 | `models/value_at_risk.py` | `ValueAtRiskModel`, `ValueAtRiskInput`, `HistoricalSimulationsModel` (D2), `FilteredHistoricalSimulationsModel`, `GaussianModel`. |
 | `backtests/overshootings.py` | `overshootings` (function) and `Overshootings` (node). |
 | `backtests/kupiec.py` | `kupiec_pof` (function), `KupiecResult`, `KupiecTest` (node). |
-| `distributions.py` | `Distribution`, the base class of distributions with zero mean and unit variance, and `Gaussian`, `StudentT`. Shocks of simulations, and later parametric VaR and ES models, use them. |
+| `distributions.py` | `Distribution`, the base class of distributions with zero mean and unit variance, and `Gaussian`, `StudentT`. The simulator draws its shocks from them; parametric VaR and ES models will read their quantiles. |
+| `simulation.py` | `Simulator` and its processes `ArProcess`, `EwmaProcess`, `GarchProcess`; the output `Simulation` (R18). |
 | `specs.py` | Pydantic specs mirroring each node, with value ranges (R9, R9b). |
 | `build.py` | `Builder`: specs to nodes, one node per distinct spec (R9a, D3). |
 | `run.py` | `RunSpec`, `Run`, `RunResult`: models and backtests in one run. |
@@ -182,6 +184,35 @@ wires each backtest to its model, missing inputs are only reported when
 read, and there is no spec to save. Runs take specs only; a `Run` built
 from nodes was considered and set aside until a model defined outside the
 library needs to join a run.
+
+## Simulating returns (R18)
+
+`simulation.py` is outside the node graph: a simulation reads no returns, and
+its parameters are set by hand, so its parts are plain frozen dataclasses.
+The shocks are any `Distribution` (`distributions.py`).
+
+```python
+sim = Simulator(
+    mean=ArProcess(const=0.0, ar=(0.05,)),
+    vol=GarchProcess(omega=2e-6, alpha=0.08, beta=0.90),
+    shocks=StudentT(df=5),
+).simulate(2520, first_date=date(2015, 1, 1), batch_shape=(100,), rng=42)
+sim.returns, sim.means, sim.vols  # TimeSeries of shape (2520, 100)
+```
+
+`Simulator.simulate` is one loop over the dates, vectorized over the batch.
+On date `t`: `eps[t] = sigma[t] * z[t]`, `r[t] = mu[t] + eps[t]`, then the
+volatility process updates the variance with `eps[t]` and the AR process
+updates the mean with `r[t]`. `means` and `vols` hold, on `t`, the mean and
+volatility of `t + 1` (D1, D8), so they compare directly with a model's
+output.
+
+The processes call the same one-step recursions as the models
+(`ewma_update`, `garch_update`), so the formulas are written once. A test
+checks that `EwmaVolatility` with the true decay and starting volatility
+gives back the simulated volatilities exactly. This only holds with a zero
+mean: the simulator's recursion runs on residuals, `EwmaVolatility` on the
+raw returns (see "Returns as a node" in `docs/open-points.md`).
 
 ## Adding a node type
 

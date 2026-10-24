@@ -33,6 +33,12 @@ Requirements are numbered so changes and reviews can cite them (e.g. "R4").
   simulation on 500 days, filtered by an EWMA volatility with a 20-day
   backcast, has its first window on filtered returns 20 to 519.
 
+### Simulation
+
+- **R18** — Simulate returns easily, from a basic AR mean with an EWMA or a
+  GARCH volatility. EWMA simulations can explode: that is accepted, and left
+  to the user to watch for.
+
 ### Performance
 
 - **R6** — Running many calculations at once (many models, many series) is a
@@ -117,6 +123,14 @@ The core developer needs to confirm them.
   specified once, on the calibration, and is usually much longer than the
   backcast (e.g. 250 days vs 20). This is how `rugarch` and `arch` produce
   forecasts after a refit.
+
+- **D8** — *Simulator details.* Agreed in design, part of R18: the
+  simulator returns the true means and volatilities next to the returns,
+  dated like the models (D1); the shocks are drawn from a `Distribution`
+  with zero mean and unit variance, Gaussian or Student-t for now; GARCH
+  starts from its long-run variance (`alpha + beta < 1`), EWMA from a given
+  starting volatility, the AR lags from the long-run mean, with an optional
+  burn-in; the variance recursions run on the residuals `r - mu`.
 
 ## Open questions
 
