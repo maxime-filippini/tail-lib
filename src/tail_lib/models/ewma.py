@@ -9,6 +9,8 @@ from typing import assert_never
 
 import numpy as np
 
+from tail_lib._checks import check_positive
+from tail_lib._checks import check_unit_interval
 from tail_lib.graph import Cache
 from tail_lib.graph import Preprocessor
 from tail_lib.time_series import TimeSeries
@@ -49,9 +51,7 @@ class StartingVol:
     vol: FloatArray | float
 
     def __post_init__(self) -> None:
-        if np.any(np.asarray(self.vol) <= 0):
-            msg = "Starting volatility has to be positive!"
-            raise ValueError(msg)
+        check_positive("Starting volatility", self.vol)
 
 
 type EwmaStart = Backcast | StartingVol
@@ -168,9 +168,7 @@ class ConstantDecay(DecayModel):
 
         """
         self._decay_factor = np.asarray(decay_factor)
-        if np.any(self._decay_factor < 0) or np.any(self._decay_factor > 1):
-            msg = "Decay factor has to be in [0,1]!"
-            raise ValueError(msg)
+        check_unit_interval("Decay factor", self._decay_factor)
 
     def dependencies(self) -> Dependencies:  # noqa: D102
         return {}

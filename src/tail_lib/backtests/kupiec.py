@@ -9,6 +9,7 @@ import numpy as np
 from scipy import special
 from scipy import stats
 
+from tail_lib._checks import check_probability
 from tail_lib.graph import Node
 from tail_lib.windows import Windows
 
@@ -103,9 +104,7 @@ def kupiec_pof(
             the flags from the first date every series has one.
 
     """
-    if cf_var <= 0 or cf_var >= 1:
-        msg = "Confidence level has to be in (0,1)!"
-        raise ValueError(msg)
+    check_probability("Confidence level", cf_var)
 
     # The flags of each window: the dates inside the window on the first axis,
     # then the windows, then the series.

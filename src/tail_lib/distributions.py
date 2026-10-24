@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from tail_lib._shapes import check_broadcasts
+from tail_lib._checks import check_broadcasts
 
 if TYPE_CHECKING:
     from tail_lib._typing import FloatArray

@@ -27,7 +27,9 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from tail_lib._shapes import check_broadcasts
+from tail_lib._checks import check_broadcasts
+from tail_lib._checks import check_positive
+from tail_lib._checks import check_unit_interval
 from tail_lib.calendar import Calendar
 from tail_lib.distributions import Distribution
 from tail_lib.distributions import Gaussian
@@ -136,13 +138,8 @@ class EwmaProcess:
     start_vol: FloatArray | float
 
     def __post_init__(self) -> None:
-        decay = np.asarray(self.decay)
-        if np.any(decay < 0) or np.any(decay > 1):
-            msg = "Decay factor has to be in [0,1]!"
-            raise ValueError(msg)
-        if np.any(np.asarray(self.start_vol) <= 0):
-            msg = "Starting volatility has to be positive!"
-            raise ValueError(msg)
+        check_unit_interval("Decay factor", self.decay)
+        check_positive("Starting volatility", self.start_vol)
 
     def first_variance(self) -> FloatArray:
         """Give the variance of the first date, `start_vol ** 2`."""
@@ -187,9 +184,7 @@ class GarchProcess:
     def __post_init__(self) -> None:
         alpha = np.asarray(self.alpha)
         beta = np.asarray(self.beta)
-        if np.any(np.asarray(self.omega) <= 0):
-            msg = "GARCH omega has to be positive!"
-            raise ValueError(msg)
+        check_positive("GARCH omega", self.omega)
         if np.any(alpha < 0) or np.any(beta < 0):
             msg = "GARCH alpha and beta have to be at least 0!"
             raise ValueError(msg)

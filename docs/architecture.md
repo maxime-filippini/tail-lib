@@ -14,6 +14,10 @@ How tail-lib is organized, and how a call flows from a spec to the numbers
   docs say "overshootings", never "exceedances".
 - **Confidence level**: models take `cf`. In a backtest, the model's level
   is called `cf_var`.
+- **Value checks** are written once, in `_checks.py` (e.g.
+  `check_probability` for every confidence level, `check_unit_interval` for
+  every decay factor), and called by each class that takes the value. Specs
+  check value ranges too, for errors with a path (R9b).
 
 ## Modules
 

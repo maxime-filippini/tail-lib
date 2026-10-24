@@ -132,6 +132,10 @@ the one way in. Chosen by the developer:
   `last` window; only `RunSpec` does.
 - Maybe a `load_run_spec(path)` helper (new public API, to propose if
   wanted). `RunSpec.model_validate_json(path.read_text())` works today.
+- Integer checks are still written in each class: window length (in both
+  `Trailing` and `Last`) and step, backcast window, number of dates and
+  burn-in. A `check_at_least(name, value, minimum)` in `_checks.py` would
+  write them once.
 - `Windows.apply` holds all windows in memory at once. Chunk it for long
   series (R6).
 - The tox matrix varies NumPy only. Consider pinning the lowest pydantic

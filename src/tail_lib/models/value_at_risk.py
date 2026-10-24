@@ -9,6 +9,7 @@ from typing import assert_never
 import numpy as np
 from scipy import stats
 
+from tail_lib._checks import check_probability
 from tail_lib.graph import Cache
 from tail_lib.graph import Node
 from tail_lib.models.mean import MeanModel
@@ -57,10 +58,7 @@ class ValueAtRiskModel(Node[TimeSeries]):
     _cf: float
 
     def __init__(self, cf: float) -> None:
-        if cf <= 0 or cf >= 1:
-            msg = "Confidence level has to be in (0,1)!"
-            raise ValueError(msg)
-
+        check_probability("Confidence level", cf)
         self._cf = cf
 
     @property
