@@ -141,8 +141,30 @@ jobs:
       - name: Build the docs site
         run: uv run --locked --group docs zensical build --strict
 
+      # Uploaded on every run, as the `github-pages` artifact, to inspect a
+      # build. Only pushes to `develop` deploy it.
       - name: Upload the site
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-pages-artifact@v5
         with:
-          name: docs-site
           path: site/
+
+  deploy-docs:
+    name: Deploy docs to GitHub Pages
+    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+    needs: [lint, test, docs]
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    # One deployment at a time; a newer push doesn't cancel one in progress.
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+
+    steps:
+      - name: Deploy the site
+        id: deployment
+        uses: actions/deploy-pages@v5

@@ -115,8 +115,9 @@ developer:
 - The code examples of the user guide (`docs/guide/`) were run by hand
   when written, but aren't tested. Options: a pytest that runs the
   `python` blocks, or `pymdownx.snippets` including tested files.
-- The docs site is built in CI (strict, uploaded as the `docs-site`
-  artifact), but not published yet (GitHub Pages or Cloudflare).
+- The docs site is built in CI on every run, and deployed to GitHub Pages
+  (https://maxime-filippini.github.io/tail-lib/) on pushes to `develop`.
+  Not deployed yet: the docs commits aren't on `develop`.
 - The guide installs from the git repository: tail-lib isn't on PyPI.
 
 - `NaN` in the middle of a window (e.g. a missing return). Proposal: keep

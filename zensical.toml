@@ -5,6 +5,7 @@
 
 [project]
 site_name = "tail-lib"
+site_url = "https://maxime-filippini.github.io/tail-lib/"
 site_description = "Market risk measures, and the backtesting and comparison of the models that compute them."
 site_author = "Maxime Filippini"
 docs_dir = "docs"

@@ -12,7 +12,8 @@ comparison of the models that compute them.
 
 The user documentation (guide and API reference) is a
 [Zensical](https://zensical.org) site, configured in `zensical.toml`, with
-its pages in `docs/guide/` and `docs/reference/`:
+its pages in `docs/guide/` and `docs/reference/`. CI deploys it to
+<https://maxime-filippini.github.io/tail-lib/> on each push to `develop`:
 
 ```sh
 uv run --group docs zensical serve   # preview on http://localhost:8000
