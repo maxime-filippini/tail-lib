@@ -80,9 +80,10 @@ Pool({"kupiec": KupiecTest(ovs)}).run(returns)
 
 ## From a spec to results
 
-Specs are the way in to a run, both serialized (R9) and from Python code
-(R17, see "From Python" below). The serialized format is Python dicts or
-JSON, parsed by pydantic. YAML could later be a loader producing dicts.
+Specs are the way in to a run that can be serialized (R9), e.g. for the
+service receiving JSON (R17). Python code builds nodes instead, see "From
+Python" below. The serialized format is Python dicts or JSON, parsed by
+pydantic. YAML could later be a loader producing dicts.
 
 1. **Parse.** `RunSpec.model_validate_json(text)` (or `model_validate(dict)`)
    gives frozen spec objects. In each slot, a `type` tag picks the spec class
@@ -168,36 +169,59 @@ versions of one test can sit side by side.
 
 ## From Python
 
-Notebooks and scripts (R17) build the same spec objects in code, then call
-`Run.from_spec`, the same entry point as JSON. A service receiving JSON over HTTP
-calls `RunSpec.model_validate_json` instead. Both go through the same checks
-and the same build.
+Notebooks and scripts (R17) build nodes and give them to `Run`. A service
+receiving JSON over HTTP parses a `RunSpec` and calls `Run.from_spec`,
+which builds the nodes with a `Builder`, then makes the same `Run`. Both
+then go through the same graph walk and the same computation.
 
 ```python
-spec = RunSpec(
-    models={
-        f"hs_{n}": HistoricalSimulationsSpec(cf=0.99, window=TrailingSpec(length=n))
-        for n in (250, 500)
+vol = EwmaVolatility(ConstantDecay(0.94))
+vol_filter = VolatilityFilter(vol)
+models = {
+    f"fhs_{n}": FilteredHistoricalSimulationsModel(
+        cf=0.99, filter=vol_filter, window=Trailing(length=n)
+    )
+    for n in (500, 750)
+} | {"gauss": GaussianModel(cf=0.99, vol_model=vol)}
+run = Run(
+    models,
+    backtests={
+        "kupiec": KupiecTest,
+        "kupiec_250": lambda ovs: KupiecTest(ovs, window=Trailing(length=250)),
     },
-    backtests={"kupiec": KupiecSpec()},
 )
-result = Run.from_spec(spec).run(returns)
+result = run.run(returns)
 ```
 
-- The class picks the spec, so the `type` tags can be left out. A list of
-  values (one per series) is a tuple.
-- Values are checked when each spec is built, so an error's path starts at
-  that spec, e.g. `value.list.1` for `ConstantDecaySpec(value=(0.94, 1.5))`.
-- ty reports a missing field or a spec in the wrong slot, e.g. a window
-  given as `vol`. Value ranges are only checked at run time.
-- Identical specs share one node (D3), and `spec.model_dump_json()` records
-  what ran.
+- Sharing is by instance (D3): `vol` and `vol_filter` above are computed
+  once, for all the models that read them. From specs, the `Builder` gives
+  identical specs one node, to the same effect.
+- Each backtest is a function from a model's `Overshootings` to the test
+  node: the class itself (`KupiecTest`) for its defaults, or a lambda for
+  its settings. Every backtest runs on every model (R4), and the backtests
+  of a model share its `Overshootings`. ty checks lambdas; it accepts
+  `functools.partial` without checking its arguments.
+- Values are checked when each node is built, e.g. `ConstantDecay(1.5)`
+  raises. ty reports a missing argument or a node in the wrong slot, e.g. a
+  mean model given as `vol_model`.
+- `Run` walks the graph when it is built (step 3 of "From a spec to
+  results"), so missing inputs are reported before computing, and backtests
+  on a model with a `last` window are rejected, with the path to the window.
+- A run built from nodes has no spec, so it can't be written back as JSON.
 
-Nodes can also be given to `Run` directly, with backtest functions, e.g.
-`Run({"hs": hs}, backtests={"kupiec": KupiecTest})`. The same graph walk
-checks the inputs and `last` windows, but there is no spec to save. This
-section is to be rewritten around nodes, the way in from Python (see
-`docs/open-points.md`).
+Specs can be built in Python too, e.g. to record what ran with
+`spec.model_dump_json()`: `Run.from_spec(RunSpec(models=..., backtests=...))`.
+The class picks the spec, so the `type` tags can be left out, and a list of
+values (one per series) is a tuple. Values are checked when each spec is
+built, so an error's path starts at that spec, e.g. `value.list.1` for
+`ConstantDecaySpec(value=(0.94, 1.5))`.
+
+Nodes can also be computed without a run, with `Pool` or `node.run` (see
+"The node graph"), e.g. in tests: then each backtest is wired to its model
+by hand, and missing inputs are only reported when read.
+
+`examples/backtest_hs_fhs.py` runs HS, FHS and a Gaussian model built this
+way, with a rolling Kupiec test.
 
 ## Simulating returns (R18)
 

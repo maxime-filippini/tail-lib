@@ -12,8 +12,7 @@ Working rules, from `CLAUDE.md` and the developer:
 - Commit only when the developer says so. Commits have no co-author trailer.
 
 State as of 2026-10-24: branch `feat/model-api`, not pushed, all checks
-green (ty, ruff, 226 tests), nothing uncommitted. The example script
-`examples/backtest_hs_fhs.py` is to be rewritten with nodes in step 3 below.
+green (ty, ruff, 226 tests), nothing uncommitted.
 
 ## Next up
 
@@ -27,7 +26,8 @@ green (ty, ruff, 226 tests), nothing uncommitted. The example script
       model's `Overshootings` instead of its spec, and `Builder.overshootings`
       is gone: `Run` makes one per distinct model node.
    3. Docs: rewrite "From Python" in `docs/architecture.md`, and the example
-      script, with nodes.
+      script, with nodes. Done. The example now uses the
+      library's FHS model, sharing one filter, and has no run inputs.
 1. **FHS spec.** `FilteredHistoricalSimulationsModel` has no spec yet, so
    the JSON service can't use it: add it, its builder case and a test that
    it builds the same numbers (see "Adding a node type"). To decide first:
