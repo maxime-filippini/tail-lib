@@ -12,7 +12,7 @@ Working rules, from `CLAUDE.md` and the developer:
 - Commit only when the developer says so. Commits have no co-author trailer.
 
 State as of 2026-10-24: branch `feat/model-api`, not pushed, all checks
-green (ty, ruff, 165 tests), nothing uncommitted. The example
+green (ty, ruff, 168 tests), nothing uncommitted. The example
 script `examples/backtest_hs_fhs.py` is to be rewritten with nodes in
 step 3 below.
 
@@ -39,6 +39,10 @@ step 3 below.
    one), e.g. Jorion, *Value at Risk*.
 3. **Serializing results (R12)**, a design to propose first. See "Design
    questions" below.
+4. **`GaussianModel` on `Distribution`.** Add `quantile(q)` to
+   `Distribution`, and have `GaussianModel` use `Gaussian().quantile(...)`
+   instead of `stats.norm.ppf`. A Student-t VaR, and ES, would then reuse
+   the same classes.
 
 ## Decisions on finished work
 
