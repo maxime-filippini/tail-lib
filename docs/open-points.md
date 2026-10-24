@@ -12,8 +12,8 @@ Working rules, from `CLAUDE.md` and the developer:
 - Commit only when the developer says so. Commits have no co-author trailer.
 
 State as of 2026-10-24: branch `feat/model-api`, not pushed, all checks
-green (ty, ruff, 165 tests). Uncommitted: `examples/backtest_hs_fhs.py`
-with its ruff ignores in `pyproject.toml`, to be rewritten with nodes in
+green (ty, ruff, 165 tests), nothing uncommitted. The example
+script `examples/backtest_hs_fhs.py` is to be rewritten with nodes in
 step 3 below.
 
 ## Next up

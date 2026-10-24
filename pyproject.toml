@@ -45,6 +45,8 @@ ignore = [
 # Tests are plain functions run by pytest: no docstrings, no package, and
 # bare `assert` statements.
 "tests/**" = ["D", "INP001", "S101"]
+# Examples are standalone scripts, not a package, and print their results.
+"examples/**" = ["INP001", "T201"]
 
 [tool.ruff.lint.isort]
 force-single-line = true
