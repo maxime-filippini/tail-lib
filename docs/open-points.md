@@ -64,7 +64,27 @@ Recorded so later changes don't undo them by accident.
 `RunSpec.model_dump_json()` parses back to an equal spec, and spells out
 every default. Tested on specs holding every spec class.
 
+### Runs from Python code (R17)
+
+Notebooks and scripts build spec objects in Python and call `Run`, like the
+JSON service: specs are the one way in to a run. Chosen by the developer
+over the alternatives, kept here in case a model defined outside the
+library has to join a run:
+
+- B: `Run` takes built nodes, and `Run.from_spec` builds them first.
+  Backtests stay templates (specs, or a function of the `Overshootings`),
+  and the input and `last`-window checks need nodes to list the nodes they
+  read. Node-built runs can't be saved as specs.
+- C: B, plus nodes that give back their spec, so node-built runs can be
+  saved (R12, D4).
+
 ## Small open points
+
+- Specs from HTTP (R17) are untrusted. To discuss: limits on what one spec
+  can ask for (number of models, window lengths), and whether the service
+  needs spec errors in a structured form (pydantic's `errors()` gives each
+  path and message).
+- The Python example in `docs/architecture.md` ("From Python") isn't tested.
 
 - `NaN` in the middle of a window (e.g. a missing return). Proposal: keep
   counting the usable flags (`n_obs < length`).

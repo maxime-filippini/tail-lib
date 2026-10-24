@@ -66,8 +66,9 @@ Pool({"kupiec": KupiecTest(ovs)}).run(returns)
 
 ## From a spec to results
 
-Specs are the serialized way in (R9). The format is Python dicts or JSON,
-parsed by pydantic. YAML could later be a loader producing dicts.
+Specs are the way in to a run, both serialized (R9) and from Python code
+(R17, see "From Python" below). The serialized format is Python dicts or
+JSON, parsed by pydantic. YAML could later be a loader producing dicts.
 
 1. **Parse.** `RunSpec.model_validate_json(text)` (or `model_validate(dict)`)
    gives frozen spec objects. In each slot, a `type` tag picks the spec class
@@ -140,6 +141,40 @@ in `specs.py`).
 
 Every backtest runs on every model (R4). Backtests are named, so two
 versions of one test can sit side by side.
+
+## From Python
+
+Notebooks and scripts (R17) build the same spec objects in code, then call
+`Run`, the same entry point as JSON. A service receiving JSON over HTTP
+calls `RunSpec.model_validate_json` instead. Both go through the same checks
+and the same build.
+
+```python
+spec = RunSpec(
+    models={
+        f"hs_{n}": HistoricalSimulationsSpec(cf=0.99, window=TrailingSpec(length=n))
+        for n in (250, 500)
+    },
+    backtests={"kupiec": KupiecSpec()},
+)
+result = Run(spec).run(returns)
+```
+
+- The class picks the spec, so the `type` tags can be left out. A list of
+  values (one per series) is a tuple.
+- Values are checked when each spec is built, so an error's path starts at
+  that spec, e.g. `value.list.1` for `ConstantDecaySpec(value=(0.94, 1.5))`.
+- ty reports a missing field or a spec in the wrong slot, e.g. a window
+  given as `vol`. Value ranges are only checked at run time.
+- Identical specs share one node (D3), and `spec.model_dump_json()` records
+  what ran.
+
+Nodes can also be built directly and computed with `Pool` or `node.run`
+(see "The node graph"), e.g. in tests. That path has no `Run`: the caller
+wires each backtest to its model, missing inputs are only reported when
+read, and there is no spec to save. Runs take specs only; a `Run` built
+from nodes was considered and set aside until a model defined outside the
+library needs to join a run.
 
 ## Adding a node type
 

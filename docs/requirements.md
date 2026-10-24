@@ -42,6 +42,8 @@ Requirements are numbered so changes and reviews can cite them (e.g. "R4").
 
 - **R7** — The library works on its own, and also inside the core developer's
   data service.
+- **R17** — The library is used in one-off notebooks and scripts, and as
+  part of a service that receives specs as JSON over HTTP.
 - **R8** — Callers pass model inputs in as arrays. Building and formatting
   those arrays is the caller's job (for example, the data service's). The
   library validates the inputs it receives and does nothing more with them.
