@@ -11,3 +11,6 @@ wheels/
 
 # Editors
 .vscode
+
+# Docs site build
+site/

@@ -1,0 +1,110 @@
+import numpy as np
+import pytest
+from numpy.lib.stride_tricks import sliding_window_view
+
+from tail_lib.models.ewma import Backcast
+from tail_lib.models.ewma import ConstantDecay
+from tail_lib.models.ewma import EwmaDecayCalibration
+from tail_lib.models.ewma import StartingVol
+from tail_lib.models.ewma import fit_ewma_decay
+from tail_lib.windows import Last
+from tail_lib.windows import Trailing
+from tests.helpers import simulate_ewma
+from tests.helpers import simulated_returns
+
+
+@pytest.mark.parametrize("window", [0, -1])
+def test_backcast_rejects_empty_window(window: int) -> None:
+    with pytest.raises(ValueError, match="at least 1"):
+        Backcast(window=window)
+
+
+def test_starting_vol_rejects_non_positive_vol() -> None:
+    with pytest.raises(ValueError, match="positive"):
+        StartingVol(np.array([0.01, 0.0]))
+
+
+def test_constant_decay_rejects_decay_outside_unit_interval() -> None:
+    with pytest.raises(ValueError, match=r"\[0,1\]"):
+        ConstantDecay(1.1)
+
+
+def test_fit_ewma_decay_recovers_decay_per_batch_element() -> None:
+    true = np.array([[0.9, 0.94, 0.97], [0.92, 0.96, 0.98]])
+    r = simulate_ewma(true, n=2000)
+
+    fitted = fit_ewma_decay(r)
+
+    assert fitted.shape == true.shape
+    np.testing.assert_allclose(fitted, true, atol=0.02)
+
+
+def test_fit_ewma_decay_batched_matches_individual_fits() -> None:
+    r = simulate_ewma(np.array([0.9, 0.97]), n=300)
+
+    fitted = fit_ewma_decay(r)
+
+    for i in range(r.shape[1]):
+        np.testing.assert_allclose(fitted[i], fit_ewma_decay(r[:, i]))
+
+
+def test_fit_ewma_decay_on_rolling_windows() -> None:
+    r = simulate_ewma(np.array([0.9, 0.97]), n=300)
+    w = 250
+    windows = np.moveaxis(sliding_window_view(r, w, axis=0), -1, 0)
+
+    fitted = fit_ewma_decay(windows)
+
+    assert fitted.shape == (r.shape[0] - w + 1, r.shape[1])
+    np.testing.assert_allclose(fitted[-1], fit_ewma_decay(r[-w:]))
+
+
+@pytest.mark.parametrize(
+    ("bounds", "window"),
+    [((0.9, 0.8), 20), ((0.5, 1.1), 20), ((0.8, 0.99), 300)],
+)
+def test_fit_ewma_decay_rejects_invalid_arguments(
+    bounds: tuple[float, float], window: int
+) -> None:
+    r = simulate_ewma(np.array([0.94]), n=300)
+
+    with pytest.raises(ValueError, match=r"(bounds|Backcast)"):
+        fit_ewma_decay(r, bounds=bounds, start=Backcast(window=window))
+
+
+def test_fit_ewma_decay_with_starting_vol_uses_every_date() -> None:
+    r = simulate_ewma(np.array([0.9, 0.97]), n=300)
+
+    fitted = fit_ewma_decay(r, start=StartingVol(0.01))
+
+    assert fitted.shape == (2,)
+    assert not np.allclose(fitted, fit_ewma_decay(r))
+
+
+def test_decay_calibration_fits_trailing_windows() -> None:
+    returns = simulated_returns()
+    r = returns.values
+
+    decay = EwmaDecayCalibration(Trailing(length=100, step=20)).run(returns)
+
+    np.testing.assert_array_equal(decay.dates, returns.dates)
+    assert np.isnan(decay.values[:99]).all()
+    np.testing.assert_allclose(decay.values[99], fit_ewma_decay(r[:100]))
+    np.testing.assert_allclose(decay.values[99:119], np.tile(decay.values[99], (20, 1)))
+    np.testing.assert_allclose(decay.values[119], fit_ewma_decay(r[20:120]))
+    np.testing.assert_allclose(decay.values[159], fit_ewma_decay(r[60:160]))
+
+
+def test_decay_calibration_rejects_window_longer_than_returns() -> None:
+    with pytest.raises(ValueError, match="longer"):
+        EwmaDecayCalibration(Trailing(length=200)).run(simulated_returns())
+
+
+def test_calibration_on_last_window_fits_once_on_the_last_dates() -> None:
+    returns = simulated_returns(n=160)
+
+    last = EwmaDecayCalibration(Last(length=100)).run(returns)
+    rolling = EwmaDecayCalibration(Trailing(length=100)).run(returns)
+
+    assert np.isnan(last.values[:-1]).all()
+    np.testing.assert_array_equal(last.values[-1], rolling.values[-1])
