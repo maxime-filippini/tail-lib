@@ -22,6 +22,7 @@ import datetime
 
 import numpy as np
 
+from tail_lib.distributions import StudentT
 from tail_lib.graph import Cache
 from tail_lib.models.ewma import ConstantDecay
 from tail_lib.models.value_at_risk import HistoricalSimulationsModel
@@ -29,6 +30,8 @@ from tail_lib.models.volatility import EwmaVolatility
 from tail_lib.models.volatility import VolatilityFilter
 from tail_lib.run import Run
 from tail_lib.run import RunSpec
+from tail_lib.simulation import GarchProcess
+from tail_lib.simulation import Simulator
 from tail_lib.specs import ConstantDecaySpec
 from tail_lib.specs import EwmaVolatilitySpec
 from tail_lib.specs import GaussianSpec
@@ -50,26 +53,22 @@ SIGNIFICANCE = 0.05
 
 
 def simulate_garch_returns(n: int, seed: int = 42) -> TimeSeries:
-    """Simulate GARCH(1, 1) returns with Student-t innovations.
+    """Simulate GARCH(1, 1) returns with Student-t shocks.
 
     The variance follows `var[t] = omega + alpha * r[t-1]**2 + beta * var[t-1]`,
     with `alpha = 0.08`, `beta = 0.90` and `omega` set for a long-run daily
-    volatility of 1%. The innovations are Student-t with 5 degrees of
-    freedom, scaled to unit variance, so the returns have volatility clusters
-    and fat tails, as market returns do.
+    volatility of 1%, the variance of the first date. The shocks are
+    Student-t with 5 degrees of freedom, scaled to unit variance, so the
+    returns have volatility clusters and fat tails, as market returns do.
     """
-    alpha, beta, nu = 0.08, 0.90, 5.0
-    long_run_var = 0.01**2
-    omega = long_run_var * (1 - alpha - beta)
-
-    rng = np.random.default_rng(seed)
-    shocks = rng.standard_t(nu, size=n) * np.sqrt((nu - 2) / nu)
-    returns = np.empty(n)
-    var = long_run_var
-    for t in range(n):
-        returns[t] = np.sqrt(var) * shocks[t]
-        var = omega + alpha * returns[t] ** 2 + beta * var
-    return TimeSeries.from_first_date(datetime.date(2015, 1, 1), values=returns)
+    alpha, beta = 0.08, 0.90
+    omega = 0.01**2 * (1 - alpha - beta)
+    simulator = Simulator(
+        vol=GarchProcess(omega=omega, alpha=alpha, beta=beta),
+        shocks=StudentT(df=5.0),
+    )
+    sim = simulator.simulate(n, first_date=datetime.date(2015, 1, 1), rng=seed)
+    return sim.returns
 
 
 # Step 2: filtered historical simulation, from library nodes.

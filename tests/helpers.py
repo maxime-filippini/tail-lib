@@ -7,6 +7,8 @@ import numpy as np
 from tail_lib.models.ewma import ConstantDecay
 from tail_lib.models.ewma import StartingVol
 from tail_lib.models.volatility import EwmaVolatility
+from tail_lib.simulation import EwmaProcess
+from tail_lib.simulation import Simulator
 from tail_lib.time_series import TimeSeries
 
 FIRST_DATE = datetime.date(2020, 1, 1)
@@ -25,13 +27,11 @@ def ewma(decay: np.ndarray | float, start: float = 0.01) -> EwmaVolatility:
 
 
 def simulate_ewma(decay_factor: np.ndarray, n: int) -> np.ndarray:
-    rng = np.random.default_rng(1)
-    var = np.full(decay_factor.shape, 1e-4)
-    r = np.empty((n, *decay_factor.shape))
-    for t in range(n):
-        r[t] = np.sqrt(var) * rng.standard_normal(decay_factor.shape)
-        var = decay_factor * var + (1 - decay_factor) * r[t] ** 2
-    return r
+    simulator = Simulator(vol=EwmaProcess(decay=decay_factor, start_vol=0.01))
+    sim = simulator.simulate(
+        n, first_date=FIRST_DATE, batch_shape=decay_factor.shape, rng=1
+    )
+    return sim.returns.values
 
 
 def simulated_returns(n: int = 160) -> TimeSeries:

@@ -39,9 +39,6 @@ step 3 below.
    one), e.g. Jorion, *Value at Risk*.
 3. **Serializing results (R12)**, a design to propose first. See "Design
    questions" below.
-4. **Simulator, step 2.** Replace `simulate_ewma` in `tests/helpers.py` and
-   `simulate_garch_returns` in `examples/backtest_hs_fhs.py` with the
-   `Simulator`.
 
 ## Decisions on finished work
 
