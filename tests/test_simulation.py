@@ -134,6 +134,44 @@ def test_garch_rejects_invalid_parameters(params: dict, match: str) -> None:
         GarchProcess(**params)
 
 
+def test_garch_from_long_run_variance_sets_omega() -> None:
+    alpha = np.array([0.05, 0.1])
+    garch = GarchProcess.from_long_run_variance(
+        alpha=alpha, beta=0.85, long_run_variance=1e-4
+    )
+
+    np.testing.assert_allclose(garch.omega, 1e-4 * (1 - alpha - 0.85))
+    np.testing.assert_allclose(garch.long_run_variance(), [1e-4, 1e-4])
+
+
+def test_garch_from_long_run_variance_simulates_like_omega() -> None:
+    from_omega = Simulator(vol=GARCH).simulate(50, first_date=FIRST_DATE, rng=9)
+    from_variance = Simulator(
+        vol=GarchProcess.from_long_run_variance(
+            alpha=0.08, beta=0.9, long_run_variance=GARCH_LONG_RUN_VAR
+        )
+    ).simulate(50, first_date=FIRST_DATE, rng=9)
+
+    np.testing.assert_allclose(
+        from_variance.returns.values, from_omega.returns.values, rtol=1e-12
+    )
+
+
+@pytest.mark.parametrize(
+    ("params", "match"),
+    [
+        ({"alpha": 0.1, "beta": 0.8, "long_run_variance": 0.0}, "long-run variance"),
+        ({"alpha": 0.1, "beta": 0.9, "long_run_variance": 1e-4}, "below 1"),
+        ({"alpha": -0.1, "beta": 0.8, "long_run_variance": 1e-4}, "at least 0"),
+    ],
+)
+def test_garch_from_long_run_variance_rejects_invalid_parameters(
+    params: dict, match: str
+) -> None:
+    with pytest.raises(ValueError, match=match):
+        GarchProcess.from_long_run_variance(**params)
+
+
 def test_ewma_rejects_invalid_parameters() -> None:
     with pytest.raises(ValueError, match=r"\[0,1\]"):
         EwmaProcess(decay=1.1, start_vol=0.01)

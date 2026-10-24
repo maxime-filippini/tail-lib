@@ -12,7 +12,7 @@ Working rules, from `CLAUDE.md` and the developer:
 - Commit only when the developer says so. Commits have no co-author trailer.
 
 State as of 2026-10-24: branch `feat/model-api`, not pushed, all checks
-green (ty, ruff, 195 tests), nothing uncommitted. The example
+green (ty, ruff, 200 tests), nothing uncommitted. The example
 script `examples/backtest_hs_fhs.py` is to be rewritten with nodes in
 step 3 below.
 

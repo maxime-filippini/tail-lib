@@ -166,7 +166,9 @@ class GarchProcess:
         sigma[t + 1] ** 2 = omega + alpha * eps[t] ** 2 + beta * sigma[t] ** 2
 
     The variance of the first date is the long-run variance
-    `omega / (1 - alpha - beta)`, so `alpha + beta` has to be below 1.
+    `omega / (1 - alpha - beta)`, so `alpha + beta` has to be below 1. To
+    give the long-run variance instead of `omega`, see
+    `from_long_run_variance`.
 
     Args:
         omega (FloatArray | float): The constant of the recursion, positive.
@@ -182,15 +184,52 @@ class GarchProcess:
     beta: FloatArray | float
 
     def __post_init__(self) -> None:
+        # Alpha and beta first: with `alpha + beta >= 1`, an omega built by
+        # `from_long_run_variance` isn't positive, and that is the error.
         alpha = np.asarray(self.alpha)
         beta = np.asarray(self.beta)
-        check_positive("GARCH omega", self.omega)
         if np.any(alpha < 0) or np.any(beta < 0):
             msg = "GARCH alpha and beta have to be at least 0!"
             raise ValueError(msg)
         if np.any(alpha + beta >= 1):
             msg = "GARCH alpha + beta has to be below 1, for a long-run variance!"
             raise ValueError(msg)
+        check_positive("GARCH omega", self.omega)
+
+    @classmethod
+    def from_long_run_variance(
+        cls,
+        *,
+        alpha: FloatArray | float,
+        beta: FloatArray | float,
+        long_run_variance: FloatArray | float,
+    ) -> GarchProcess:
+        """Build the process from its long-run variance instead of `omega`.
+
+        The constant of the recursion is the one giving that long-run
+        variance:
+
+            omega = long_run_variance * (1 - alpha - beta)
+
+        Args:
+            alpha (FloatArray | float): The weight of the squared residual, at
+                least 0.
+            beta (FloatArray | float): The weight of the previous variance, at
+                least 0, with `alpha + beta` below 1.
+            long_run_variance (FloatArray | float): The long-run variance,
+                positive, e.g. `0.01 ** 2` for a daily volatility of 1%.
+
+        Returns:
+            GarchProcess: The process, with `long_run_variance()` equal to
+                `long_run_variance`.
+
+        Raises:
+            ValueError: If a parameter is outside its bounds.
+
+        """
+        check_positive("GARCH long-run variance", long_run_variance)
+        omega = np.asarray(long_run_variance) * (1 - np.asarray(alpha) - beta)
+        return cls(omega=omega, alpha=alpha, beta=beta)
 
     def long_run_variance(self) -> FloatArray:
         """Compute the long-run variance, `omega / (1 - alpha - beta)`."""

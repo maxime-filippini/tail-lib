@@ -204,6 +204,10 @@ sim = Simulator(
 sim.returns, sim.means, sim.vols  # TimeSeries of shape (2520, 100)
 ```
 
+`GarchProcess.from_long_run_variance(alpha=..., beta=...,
+long_run_variance=...)` builds the same process from its long-run variance,
+with `omega = long_run_variance * (1 - alpha - beta)`.
+
 `Simulator.simulate` is one loop over the dates, vectorized over the batch.
 On date `t`: `eps[t] = sigma[t] * z[t]`, `r[t] = mu[t] + eps[t]`, then the
 volatility process updates the variance with `eps[t]` and the AR process

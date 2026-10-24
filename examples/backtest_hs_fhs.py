@@ -56,17 +56,15 @@ def simulate_garch_returns(n: int, seed: int = 42) -> TimeSeries:
     """Simulate GARCH(1, 1) returns with Student-t shocks.
 
     The variance follows `var[t] = omega + alpha * r[t-1]**2 + beta * var[t-1]`,
-    with `alpha = 0.08`, `beta = 0.90` and `omega` set for a long-run daily
-    volatility of 1%, the variance of the first date. The shocks are
+    with `alpha = 0.08`, `beta = 0.90` and a long-run daily volatility of 1%,
+    the volatility of the first date, from which `omega` is set. The shocks are
     Student-t with 5 degrees of freedom, scaled to unit variance, so the
     returns have volatility clusters and fat tails, as market returns do.
     """
-    alpha, beta = 0.08, 0.90
-    omega = 0.01**2 * (1 - alpha - beta)
-    simulator = Simulator(
-        vol=GarchProcess(omega=omega, alpha=alpha, beta=beta),
-        shocks=StudentT(df=5.0),
+    vol = GarchProcess.from_long_run_variance(
+        alpha=0.08, beta=0.90, long_run_variance=0.01**2
     )
+    simulator = Simulator(vol=vol, shocks=StudentT(df=5.0))
     sim = simulator.simulate(n, first_date=datetime.date(2015, 1, 1), rng=seed)
     return sim.returns
 
