@@ -16,10 +16,7 @@ green (ty, ruff, 229 tests), nothing uncommitted.
 
 ## Next up
 
-1. **Literature reference for historical simulation.**
-   `HistoricalSimulationsModel`'s docstring has none (`CLAUDE.md` asks for
-   one), e.g. Jorion, *Value at Risk*.
-2. **Serializing results (R12)**, a design to propose first. See "Design
+1. **Serializing results (R12)**, a design to propose first. See "Design
    questions" below.
 
 ## Decisions on finished work

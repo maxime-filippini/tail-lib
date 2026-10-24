@@ -119,6 +119,9 @@ class HistoricalSimulationsModel(ValueAtRiskModel):
     The quantile interpolates between order statistics as set by
     `interpolation`: "linear" (numpy's default), "below" (the order statistic
     at or below the quantile) or "above" (the one at or above it).
+
+    Reference: Jorion, *Value at Risk: The New Benchmark for Managing Financial
+    Risk*, 3rd edition, McGraw-Hill, 2007.
     """
 
     _window: Trailing | Last
