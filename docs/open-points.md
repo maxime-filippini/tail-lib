@@ -12,9 +12,8 @@ Working rules, from `CLAUDE.md` and the developer:
 - Commit only when the developer says so. Commits have no co-author trailer.
 
 State as of 2026-10-24: branch `feat/model-api`, not pushed, all checks
-green (ty, ruff, 200 tests), nothing uncommitted. The example
-script `examples/backtest_hs_fhs.py` is to be rewritten with nodes in
-step 3 below.
+green (ty, ruff, 226 tests), nothing uncommitted. The example script
+`examples/backtest_hs_fhs.py` is to be rewritten with nodes in step 3 below.
 
 ## Next up
 
@@ -24,7 +23,9 @@ step 3 below.
    2. `Run` takes model nodes and backtest functions, and walks the graph to
       find the run inputs and `last` windows before computing.
       `Run.from_spec(spec)` builds the nodes with the `Builder`, then makes
-      the same `Run`.
+      the same `Run`. Done. `Builder.backtest` now takes a
+      model's `Overshootings` instead of its spec, and `Builder.overshootings`
+      is gone: `Run` makes one per distinct model node.
    3. Docs: rewrite "From Python" in `docs/architecture.md`, and the example
       script, with nodes.
 1. **FHS spec.** `FilteredHistoricalSimulationsModel` has no spec yet, so
@@ -106,6 +107,11 @@ the one way in. Chosen by the developer:
 - `Run.from_spec(spec)` builds the nodes, then makes the same `Run`.
   `RunSpec` keeps its own `last`-window check, for errors with a spec path
   (R9b).
+- Names are unique in a run's graph (developer's rule, against silent
+  overriding): models and backtests are named by dict keys, and each run
+  input name belongs to one node. Models reading the same input share its
+  node; two different nodes with one input name are an error, even if they
+  agree.
 - Not now: a node-built run can't be written back as a spec, which saving
   what ran (R12) and reusing results (D4) may need later.
 
@@ -121,8 +127,6 @@ the one way in. Chosen by the developer:
   counting the usable flags (`n_obs < length`).
 - Maybe a `to_series()` on backtest results, to put window results on the
   returns' dates.
-- `Builder.backtest` used directly in Python doesn't reject a model with a
-  `last` window; only `RunSpec` does.
 - Maybe a `load_run_spec(path)` helper (new public API, to propose if
   wanted). `RunSpec.model_validate_json(path.read_text())` works today.
 - Integer checks are still written in each class: window length (in both

@@ -23,6 +23,8 @@ from tail_lib.models.volatility import EwmaVolatility
 from tail_lib.models.volatility import FittedEwmaVolatility
 from tail_lib.models.volatility import VolatilityFilter
 from tail_lib.models.volatility import VolatilityInput
+from tail_lib.run import _input_name
+from tail_lib.run import _window
 from tail_lib.time_series import TimeSeries
 from tail_lib.windows import Trailing
 from tests.helpers import simulated_returns
@@ -102,3 +104,14 @@ def test_dependencies_are_the_nodes_evaluate_reads(node: Node[Any]) -> None:
     node.evaluate(cache)
 
     assert set(cache.requested) == set(dependencies)
+
+
+@pytest.mark.parametrize(
+    "node", _one_node_of_each_type(), ids=lambda node: type(node).__name__
+)
+def test_run_sees_the_inputs_and_windows_of_every_node(node: Node[Any]) -> None:
+    # A run finds its inputs and `last` windows by walking the graph: a node
+    # with a `name` reads a run input, and one with a `window` is computed on
+    # windows. The walk has to recognize each of them.
+    assert _input_name(node) == getattr(node, "name", None)
+    assert _window(node) is getattr(node, "window", None)

@@ -37,7 +37,7 @@ How tail-lib is organized, and how a call flows from a spec to the numbers
 | `simulation.py` | `Simulator` and its processes `ArProcess`, `EwmaProcess`, `GarchProcess`; the output `Simulation` (R18). |
 | `specs.py` | Pydantic specs mirroring each node, with value ranges (R9, R9b). |
 | `build.py` | `Builder`: specs to nodes, one node per distinct spec (R9a, D3). |
-| `run.py` | `RunSpec`, `Run`, `RunResult`: models and backtests in one run. |
+| `run.py` | `RunSpec`, `Run` (from nodes, or from a spec with `Run.from_spec`), `BacktestFunction`, `RunResult`: models and backtests in one run. |
 
 ## The node graph (`graph.py`)
 
@@ -50,7 +50,8 @@ volatility), a VaR model, or a backtest.
   constructor settings (see `CLAUDE.md`).
 - `dependencies()` lists the nodes `evaluate` reads, keyed by the
   constructor argument each comes from, e.g. `{"vol_model": ...,
-  "mean_model": ...}`. So a graph can be walked without computing it. The
+  "mean_model": ...}`. So a graph can be walked without computing it: `Run`
+  walks it to find its run inputs and `last` windows. The
   returns and the named run inputs are not nodes, so they are not listed.
   `tests/test_dependencies.py` checks, for one node of each library type,
   that it matches what `evaluate` asks the cache for.
@@ -92,18 +93,27 @@ JSON, parsed by pydantic. YAML could later be a loader producing dicts.
    non-empty list (one value per series). `spec.model_dump_json()` writes a
    spec back, with every default spelled out (e.g. `"step": 1`,
    `"window": null`), and parses back to an equal spec.
-2. **Build.** `Run(spec)` uses a `Builder`, which turns each spec into its
-   node with a plain `match`, one typed method per role (`var_model`,
-   `volatility`, `mean`, `constant_decay`, `calibration`, `overshootings`,
+2. **Build.** `Run.from_spec(spec)` uses a `Builder`, which turns each spec
+   into its node with a plain `match`, one typed method per role
+   (`var_model`, `volatility`, `mean`, `constant_decay`, `calibration`,
    `backtest`). It keeps a table from spec to node, and frozen specs compare
    by value, so identical specs, even written separately, give one node
-   (D3). Each model's backtests share one `Overshootings`. The builder also
-   records the run inputs that input specs declare, and rejects a name
-   declared twice differently.
-3. **Check inputs.** `run.run(returns, inputs)` checks that every input in
+   (D3). The builder also rejects an input name declared twice differently.
+   It then makes a `Run` of the model nodes, with one backtest function per
+   backtest spec: from a model's `Overshootings` to the test node
+   (`Builder.backtest`).
+3. **Walk the graph.** `Run(models, backtests)` walks each model's
+   `dependencies()` once. It collects `run.input_names` from the input
+   nodes, each name belonging to one node (two different nodes reading one
+   name are an error, so none silently reads another's input) and, if there
+   are backtests, rejects a model with a `last` window
+   anywhere in its graph, giving the path through the graph, e.g.
+   `models.today.vol_model.calibration.window`. Each distinct model node
+   gets one `Overshootings`, shared by all its backtests.
+4. **Check inputs.** `run.run(returns, inputs)` checks that every input in
    `run.input_names` is given before computing anything (R13). Inputs no
    node reads are ignored.
-4. **Compute.** One `Cache`: the models' pool, then each model's pool of
+5. **Compute.** One `Cache`: the models' pool, then each model's pool of
    backtests. The result is a `RunResult`: `models[name]` is the VaR series,
    `backtests[model][backtest]` is the backtest result.
 
@@ -131,7 +141,7 @@ Example:
 ```
 
 ```python
-run = Run(RunSpec.model_validate_json(text))
+run = Run.from_spec(RunSpec.model_validate_json(text))
 result = run.run(returns, inputs={"var_ext": precomputed_var})
 result.backtests["hs_99"]["kupiec"].p_value[0]
 ```
@@ -150,7 +160,8 @@ date, e.g. today's VaR without computing every window. It can't be
 backtested: that value is the forecast for a date after the data. So
 `RunSpec` rejects a run with backtests and such a model, giving the path to
 the window, e.g. `models.today.vol.calibration.window` (`find_last_window`
-in `specs.py`).
+in `specs.py`). `Run` checks the same on its nodes, for runs built in
+Python.
 
 Every backtest runs on every model (R4). Backtests are named, so two
 versions of one test can sit side by side.
@@ -158,7 +169,7 @@ versions of one test can sit side by side.
 ## From Python
 
 Notebooks and scripts (R17) build the same spec objects in code, then call
-`Run`, the same entry point as JSON. A service receiving JSON over HTTP
+`Run.from_spec`, the same entry point as JSON. A service receiving JSON over HTTP
 calls `RunSpec.model_validate_json` instead. Both go through the same checks
 and the same build.
 
@@ -170,7 +181,7 @@ spec = RunSpec(
     },
     backtests={"kupiec": KupiecSpec()},
 )
-result = Run(spec).run(returns)
+result = Run.from_spec(spec).run(returns)
 ```
 
 - The class picks the spec, so the `type` tags can be left out. A list of
@@ -182,12 +193,11 @@ result = Run(spec).run(returns)
 - Identical specs share one node (D3), and `spec.model_dump_json()` records
   what ran.
 
-Nodes can also be built directly and computed with `Pool` or `node.run`
-(see "The node graph"), e.g. in tests. That path has no `Run`: the caller
-wires each backtest to its model, missing inputs are only reported when
-read, and there is no spec to save. Runs take specs only; a `Run` built
-from nodes was considered and set aside until a model defined outside the
-library needs to join a run.
+Nodes can also be given to `Run` directly, with backtest functions, e.g.
+`Run({"hs": hs}, backtests={"kupiec": KupiecTest})`. The same graph walk
+checks the inputs and `last` windows, but there is no spec to save. This
+section is to be rewritten around nodes, the way in from Python (see
+`docs/open-points.md`).
 
 ## Simulating returns (R18)
 

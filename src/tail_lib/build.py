@@ -18,7 +18,6 @@ import numpy as np
 
 from tail_lib.backtests.kupiec import KupiecResult
 from tail_lib.backtests.kupiec import KupiecTest
-from tail_lib.backtests.overshootings import Overshootings
 from tail_lib.models.ewma import Backcast
 from tail_lib.models.ewma import ConstantDecay
 from tail_lib.models.ewma import EwmaDecayCalibration
@@ -66,6 +65,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
     from tail_lib._typing import FloatArray
+    from tail_lib.backtests.overshootings import Overshootings
     from tail_lib.graph import Node
 
 # A union, like the specs, once there is a second backtest.
@@ -87,9 +87,8 @@ class Builder:
         self._means: dict[MeanSpec, MeanModel] = {}
         self._constant_decays: dict[ConstantDecaySpec, ConstantDecay] = {}
         self._calibrations: dict[EwmaDecayCalibrationSpec, EwmaDecayCalibration] = {}
-        self._overshootings: dict[ValueAtRiskSpec, Overshootings] = {}
         self._backtests: dict[
-            tuple[BacktestSpec, ValueAtRiskSpec], Node[BacktestResult]
+            tuple[BacktestSpec, Overshootings], Node[BacktestResult]
         ] = {}
         self._inputs: dict[str, ValueAtRiskInputSpec | VolatilityInputSpec] = {}
 
@@ -118,30 +117,27 @@ class Builder:
         """Get the decay calibration of a spec, building it on first request."""
         return _get_or_build(self._calibrations, spec, _build_calibration)
 
-    def overshootings(self, spec: ValueAtRiskSpec) -> Overshootings:
-        """Get the overshootings of a model, building them on first request.
-
-        All the backtests of a model share them.
-        """
-        return _get_or_build(
-            self._overshootings, spec, lambda s: Overshootings(self.var_model(s))
-        )
-
     def backtest(
-        self, spec: BacktestSpec, model: ValueAtRiskSpec
+        self, spec: BacktestSpec, overshootings: Overshootings
     ) -> Node[BacktestResult]:
-        """Get a backtest of a model, building it on first request.
+        """Get a backtest on a model's overshootings, building it on first request.
+
+        Identical backtest specs on the same overshootings node give one node,
+        e.g. the same test under two names.
 
         Args:
             spec (BacktestSpec): The backtest.
-            model (ValueAtRiskSpec): The model it tests.
+            overshootings (Overshootings): The overshootings of the model it
+                tests, shared by all the backtests of the model.
 
         Returns:
-            Node[BacktestResult]: The backtest of the model.
+            Node[BacktestResult]: The backtest.
 
         """
         return _get_or_build(
-            self._backtests, (spec, model), lambda key: self._build_backtest(*key)
+            self._backtests,
+            (spec, overshootings),
+            lambda key: _build_backtest(*key),
         )
 
     def _declare_input(self, spec: ValueAtRiskInputSpec | VolatilityInputSpec) -> None:
@@ -152,16 +148,6 @@ class Builder:
                 f"{declared!r} and {spec!r}!"
             )
             raise ValueError(msg)
-
-    def _build_backtest(
-        self, spec: BacktestSpec, model: ValueAtRiskSpec
-    ) -> Node[BacktestResult]:
-        match spec:
-            case KupiecSpec():
-                window = None if spec.window is None else _window(spec.window)
-                return KupiecTest(self.overshootings(model), window=window)
-            case _:
-                assert_never(spec)
 
     def _build_var_model(self, spec: ValueAtRiskSpec) -> ValueAtRiskModel:
         match spec:
@@ -213,6 +199,17 @@ def _get_or_build[S, N](built: dict[S, N], spec: S, build: Callable[[S], N]) -> 
     if spec not in built:
         built[spec] = build(spec)
     return built[spec]
+
+
+def _build_backtest(
+    spec: BacktestSpec, overshootings: Overshootings
+) -> Node[BacktestResult]:
+    match spec:
+        case KupiecSpec():
+            window = None if spec.window is None else _window(spec.window)
+            return KupiecTest(overshootings, window=window)
+        case _:
+            assert_never(spec)
 
 
 def _build_constant_decay(spec: ConstantDecaySpec) -> ConstantDecay:

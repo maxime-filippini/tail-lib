@@ -1,12 +1,17 @@
 import numpy as np
 import pytest
 
+from tail_lib.backtests.kupiec import KupiecTest
 from tail_lib.backtests.kupiec import kupiec_pof
 from tail_lib.backtests.overshootings import Overshootings
 from tail_lib.backtests.overshootings import overshootings
-from tail_lib.build import Builder
+from tail_lib.models.ewma import EwmaDecayCalibration
+from tail_lib.models.value_at_risk import GaussianModel
 from tail_lib.models.value_at_risk import HistoricalSimulationsModel
+from tail_lib.models.value_at_risk import ValueAtRiskInput
 from tail_lib.models.volatility import ConstantVolatility
+from tail_lib.models.volatility import FittedEwmaVolatility
+from tail_lib.models.volatility import VolatilityInput
 from tail_lib.run import Run
 from tail_lib.run import RunSpec
 from tail_lib.specs import HistoricalSimulationsSpec
@@ -42,7 +47,7 @@ def test_run_computes_models_and_their_backtests() -> None:
         "var_ext": hs.run(returns),
     }
 
-    result = Run(RunSpec.model_validate_json(_SPEC)).run(returns, inputs)
+    result = Run.from_spec(RunSpec.model_validate_json(_SPEC)).run(returns, inputs)
 
     assert (
         set(result.models) == set(result.backtests) == {"gauss_99", "hs_99", "ext_95"}
@@ -58,7 +63,7 @@ def test_run_computes_models_and_their_backtests() -> None:
 
 
 def test_run_lists_the_inputs_its_specs_read() -> None:
-    run = Run(RunSpec.model_validate_json(_SPEC))
+    run = Run.from_spec(RunSpec.model_validate_json(_SPEC))
 
     assert run.input_names == {"vol", "var_ext"}
 
@@ -68,7 +73,7 @@ def test_missing_inputs_fail_before_computing(monkeypatch: pytest.MonkeyPatch) -
         pytest.fail("A model was computed before the inputs were checked.")
 
     monkeypatch.setattr(HistoricalSimulationsModel, "compute", fail)
-    run = Run(RunSpec.model_validate_json(_SPEC))
+    run = Run.from_spec(RunSpec.model_validate_json(_SPEC))
 
     with pytest.raises(KeyError, match=r"Missing inputs \['var_ext', 'vol'\]"):
         run.run(returns_series(n=300), inputs={"other": returns_series(n=300)})
@@ -85,16 +90,7 @@ def test_input_declared_twice_differently_is_an_error() -> None:
     )
 
     with pytest.raises(ValueError, match="'var_ext' is declared twice"):
-        Run(spec)
-
-
-def test_backtests_of_a_model_share_its_overshootings() -> None:
-    builder = Builder()
-    model = HistoricalSimulationsSpec(cf=0.99, window=TrailingSpec(length=100))
-
-    first = builder.overshootings(model)
-
-    assert builder.overshootings(model.model_copy()) is first
+        Run.from_spec(spec)
 
 
 def test_identical_backtests_under_two_names_give_the_same_result() -> None:
@@ -111,7 +107,7 @@ def test_identical_backtests_under_two_names_give_the_same_result() -> None:
         }
     )
 
-    result = Run(spec).run(returns_series(n=200))
+    result = Run.from_spec(spec).run(returns_series(n=200))
 
     assert result.backtests["hs"]["a"] is result.backtests["hs"]["b"]
 
@@ -138,7 +134,7 @@ def test_rolling_backtests_run_side_by_side_on_shared_overshootings() -> None:
     }
     """)
     returns = returns_series(n=400)
-    run = Run(spec)
+    run = Run.from_spec(spec)
 
     result = run.run(returns)
 
@@ -194,7 +190,7 @@ def test_rolling_backtests_of_a_model_share_its_overshootings(
         }
     )
 
-    Run(spec).run(returns_series(n=300))
+    Run.from_spec(spec).run(returns_series(n=300))
 
     assert len(calls) == 1
 
@@ -250,7 +246,7 @@ def test_a_run_without_backtests_computes_last_window_models() -> None:
         }
     )
 
-    result = Run(spec).run(returns_series(n=300))
+    result = Run.from_spec(spec).run(returns_series(n=300))
 
     for var in result.models.values():
         assert np.isnan(var.values[:-1]).all()
@@ -348,7 +344,7 @@ def test_a_run_is_reusable_on_other_returns() -> None:
             }
         }
     )
-    run = Run(spec)
+    run = Run.from_spec(spec)
 
     first = run.run(returns_series(n=200))
     second = run.run(returns_series(n=200, n_assets=3))
@@ -361,3 +357,165 @@ def test_a_run_is_reusable_on_other_returns() -> None:
 def test_a_run_needs_a_model() -> None:
     with pytest.raises(ValueError, match="models"):
         RunSpec.model_validate({"models": {}})
+
+
+def test_a_run_from_nodes_gives_the_numbers_of_its_spec() -> None:
+    returns = returns_series(n=300)
+    inputs = {"vol": ConstantVolatility(0.01).run(returns)}
+    spec = RunSpec.model_validate_json(_SPEC)
+    hs = HistoricalSimulationsModel(cf=0.99, window=Trailing(length=100))
+    run = Run(
+        {
+            "gauss_99": GaussianModel(cf=0.99, vol_model=VolatilityInput("vol")),
+            "hs_99": hs,
+            "ext_95": ValueAtRiskInput("var_ext", cf=0.95),
+        },
+        backtests={"kupiec": KupiecTest},
+    )
+    inputs["var_ext"] = hs.run(returns)
+
+    result = run.run(returns, inputs)
+    expected = Run.from_spec(spec).run(returns, inputs)
+
+    for name, var in expected.models.items():
+        np.testing.assert_array_equal(result.models[name].values, var.values)
+        np.testing.assert_array_equal(
+            result.backtests[name]["kupiec"].statistic,
+            expected.backtests[name]["kupiec"].statistic,
+        )
+
+
+def test_a_run_from_nodes_lists_the_inputs_its_nodes_read() -> None:
+    run = Run(
+        {
+            "gauss": GaussianModel(cf=0.99, vol_model=VolatilityInput("vol")),
+            "ext": ValueAtRiskInput("var_ext", cf=0.99),
+            "hs": HistoricalSimulationsModel(cf=0.99, window=Trailing(length=50)),
+        }
+    )
+
+    assert run.input_names == {"vol", "var_ext"}
+
+
+def test_models_reading_one_input_share_its_node() -> None:
+    vol = VolatilityInput("vol")
+    run = Run(
+        {
+            "gauss_99": GaussianModel(cf=0.99, vol_model=vol),
+            "gauss_95": GaussianModel(cf=0.95, vol_model=vol),
+        }
+    )
+
+    assert run.input_names == {"vol"}
+
+
+@pytest.mark.parametrize(
+    "other",
+    [
+        GaussianModel(cf=0.95, vol_model=VolatilityInput("vol")),
+        ValueAtRiskInput("vol", cf=0.95),
+    ],
+)
+def test_two_nodes_reading_one_input_are_an_error(
+    other: GaussianModel | ValueAtRiskInput,
+) -> None:
+    models = {"a": GaussianModel(cf=0.99, vol_model=VolatilityInput("vol")), "b": other}
+
+    with pytest.raises(
+        ValueError,
+        match=r"'vol' is read by two different nodes, at `models\.a\.vol_model` "
+        r"and `models\.b",
+    ):
+        Run(models)
+
+
+def test_a_run_from_nodes_checks_inputs_before_computing() -> None:
+    run = Run({"gauss": GaussianModel(cf=0.99, vol_model=VolatilityInput("vol"))})
+
+    with pytest.raises(KeyError, match=r"Missing inputs \['vol'\]"):
+        run.run(returns_series(n=100))
+
+
+def test_backtests_take_their_settings_through_a_function() -> None:
+    returns = returns_series(n=300)
+    hs = HistoricalSimulationsModel(cf=0.99, window=Trailing(length=50))
+    run = Run(
+        {"hs": hs},
+        backtests={
+            "kupiec_100": lambda ovs: KupiecTest(ovs, window=Trailing(length=100))
+        },
+    )
+
+    result = run.run(returns)
+
+    expected = kupiec_pof(
+        overshootings(hs.run(returns), returns),
+        cf_var=0.99,
+        window=Trailing(length=100),
+    )
+    np.testing.assert_array_equal(
+        result.backtests["hs"]["kupiec_100"].statistic, expected.statistic
+    )
+
+
+@pytest.mark.parametrize(
+    ("model", "path"),
+    [
+        (
+            HistoricalSimulationsModel(cf=0.99, window=Last(length=100)),
+            "models.today.window",
+        ),
+        (
+            GaussianModel(
+                cf=0.99,
+                vol_model=FittedEwmaVolatility(EwmaDecayCalibration(Last(length=100))),
+            ),
+            "models.today.vol_model.calibration.window",
+        ),
+    ],
+)
+def test_a_run_from_nodes_rejects_backtests_on_a_last_window_model(
+    model: GaussianModel | HistoricalSimulationsModel, path: str
+) -> None:
+    with pytest.raises(
+        ValueError,
+        match=rf"Model 'today' has a `last` window, at `{path}`.*\['kupiec'\]",
+    ):
+        Run({"today": model}, backtests={"kupiec": KupiecTest})
+
+
+def test_a_run_from_nodes_without_backtests_computes_last_window_models() -> None:
+    model = HistoricalSimulationsModel(cf=0.99, window=Last(length=100))
+
+    result = Run({"today": model}).run(returns_series(n=300))
+
+    assert np.isnan(result.models["today"].values[:-1]).all()
+    assert not np.isnan(result.models["today"].values[-1])
+
+
+def test_a_model_under_two_names_is_backtested_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = []
+    compute = Overshootings.compute
+
+    def counting(
+        self: Overshootings, returns: TimeSeries, *, var: TimeSeries
+    ) -> TimeSeries:
+        calls.append(self)
+        return compute(self, returns, var=var)
+
+    monkeypatch.setattr(Overshootings, "compute", counting)
+    hs = HistoricalSimulationsModel(cf=0.99, window=Trailing(length=50))
+
+    result = Run({"a": hs, "b": hs}, backtests={"kupiec": KupiecTest}).run(
+        returns_series(n=200)
+    )
+
+    assert len(calls) == 1
+    assert result.backtests["a"]["kupiec"] is result.backtests["b"]["kupiec"]
+
+
+def test_a_run_from_nodes_needs_a_model() -> None:
+    with pytest.raises(ValueError, match="at least one model"):
+        Run({})

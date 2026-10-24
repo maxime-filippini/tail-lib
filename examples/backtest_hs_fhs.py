@@ -130,7 +130,7 @@ def main() -> None:  # noqa: D103
         models=hs_specs | fhs_specs | {"gauss_ewma": gauss_spec},
         backtests={"kupiec_250": KupiecSpec(window=TrailingSpec(length=KUPIEC_LENGTH))},
     )
-    run = Run(spec)
+    run = Run.from_spec(spec)
     print(f"Step 3: {len(spec.models)} models, run inputs {sorted(run.input_names)}.")
 
     # Step 4: compute the models and their backtests.

@@ -135,6 +135,11 @@ class HistoricalSimulationsModel(ValueAtRiskModel):
         self._window = window
         self._interpolation = interpolation
 
+    @property
+    def window(self) -> Trailing | Last:
+        """The windows the quantiles are taken on."""
+        return self._window
+
     def dependencies(self) -> Dependencies:  # noqa: D102
         return {}
 
@@ -217,6 +222,11 @@ class FilteredHistoricalSimulationsModel(ValueAtRiskModel):
         self._filter = filter
         self._window = window
         self._interpolation = interpolation
+
+    @property
+    def window(self) -> Trailing | Last:
+        """The windows the quantiles are taken on."""
+        return self._window
 
     def dependencies(self) -> Dependencies:  # noqa: D102
         return {
