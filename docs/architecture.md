@@ -214,12 +214,13 @@ result = run.run(returns)
   on a model with a `last` window are rejected, with the path to the window.
 - A run built from nodes has no spec, so it can't be written back as JSON.
 
-Specs can be built in Python too, e.g. to record what ran with
-`spec.model_dump_json()`: `Run.from_spec(RunSpec(models=..., backtests=...))`.
-The class picks the spec, so the `type` tags can be left out, and a list of
-values (one per series) is a tuple. Values are checked when each spec is
-built, so an error's path starts at that spec, e.g. `value.list.1` for
-`ConstantDecaySpec(value=(0.94, 1.5))`.
+Specs can be built in Python too, but only as data: a validated
+description of a run, turned into nodes by `Run.from_spec`, e.g. to record
+what ran with `spec.model_dump_json()`. They hold no logic of their own;
+the computation is in the nodes. The class picks the spec, so the `type`
+tags can be left out, and a list of values (one per series) is a tuple.
+Values are checked when each spec is built, so an error's path starts at
+that spec, e.g. `value.list.1` for `ConstantDecaySpec(value=(0.94, 1.5))`.
 
 Nodes can also be computed without a run, with `Pool` or `node.run` (see
 "The node graph"), e.g. in tests: then each backtest is wired to its model

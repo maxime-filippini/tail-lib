@@ -79,9 +79,11 @@ every default. Tested on specs holding every spec class.
 ### Runs from Python code (R17)
 
 Python code (notebooks, scripts) builds nodes and passes them to `Run`.
-Specs are the form that can be deserialized, for the JSON service; they are
-not written by hand in Python. This replaces an earlier choice of specs as
-the one way in. Chosen by the developer:
+Specs are the form that can be deserialized, for the JSON service. They can
+be built in Python too, but only as a data format, with its validation,
+to be turned into nodes (`Run.from_spec`, `Builder`): they hold no logic.
+This replaces an earlier choice of specs as the one way in. Chosen by the
+developer:
 
 - Backtests are given to a run as functions from a model's `Overshootings`
   to a test node, e.g. `KupiecTest` itself, or
