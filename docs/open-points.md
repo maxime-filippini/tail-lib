@@ -115,7 +115,8 @@ developer:
 - The code examples of the user guide (`docs/guide/`) were run by hand
   when written, but aren't tested. Options: a pytest that runs the
   `python` blocks, or `pymdownx.snippets` including tested files.
-- The docs site isn't built in CI, nor published (e.g. GitHub Pages).
+- The docs site is built in CI (strict, uploaded as the `docs-site`
+  artifact), but not published yet (GitHub Pages or Cloudflare).
 - The guide installs from the git repository: tail-lib isn't on PyPI.
 
 - `NaN` in the middle of a window (e.g. a missing return). Proposal: keep
