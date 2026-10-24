@@ -56,6 +56,27 @@ def test_gaussian_compute_rejects_mismatched_shapes() -> None:
         model.compute(means=means, vols=vols)
 
 
+@pytest.mark.parametrize("vol", [0.0, -0.01])
+def test_gaussian_compute_rejects_non_positive_vol(vol: float) -> None:
+    means = TimeSeries.from_first_date(FIRST_DATE, values=np.zeros(2))
+    vols = TimeSeries.from_first_date(FIRST_DATE, values=np.array([0.01, vol]))
+    model = GaussianModel(cf=0.99, vol_model=ConstantVolatility(0.01))
+
+    with pytest.raises(ValueError, match="Volatility has to be positive"):
+        model.compute(means=means, vols=vols)
+
+
+def test_gaussian_compute_keeps_nan_vol() -> None:
+    means = TimeSeries.from_first_date(FIRST_DATE, values=np.zeros(2))
+    vols = TimeSeries.from_first_date(FIRST_DATE, values=np.array([np.nan, 0.01]))
+    model = GaussianModel(cf=0.99, vol_model=ConstantVolatility(0.01))
+
+    var = model.compute(means=means, vols=vols)
+
+    assert np.isnan(var.values[0])
+    np.testing.assert_allclose(var.values[1], 0.01 * stats.norm.ppf(0.01))
+
+
 def test_gaussian_run_uses_mean_and_vol_models() -> None:
     returns = returns_series(n_assets=2)
     model = GaussianModel(

@@ -7,9 +7,10 @@ from typing import Literal
 from typing import assert_never
 
 import numpy as np
-from scipy import stats
 
+from tail_lib._checks import check_positive
 from tail_lib._checks import check_probability
+from tail_lib.distributions import Gaussian
 from tail_lib.graph import Cache
 from tail_lib.graph import Node
 from tail_lib.models.mean import MeanModel
@@ -265,6 +266,11 @@ class GaussianModel(ValueAtRiskModel):
 
         VaR[t] = mean[t] + vol[t] * Phi^-1(1 - cf)
 
+    with `Phi^-1` the standard normal quantile, `Gaussian().quantile`. The
+    volatility is the scale of the distribution: it has to be positive, or
+    `NaN` where it is unknown (e.g. during a warm-up), which gives a `NaN`
+    value-at-risk.
+
     It is the forecast for the return of date `t + 1`, using data up to and
     including `t`, like its inputs.
     """
@@ -302,8 +308,13 @@ class GaussianModel(ValueAtRiskModel):
         Returns:
             TimeSeries: The value-at-risk, on the dates of `means` and `vols`.
 
+        Raises:
+            ValueError: If the means and volatilities don't match, or if a
+                volatility is zero or negative.
+
         """
         means.check_aligned(vols)
+        check_positive("Volatility", vols.values)
 
-        values = stats.norm.ppf(q=1 - self._cf, loc=means.values, scale=vols.values)
+        values = means.values + vols.values * Gaussian().quantile(1 - self._cf)
         return TimeSeries(dates=means.dates, values=values)

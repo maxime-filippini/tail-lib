@@ -33,7 +33,7 @@ How tail-lib is organized, and how a call flows from a spec to the numbers
 | `models/value_at_risk.py` | `ValueAtRiskModel`, `ValueAtRiskInput`, `HistoricalSimulationsModel` (D2), `FilteredHistoricalSimulationsModel`, `GaussianModel`. |
 | `backtests/overshootings.py` | `overshootings` (function) and `Overshootings` (node). |
 | `backtests/kupiec.py` | `kupiec_pof` (function), `KupiecResult`, `KupiecTest` (node). |
-| `distributions.py` | `Distribution`, the base class of distributions with zero mean and unit variance, and `Gaussian`, `StudentT`. The simulator draws its shocks from them; parametric VaR and ES models will read their quantiles. |
+| `distributions.py` | `Distribution`, the base class of distributions with zero mean and unit variance, and `Gaussian`, `StudentT`. Each draws values (`draw`) and gives its quantiles (`quantile`): the simulator draws its shocks from them, and `GaussianModel` reads the Gaussian quantile. |
 | `simulation.py` | `Simulator` and its processes `ArProcess`, `EwmaProcess`, `GarchProcess`; the output `Simulation` (R18). |
 | `specs.py` | Pydantic specs mirroring each node, with value ranges (R9, R9b). |
 | `build.py` | `Builder`: specs to nodes, one node per distinct spec (R9a, D3). |

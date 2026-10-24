@@ -12,7 +12,7 @@ Working rules, from `CLAUDE.md` and the developer:
 - Commit only when the developer says so. Commits have no co-author trailer.
 
 State as of 2026-10-24: branch `feat/model-api`, not pushed, all checks
-green (ty, ruff, 185 tests), nothing uncommitted. The example
+green (ty, ruff, 195 tests), nothing uncommitted. The example
 script `examples/backtest_hs_fhs.py` is to be rewritten with nodes in
 step 3 below.
 
@@ -39,11 +39,7 @@ step 3 below.
    one), e.g. Jorion, *Value at Risk*.
 3. **Serializing results (R12)**, a design to propose first. See "Design
    questions" below.
-4. **`GaussianModel` on `Distribution`.** Add `quantile(q)` to
-   `Distribution`, and have `GaussianModel` use `Gaussian().quantile(...)`
-   instead of `stats.norm.ppf`. A Student-t VaR, and ES, would then reuse
-   the same classes.
-5. **Simulator, step 2.** Replace `simulate_ewma` in `tests/helpers.py` and
+4. **Simulator, step 2.** Replace `simulate_ewma` in `tests/helpers.py` and
    `simulate_garch_returns` in `examples/backtest_hs_fhs.py` with the
    `Simulator`.
 
@@ -136,6 +132,9 @@ the one way in. Chosen by the developer:
   `Trailing` and `Last`) and step, backcast window, number of dates and
   burn-in. A `check_at_least(name, value, minimum)` in `_checks.py` would
   write them once.
+- `GaussianModel` rejects a zero or negative volatility, the scale of its
+  distribution (developer's choice). `VolatilityFilter` and the FHS, which
+  divide and rescale by a volatility, don't check it yet.
 - `Windows.apply` holds all windows in memory at once. Chunk it for long
   series (R6).
 - The tox matrix varies NumPy only. Consider pinning the lowest pydantic
@@ -186,7 +185,9 @@ several FHS models, e.g. on 500 and 750 dates.
 
 The shocks are a `Distribution` subclass (`distributions.py`), chosen by
 the developer over a `Shocks` union, a `Protocol`, one class with a name
-field, and wrapped SciPy distributions (loose types, R11).
+field, and wrapped SciPy distributions (loose types, R11). Distributions
+give their quantiles too (`quantile`), which `GaussianModel` reads, so a
+Student-t VaR, and ES, can reuse them.
 
 Chosen by the developer (option A): the simulator's processes
 (`ArProcess`, `EwmaProcess`, `GarchProcess`) are separate from the model
