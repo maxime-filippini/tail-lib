@@ -97,7 +97,7 @@ pydantic. YAML could later be a loader producing dicts.
 2. **Build.** `Run.from_spec(spec)` uses a `Builder`, which turns each spec
    into its node with a plain `match`, one typed method per role
    (`var_model`, `volatility`, `mean`, `constant_decay`, `calibration`,
-   `backtest`). It keeps a table from spec to node, and frozen specs compare
+   `volatility_filter`, `backtest`). It keeps a table from spec to node, and frozen specs compare
    by value, so identical specs, even written separately, give one node
    (D3). The builder also rejects an input name declared twice differently.
    It then makes a `Run` of the model nodes, with one backtest function per
@@ -129,6 +129,11 @@ Example:
                                                     "length": 250}}}},
     "hs_99": {"type": "historical", "cf": 0.99,
               "window": {"type": "trailing", "length": 250}},
+    "fhs_99": {"type": "filtered_historical", "cf": 0.99,
+               "filter": {"vol": {"type": "ewma",
+                                  "decay": {"type": "constant",
+                                            "value": 0.94}}},
+               "window": {"type": "trailing", "length": 500}},
     "ext_99": {"type": "input", "name": "var_ext", "cf": 0.99}
   },
   "backtests": {

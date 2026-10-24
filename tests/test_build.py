@@ -5,11 +5,16 @@ from pydantic import ValidationError
 
 from tail_lib.build import Builder
 from tail_lib.graph import Pool
+from tail_lib.models.ewma import ConstantDecay
 from tail_lib.models.ewma import EwmaDecayCalibration
+from tail_lib.models.mean import ConstantMean
+from tail_lib.models.value_at_risk import FilteredHistoricalSimulationsModel
 from tail_lib.models.value_at_risk import GaussianModel
 from tail_lib.models.value_at_risk import HistoricalSimulationsModel
 from tail_lib.models.volatility import ConstantVolatility
+from tail_lib.models.volatility import EwmaVolatility
 from tail_lib.models.volatility import FittedEwmaVolatility
+from tail_lib.models.volatility import VolatilityFilter
 from tail_lib.specs import EwmaDecayCalibrationSpec
 from tail_lib.specs import GaussianSpec
 from tail_lib.specs import TrailingSpec
@@ -55,6 +60,59 @@ def test_historical_spec_builds_the_same_model_as_python() -> None:
         returns
     )
     np.testing.assert_array_equal(built.values, expected.values)
+
+
+_FILTER = {
+    "vol": {"type": "ewma", "decay": {"type": "constant", "value": 0.94}},
+    "mean": {"type": "constant", "mean": 1e-4},
+}
+
+
+def _fhs_spec(length: int) -> dict:
+    return {
+        "type": "filtered_historical",
+        "cf": 0.99,
+        "filter": _FILTER,
+        "window": {"type": "trailing", "length": length},
+        "interpolation": "below",
+    }
+
+
+def test_filtered_historical_spec_builds_the_same_model_as_python() -> None:
+    returns = simulated_returns(n=300)
+    spec = _VAR_SPEC.validate_python(_fhs_spec(100))
+
+    built = Builder().var_model(spec).run(returns)
+
+    vol_filter = VolatilityFilter(
+        EwmaVolatility(ConstantDecay(0.94)), mean_model=ConstantMean(1e-4)
+    )
+    expected = FilteredHistoricalSimulationsModel(
+        cf=0.99,
+        filter=vol_filter,
+        window=Trailing(length=100),
+        interpolation="below",
+    ).run(returns)
+    np.testing.assert_array_equal(built.values, expected.values)
+    assert not np.isnan(built.values[-1]).any()
+
+
+def test_filtered_historical_specs_share_their_filter() -> None:
+    builder = Builder()
+    gauss = _VAR_SPEC.validate_python(
+        {"type": "gaussian", "cf": 0.99, "vol": _FILTER["vol"]}
+    )
+
+    fhs_100 = builder.var_model(_VAR_SPEC.validate_python(_fhs_spec(100)))
+    fhs_150 = builder.var_model(_VAR_SPEC.validate_python(_fhs_spec(150)))
+    gauss_model = builder.var_model(gauss)
+
+    assert fhs_100.dependencies()["filter"] is fhs_150.dependencies()["filter"]
+    # The filter's volatility is the Gaussian model's too: one node per spec.
+    assert (
+        fhs_100.dependencies()["filter"].dependencies()["vol_model"]
+        is gauss_model.dependencies()["vol_model"]
+    )
 
 
 def test_last_windows_in_model_specs_build_as_in_python() -> None:

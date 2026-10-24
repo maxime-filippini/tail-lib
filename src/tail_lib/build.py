@@ -26,6 +26,7 @@ from tail_lib.models.ewma import StartingVol
 from tail_lib.models.mean import ConstantMean
 from tail_lib.models.mean import MeanModel
 from tail_lib.models.mean import ZeroMean
+from tail_lib.models.value_at_risk import FilteredHistoricalSimulationsModel
 from tail_lib.models.value_at_risk import GaussianModel
 from tail_lib.models.value_at_risk import HistoricalSimulationsModel
 from tail_lib.models.value_at_risk import ValueAtRiskInput
@@ -33,6 +34,7 @@ from tail_lib.models.value_at_risk import ValueAtRiskModel
 from tail_lib.models.volatility import ConstantVolatility
 from tail_lib.models.volatility import EwmaVolatility
 from tail_lib.models.volatility import FittedEwmaVolatility
+from tail_lib.models.volatility import VolatilityFilter
 from tail_lib.models.volatility import VolatilityInput
 from tail_lib.models.volatility import VolatilityModel
 from tail_lib.specs import BackcastSpec
@@ -43,6 +45,7 @@ from tail_lib.specs import ConstantVolatilitySpec
 from tail_lib.specs import EwmaDecayCalibrationSpec
 from tail_lib.specs import EwmaStartSpec
 from tail_lib.specs import EwmaVolatilitySpec
+from tail_lib.specs import FilteredHistoricalSimulationsSpec
 from tail_lib.specs import FittedEwmaVolatilitySpec
 from tail_lib.specs import GaussianSpec
 from tail_lib.specs import HistoricalSimulationsSpec
@@ -54,6 +57,7 @@ from tail_lib.specs import TrailingSpec
 from tail_lib.specs import ValueAtRiskInputSpec
 from tail_lib.specs import ValueAtRiskSpec
 from tail_lib.specs import Values
+from tail_lib.specs import VolatilityFilterSpec
 from tail_lib.specs import VolatilityInputSpec
 from tail_lib.specs import VolatilitySpec
 from tail_lib.specs import WindowSpec
@@ -87,6 +91,7 @@ class Builder:
         self._means: dict[MeanSpec, MeanModel] = {}
         self._constant_decays: dict[ConstantDecaySpec, ConstantDecay] = {}
         self._calibrations: dict[EwmaDecayCalibrationSpec, EwmaDecayCalibration] = {}
+        self._filters: dict[VolatilityFilterSpec, VolatilityFilter] = {}
         self._backtests: dict[
             tuple[BacktestSpec, Overshootings], Node[BacktestResult]
         ] = {}
@@ -116,6 +121,14 @@ class Builder:
     def calibration(self, spec: EwmaDecayCalibrationSpec) -> EwmaDecayCalibration:
         """Get the decay calibration of a spec, building it on first request."""
         return _get_or_build(self._calibrations, spec, _build_calibration)
+
+    def volatility_filter(self, spec: VolatilityFilterSpec) -> VolatilityFilter:
+        """Get the volatility filter of a spec, building it on first request.
+
+        Filtered historical simulations with the same filter spec share it,
+        e.g. on windows of 500 and 750 dates.
+        """
+        return _get_or_build(self._filters, spec, self._build_volatility_filter)
 
     def backtest(
         self, spec: BacktestSpec, overshootings: Overshootings
@@ -160,6 +173,13 @@ class Builder:
                     window=_window(spec.window),
                     interpolation=spec.interpolation,
                 )
+            case FilteredHistoricalSimulationsSpec():
+                return FilteredHistoricalSimulationsModel(
+                    cf=spec.cf,
+                    filter=self.volatility_filter(spec.filter),
+                    window=_window(spec.window),
+                    interpolation=spec.interpolation,
+                )
             case GaussianSpec():
                 return GaussianModel(
                     cf=spec.cf,
@@ -184,6 +204,11 @@ class Builder:
                 return FittedEwmaVolatility(self.calibration(spec.calibration))
             case _:
                 assert_never(spec)
+
+    def _build_volatility_filter(self, spec: VolatilityFilterSpec) -> VolatilityFilter:
+        return VolatilityFilter(
+            self.volatility(spec.vol), mean_model=self.mean(spec.mean)
+        )
 
     def _build_mean(self, spec: MeanSpec) -> MeanModel:
         match spec:

@@ -12,33 +12,14 @@ Working rules, from `CLAUDE.md` and the developer:
 - Commit only when the developer says so. Commits have no co-author trailer.
 
 State as of 2026-10-24: branch `feat/model-api`, not pushed, all checks
-green (ty, ruff, 226 tests), nothing uncommitted.
+green (ty, ruff, 229 tests), nothing uncommitted.
 
 ## Next up
 
-0. **Runs built from nodes (R17)**, see the decision below. One change each:
-   1. `Node.dependencies()` on every node, with a test that it matches what
-      `evaluate` reads. Done.
-   2. `Run` takes model nodes and backtest functions, and walks the graph to
-      find the run inputs and `last` windows before computing.
-      `Run.from_spec(spec)` builds the nodes with the `Builder`, then makes
-      the same `Run`. Done. `Builder.backtest` now takes a
-      model's `Overshootings` instead of its spec, and `Builder.overshootings`
-      is gone: `Run` makes one per distinct model node.
-   3. Docs: rewrite "From Python" in `docs/architecture.md`, and the example
-      script, with nodes. Done. The example now uses the
-      library's FHS model, sharing one filter, and has no run inputs.
-1. **FHS spec.** `FilteredHistoricalSimulationsModel` has no spec yet, so
-   the JSON service can't use it: add it, its builder case and a test that
-   it builds the same numbers (see "Adding a node type"). To decide first:
-   the FHS takes a `VolatilityFilter`, which has no spec either (see
-   "Returns as a node"). Either a filter spec nested in the FHS spec, or an
-   FHS spec with `vol` and `mean` from which the builder makes the filter
-   (identical ones still shared, D3).
-2. **Literature reference for historical simulation.**
+1. **Literature reference for historical simulation.**
    `HistoricalSimulationsModel`'s docstring has none (`CLAUDE.md` asks for
    one), e.g. Jorion, *Value at Risk*.
-3. **Serializing results (R12)**, a design to propose first. See "Design
+2. **Serializing results (R12)**, a design to propose first. See "Design
    questions" below.
 
 ## Decisions on finished work
@@ -79,6 +60,16 @@ Recorded so later changes don't undo them by accident.
 - Every window in a spec needs its `type` (`trailing` or `last`). The
   developer chose strict, as for R9a, over a missing `type` defaulting to
   `trailing`.
+
+### FHS spec (R9)
+
+`FilteredHistoricalSimulationsSpec` nests a `VolatilityFilterSpec` (`vol`,
+`mean`) in its `filter` field, mirroring the node's `filter` argument.
+Chosen by the developer over flat `vol` and `mean` fields on the FHS spec
+(as in `GaussianSpec`), from which the builder would make the filter: that
+breaks "a spec's fields mirror its node's arguments". Identical filter
+specs give one filter node (`Builder.volatility_filter`, D3), and paths go
+through it, e.g. `models.fhs.filter.vol.calibration.window`.
 
 ### JSON round trip (R9)
 
@@ -173,8 +164,8 @@ The gain is composability, not reuse:
 
 Alternatives: B, returns as a named input (`run(inputs={"returns": ...})`),
 which loses the reference series that inputs are aligned with; C, keep it
-as it is. The developer asked to revisit this later. `VolatilityFilter` has
-no spec until this is settled.
+as it is. The developer asked to revisit this later. `VolatilityFilter`
+has a spec, but only nested in the FHS spec (see "FHS spec" above).
 
 Filtered historical simulation, first listed as a gain here, got its own
 node instead: `FilteredHistoricalSimulationsModel` takes a `VolatilityFilter`

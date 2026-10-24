@@ -228,6 +228,14 @@ type VolatilitySpec = Annotated[
 ]
 
 
+class VolatilityFilterSpec(Spec):
+    """Spec of a `VolatilityFilter`: returns standardized by `mean` and `vol`."""
+
+    type: Literal["volatility_filter"] = "volatility_filter"
+    vol: VolatilitySpec
+    mean: MeanSpec = ZeroMeanSpec()
+
+
 # Value-at-risk models.
 
 
@@ -248,6 +256,16 @@ class HistoricalSimulationsSpec(Spec):
     interpolation: InterpolationMethod = "linear"
 
 
+class FilteredHistoricalSimulationsSpec(Spec):
+    """Spec of a `FilteredHistoricalSimulationsModel`."""
+
+    type: Literal["filtered_historical"] = "filtered_historical"
+    cf: ConfidenceLevel
+    filter: VolatilityFilterSpec
+    window: WindowSpec
+    interpolation: InterpolationMethod = "linear"
+
+
 class GaussianSpec(Spec):
     """Spec of a `GaussianModel`."""
 
@@ -258,7 +276,10 @@ class GaussianSpec(Spec):
 
 
 type ValueAtRiskSpec = Annotated[
-    ValueAtRiskInputSpec | HistoricalSimulationsSpec | GaussianSpec,
+    ValueAtRiskInputSpec
+    | HistoricalSimulationsSpec
+    | FilteredHistoricalSimulationsSpec
+    | GaussianSpec,
     Field(discriminator="type"),
 ]
 

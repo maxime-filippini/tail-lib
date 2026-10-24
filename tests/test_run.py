@@ -236,6 +236,25 @@ def test_a_model_with_a_last_window_can_not_be_backtested() -> None:
         RunSpec.model_validate(spec)
 
 
+def test_a_last_window_in_a_filter_is_found_through_it() -> None:
+    spec = {
+        "models": {
+            "fhs": {
+                "type": "filtered_historical",
+                "cf": 0.99,
+                "filter": {"vol": _GAUSS_ON_LAST_CALIBRATION["vol"]},
+                "window": {"type": "trailing", "length": 50},
+            }
+        },
+        "backtests": {"kupiec": {"type": "kupiec"}},
+    }
+
+    with pytest.raises(
+        ValueError, match=r"`models\.fhs\.filter\.vol\.calibration\.window`"
+    ):
+        RunSpec.model_validate(spec)
+
+
 def test_a_run_without_backtests_computes_last_window_models() -> None:
     spec = RunSpec.model_validate(
         {
@@ -305,6 +324,17 @@ _BACKTESTING_RUN = {
             "interpolation": "below",
         },
         "ext": {"type": "input", "name": "var_ext", "cf": 0.99},
+        "fhs": {
+            "type": "filtered_historical",
+            "cf": 0.99,
+            "filter": {
+                "type": "volatility_filter",
+                "vol": {"type": "constant", "vol": 0.01},
+                "mean": {"type": "zero"},
+            },
+            "window": _TRAILING,
+            "interpolation": "above",
+        },
     },
     "backtests": {
         "kupiec": {"type": "kupiec"},
