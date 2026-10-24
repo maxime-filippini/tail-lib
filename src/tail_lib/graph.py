@@ -52,7 +52,9 @@ class Node[T](ABC):
         """List the nodes `evaluate` gets from the cache.
 
         Each is keyed by the constructor argument it comes from, e.g.
-        `{"vol_model": ..., "mean_model": ...}` for a Gaussian model. The
+        `{"vol_model": ..., "mean_model": ...}` for a Gaussian model. A node
+        read through another one is keyed by its name there, e.g. the
+        `vol_model` of the filter a filtered historical simulation takes. The
         returns and the named run inputs are not nodes, so they are not listed.
 
         Returns:

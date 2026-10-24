@@ -14,6 +14,7 @@ from tail_lib.models.ewma import ConstantDecay
 from tail_lib.models.ewma import EwmaDecayCalibration
 from tail_lib.models.mean import ConstantMean
 from tail_lib.models.mean import ZeroMean
+from tail_lib.models.value_at_risk import FilteredHistoricalSimulationsModel
 from tail_lib.models.value_at_risk import GaussianModel
 from tail_lib.models.value_at_risk import HistoricalSimulationsModel
 from tail_lib.models.value_at_risk import ValueAtRiskInput
@@ -44,6 +45,7 @@ class _RecordingCache(Cache):
 def _one_node_of_each_type() -> list[Node[Any]]:
     vol = EwmaVolatility(ConstantDecay(0.94))
     calibration = EwmaDecayCalibration(Trailing(length=100))
+    vol_filter = VolatilityFilter(vol, mean_model=ConstantMean(1e-4))
     gaussian = GaussianModel(cf=0.99, vol_model=vol, mean_model=ConstantMean(1e-4))
     return [
         ZeroMean(),
@@ -54,9 +56,12 @@ def _one_node_of_each_type() -> list[Node[Any]]:
         ConstantVolatility(0.01),
         vol,
         FittedEwmaVolatility(calibration),
-        VolatilityFilter(vol),
+        vol_filter,
         ValueAtRiskInput("var", cf=0.99),
         HistoricalSimulationsModel(cf=0.99, window=Trailing(length=100)),
+        FilteredHistoricalSimulationsModel(
+            cf=0.99, filter=vol_filter, window=Trailing(length=100)
+        ),
         gaussian,
         Overshootings(gaussian),
         KupiecTest(Overshootings(gaussian)),

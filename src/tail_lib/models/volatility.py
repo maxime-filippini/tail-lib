@@ -15,6 +15,8 @@ from tail_lib.models.ewma import ConstantDecay
 from tail_lib.models.ewma import EwmaDecayCalibration
 from tail_lib.models.ewma import EwmaStart
 from tail_lib.models.ewma import ewma_variance
+from tail_lib.models.mean import MeanModel
+from tail_lib.models.mean import ZeroMean
 from tail_lib.time_series import TimeSeries
 from tail_lib.windows import Last
 from tail_lib.windows import Trailing
@@ -276,36 +278,73 @@ class FittedEwmaVolatility(VolatilityModel):
 
 
 class VolatilityFilter(Preprocessor):
-    """Returns divided by the volatility forecast for their date.
+    """Returns standardized by the mean and volatility forecast for their date.
 
-    The return of date `t` is divided by the volatility on date `t - 1`, the
-    forecast for date `t`. The first date is `NaN`.
+    The return of date `t` is filtered with the mean and volatility on date
+    `t - 1`, the forecasts for date `t`:
+
+        z[t] = (r[t] - mean[t - 1]) / vol[t - 1]
+
+    The mean is zero by default, so the returns are only divided by their
+    volatility. The first date is `NaN`, as are the dates before the first
+    volatility, e.g. during an EWMA backcast.
     """
 
-    def __init__(self, vol_model: VolatilityModel) -> None:
+    _vol_model: VolatilityModel
+    _mean_model: MeanModel
+
+    def __init__(
+        self, vol_model: VolatilityModel, *, mean_model: MeanModel | None = None
+    ) -> None:
+        """Build the filter.
+
+        Args:
+            vol_model (VolatilityModel): The volatility the returns are
+                divided by.
+            mean_model (MeanModel | None): The mean taken off the returns.
+                Defaults to zero.
+
+        """
         self._vol_model = vol_model
+        self._mean_model = ZeroMean() if mean_model is None else mean_model
+
+    @property
+    def vol_model(self) -> VolatilityModel:
+        """The volatility the returns are divided by."""
+        return self._vol_model
+
+    @property
+    def mean_model(self) -> MeanModel:
+        """The mean taken off the returns."""
+        return self._mean_model
 
     def dependencies(self) -> Dependencies:  # noqa: D102
-        return {"vol_model": self._vol_model}
+        return {"vol_model": self._vol_model, "mean_model": self._mean_model}
 
     def evaluate(self, cache: Cache) -> TimeSeries:  # noqa: D102
+        means = cache.get(self._mean_model)
         vols = cache.get(self._vol_model)
-        return self.compute(cache.returns, vols=vols)
+        return self.compute(cache.returns, means=means, vols=vols)
 
-    def compute(self, returns: TimeSeries, *, vols: TimeSeries) -> TimeSeries:
-        """Filter the returns by their volatility.
+    def compute(
+        self, returns: TimeSeries, *, means: TimeSeries, vols: TimeSeries
+    ) -> TimeSeries:
+        """Filter the returns by their mean and volatility.
 
         Args:
             returns (TimeSeries): The returns time series.
+            means (TimeSeries): The means, with the same dates and shape as
+                `returns`. The mean on date `t` is the forecast for `t + 1`.
             vols (TimeSeries): The volatilities, with the same dates and shape as
                 `returns`. The volatility on date `t` is the forecast for `t + 1`.
 
         Returns:
             TimeSeries: The filtered returns, `NaN` on the first date and where
-                the volatility of the previous date is.
+                the mean or volatility of the previous date is.
 
         """
+        returns.check_aligned(means)
         returns.check_aligned(vols)
         values = np.full(returns.values.shape, np.nan)
-        values[1:] = returns.values[1:] / vols.values[:-1]
+        values[1:] = (returns.values[1:] - means.values[:-1]) / vols.values[:-1]
         return TimeSeries(dates=returns.dates, values=values)

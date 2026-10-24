@@ -24,6 +24,7 @@ if TYPE_CHECKING:
     )
 
     from tail_lib.graph import Dependencies
+    from tail_lib.models.volatility import VolatilityFilter
     from tail_lib.models.volatility import VolatilityModel
 
 
@@ -155,6 +156,107 @@ class HistoricalSimulationsModel(ValueAtRiskModel):
         return Windows(returns, self._window).apply(
             lambda w: np.quantile(w, q=1 - self._cf, method=method, axis=0)
         )
+
+
+class FilteredHistoricalSimulationsModel(ValueAtRiskModel):
+    """Historical simulation on returns standardized by their mean and volatility.
+
+    The returns are standardized by `filter`, a `VolatilityFilter`, with the
+    mean and volatility forecast for their date:
+
+        z[s] = (r[s] - mean[s - 1]) / vol[s - 1]
+
+    The value-at-risk on the last date `t` of a window is the `1 - cf`
+    empirical quantile of the `length` standardized returns up to and
+    including `t`, rescaled with the filter's mean and volatility on date `t`:
+
+        VaR[t] = mean[t] + vol[t] * Q_{1 - cf}(z[t - length + 1], ..., z[t])
+
+    It is the forecast for the return of date `t + 1`, using data up to and
+    including `t`, like its inputs. The windows start on the first date where
+    every series has a standardized return, after the warm-up of the
+    volatility (R16): with an EWMA volatility backcast on 20 dates, the first
+    window of 500 dates holds the standardized returns of dates 20 to 519.
+    With a `step` above 1, each value-at-risk is held until the next window
+    ends. Dates before the first full window are `NaN`. With a `Last` window,
+    there is one value-at-risk, on the last date. `interpolation` is as in
+    `HistoricalSimulationsModel`.
+
+    Share one filter between the models that standardize the same way, e.g.
+    on windows of 500 and 750 dates, so it is computed once.
+
+    References: Hull and White, "Incorporating volatility updating into the
+    historical simulation method for value-at-risk", Journal of Risk, 1998;
+    Barone-Adesi, Giannopoulos and Vosper, "VaR without correlations for
+    portfolios of derivative securities", Journal of Futures Markets, 1999.
+    """
+
+    _filter: VolatilityFilter
+    _window: Trailing | Last
+    _interpolation: InterpolationMethod
+
+    def __init__(
+        self,
+        *,
+        cf: float,
+        filter: VolatilityFilter,  # noqa: A002 - the method's own term.
+        window: Trailing | Last,
+        interpolation: InterpolationMethod = "linear",
+    ) -> None:
+        """Build the model.
+
+        Args:
+            cf (float): The confidence level, in (0, 1).
+            filter (VolatilityFilter): Standardizes the returns. Its mean and
+                volatility also rescale the quantile.
+            window (Trailing | Last): The windows of standardized returns.
+            interpolation (InterpolationMethod): How the quantile interpolates
+                between order statistics.
+
+        """
+        super().__init__(cf=cf)
+        self._filter = filter
+        self._window = window
+        self._interpolation = interpolation
+
+    def dependencies(self) -> Dependencies:  # noqa: D102
+        return {
+            "filter": self._filter,
+            "vol_model": self._filter.vol_model,
+            "mean_model": self._filter.mean_model,
+        }
+
+    def evaluate(self, cache: Cache) -> TimeSeries:  # noqa: D102
+        filtered = cache.get(self._filter)
+        means = cache.get(self._filter.mean_model)
+        vols = cache.get(self._filter.vol_model)
+        return self.compute(filtered=filtered, means=means, vols=vols)
+
+    def compute(
+        self, *, filtered: TimeSeries, means: TimeSeries, vols: TimeSeries
+    ) -> TimeSeries:
+        """Compute the value-at-risk on each window.
+
+        Args:
+            filtered (TimeSeries): The standardized returns.
+            means (TimeSeries): The means of the returns, with the same dates
+                and shape as `filtered`.
+            vols (TimeSeries): The volatilities of the returns, with the same
+                dates and shape as `filtered`.
+
+        Returns:
+            TimeSeries: The value-at-risk, on the dates of `filtered`.
+
+        """
+        filtered.check_aligned(means)
+        filtered.check_aligned(vols)
+
+        windows = Windows(filtered, self._window, skip_leading_nan=True)
+        method = _interp_to_numpy_quantile_method(self._interpolation)
+        quantiles = np.quantile(windows.values, q=1 - self._cf, method=method, axis=0)
+        # Each window is rescaled with the mean and volatility of its last date.
+        ends = windows.end_indices
+        return windows.to_series(means.values[ends] + vols.values[ends] * quantiles)
 
 
 class GaussianModel(ValueAtRiskModel):

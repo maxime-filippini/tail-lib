@@ -12,25 +12,32 @@ Working rules, from `CLAUDE.md` and the developer:
 - Commit only when the developer says so. Commits have no co-author trailer.
 
 State as of 2026-10-24: branch `feat/model-api`, not pushed, all checks
-green (ty, ruff, 157 tests). Uncommitted: `Node.dependencies()` (step 1
-below), awaiting review, and `examples/backtest_hs_fhs.py` with its ruff
-ignores in `pyproject.toml`, to be rewritten with nodes in step 3.
+green (ty, ruff, 165 tests). Uncommitted: `examples/backtest_hs_fhs.py`
+with its ruff ignores in `pyproject.toml`, to be rewritten with nodes in
+step 3 below.
 
 ## Next up
 
 0. **Runs built from nodes (R17)**, see the decision below. One change each:
    1. `Node.dependencies()` on every node, with a test that it matches what
-      `evaluate` reads. Done, awaiting review.
+      `evaluate` reads. Done.
    2. `Run` takes model nodes and backtest functions, and walks the graph to
       find the run inputs and `last` windows before computing.
       `Run.from_spec(spec)` builds the nodes with the `Builder`, then makes
       the same `Run`.
    3. Docs: rewrite "From Python" in `docs/architecture.md`, and the example
       script, with nodes.
-1. **Literature reference for historical simulation.**
+1. **FHS spec.** `FilteredHistoricalSimulationsModel` has no spec yet, so
+   the JSON service can't use it: add it, its builder case and a test that
+   it builds the same numbers (see "Adding a node type"). To decide first:
+   the FHS takes a `VolatilityFilter`, which has no spec either (see
+   "Returns as a node"). Either a filter spec nested in the FHS spec, or an
+   FHS spec with `vol` and `mean` from which the builder makes the filter
+   (identical ones still shared, D3).
+2. **Literature reference for historical simulation.**
    `HistoricalSimulationsModel`'s docstring has none (`CLAUDE.md` asks for
    one), e.g. Jorion, *Value at Risk*.
-2. **Serializing results (R12)**, a design to propose first. See "Design
+3. **Serializing results (R12)**, a design to propose first. See "Design
    questions" below.
 
 ## Decisions on finished work
@@ -50,7 +57,8 @@ Recorded so later changes don't undo them by accident.
   whole-sample test), and a separate rolling result type.
 - Windows start on the first date where every series has a value (R16,
   `Windows(..., skip_leading_nan=True)`), so no window holds warm-up `NaN`s.
-  Backtests use it; models don't yet.
+  Backtests and filtered historical simulation use it; other models don't
+  yet.
 - Rejected for "the last 250 days": reading `[-1]` of a rolling test
   (computes every window), and windows counted back from the last date (past
   windows move when a date is added, so results aren't reproducible, D4).
@@ -59,7 +67,8 @@ Recorded so later changes don't undo them by accident.
 
 ### `Last` windows for models
 
-- Historical simulation, the decay calibration and the fitted EWMA take
+- Historical simulation (filtered or not), the decay calibration and the
+  fitted EWMA take
   `Trailing | Last`. With `Last`, a model gives one value, on the last date,
   e.g. today's VaR without computing every window (R6, R7).
 - Such a model can't be backtested: its only VaR is the forecast for a date
@@ -147,8 +156,6 @@ shape.
 
 The gain is composability, not reuse:
 
-- filtered HS as HS on `VolatilityFilter` output, whose first window then
-  starts after the volatility warm-up (R16);
 - demeaned or portfolio returns (R5, R2);
 - backtesting against a different P&L series.
 
@@ -156,6 +163,12 @@ Alternatives: B, returns as a named input (`run(inputs={"returns": ...})`),
 which loses the reference series that inputs are aligned with; C, keep it
 as it is. The developer asked to revisit this later. `VolatilityFilter` has
 no spec until this is settled.
+
+Filtered historical simulation, first listed as a gain here, got its own
+node instead: `FilteredHistoricalSimulationsModel` takes a `VolatilityFilter`
+(`(r[t] - mean[t - 1]) / vol[t - 1]`, zero mean by default), and rescales the
+quantile with the filter's mean and volatility. One filter can be shared by
+several FHS models, e.g. on 500 and 750 dates.
 
 ### Spec shorthands and defaults (R9a)
 

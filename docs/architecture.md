@@ -25,7 +25,7 @@ How tail-lib is organized, and how a call flows from a spec to the numbers
 | `models/mean.py` | `MeanModel`, `ZeroMean`, `ConstantMean`. |
 | `models/ewma.py` | EWMA start specs (`Backcast`, `StartingVol`), the recursion (`ewma_update`, `ewma_variance`), decay nodes (`ConstantDecay`, `EwmaDecayCalibration`) and the decay fit. |
 | `models/volatility.py` | `VolatilityModel`, `VolatilityInput`, `ConstantVolatility`, `EwmaVolatility`, `FittedEwmaVolatility` (D7), `VolatilityFilter`. |
-| `models/value_at_risk.py` | `ValueAtRiskModel`, `ValueAtRiskInput`, `HistoricalSimulationsModel` (D2), `GaussianModel`. |
+| `models/value_at_risk.py` | `ValueAtRiskModel`, `ValueAtRiskInput`, `HistoricalSimulationsModel` (D2), `FilteredHistoricalSimulationsModel`, `GaussianModel`. |
 | `backtests/overshootings.py` | `overshootings` (function) and `Overshootings` (node). |
 | `backtests/kupiec.py` | `kupiec_pof` (function), `KupiecResult`, `KupiecTest` (node). |
 | `specs.py` | Pydantic specs mirroring each node, with value ranges (R9, R9b). |

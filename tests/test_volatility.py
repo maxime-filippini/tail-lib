@@ -7,6 +7,7 @@ from tail_lib.models.ewma import Backcast
 from tail_lib.models.ewma import ConstantDecay
 from tail_lib.models.ewma import EwmaDecayCalibration
 from tail_lib.models.ewma import StartingVol
+from tail_lib.models.mean import ConstantMean
 from tail_lib.models.value_at_risk import GaussianModel
 from tail_lib.models.volatility import ConstantVolatility
 from tail_lib.models.volatility import EwmaVolatility
@@ -198,25 +199,58 @@ def test_fitted_ewma_volatility_uses_the_calibration_start() -> None:
 
 def test_volatility_filter_divides_returns_by_vols() -> None:
     returns = returns_series(n=50, n_assets=2)
-    vols = ewma(0.94).run(returns)
+    vol_model = ewma(0.94)
 
-    filtered = VolatilityFilter(ewma(0.94)).compute(returns, vols=vols)
+    filtered = VolatilityFilter(vol_model).run(returns)
 
     # The return of date t is divided by the forecast for t, made on t - 1.
+    vols = vol_model.run(returns)
     assert np.isnan(filtered.values[0]).all()
     np.testing.assert_allclose(
         filtered.values[1:], returns.values[1:] / vols.values[:-1]
     )
 
 
+def test_volatility_filter_takes_off_the_mean_forecast_for_each_date() -> None:
+    returns = returns_series(n=50, n_assets=2)
+    rng = np.random.default_rng(3)
+    means = TimeSeries(dates=returns.dates, values=rng.normal(0, 1e-3, (50, 2)))
+    vols = TimeSeries(dates=returns.dates, values=rng.uniform(0.005, 0.02, (50, 2)))
+
+    filtered = VolatilityFilter(ConstantVolatility(0.01)).compute(
+        returns, means=means, vols=vols
+    )
+
+    # The mean and volatility forecast for date t are those of date t - 1.
+    assert np.isnan(filtered.values[0]).all()
+    np.testing.assert_allclose(
+        filtered.values[1:],
+        (returns.values[1:] - means.values[:-1]) / vols.values[:-1],
+    )
+
+
+def test_volatility_filter_run_uses_its_mean_model() -> None:
+    returns = returns_series(n=50, n_assets=2)
+    mean = np.array([0.001, -0.002])
+
+    filtered = VolatilityFilter(
+        ConstantVolatility(0.01), mean_model=ConstantMean(mean)
+    ).run(returns)
+
+    np.testing.assert_allclose(filtered.values[1:], (returns.values[1:] - mean) / 0.01)
+
+
 def test_volatility_filter_rejects_mismatched_vols() -> None:
     returns = returns_series(n=50)
+    means = TimeSeries(dates=returns.dates, values=np.zeros(50))
     vols = TimeSeries.from_first_date(
         FIRST_DATE + datetime.timedelta(days=1), values=np.full(50, 0.01)
     )
 
     with pytest.raises(ValueError, match="dates"):
-        VolatilityFilter(ConstantVolatility(0.01)).compute(returns, vols=vols)
+        VolatilityFilter(ConstantVolatility(0.01)).compute(
+            returns, means=means, vols=vols
+        )
 
 
 def test_fitted_ewma_on_last_window_is_the_last_rolling_value() -> None:

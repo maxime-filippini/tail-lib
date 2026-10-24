@@ -5,15 +5,20 @@ import numpy as np
 import pytest
 from scipy import stats
 
+from tail_lib.models.ewma import ConstantDecay
 from tail_lib.models.mean import ConstantMean
+from tail_lib.models.value_at_risk import FilteredHistoricalSimulationsModel
 from tail_lib.models.value_at_risk import GaussianModel
 from tail_lib.models.value_at_risk import HistoricalSimulationsModel
 from tail_lib.models.volatility import ConstantVolatility
+from tail_lib.models.volatility import EwmaVolatility
+from tail_lib.models.volatility import VolatilityFilter
 from tail_lib.time_series import TimeSeries
 from tail_lib.windows import Last
 from tail_lib.windows import Trailing
 from tests.helpers import FIRST_DATE
 from tests.helpers import returns_series
+from tests.helpers import simulated_returns
 
 
 def test_gaussian_compute_matches_normal_quantile() -> None:
@@ -117,3 +122,107 @@ def test_historical_on_last_window_is_the_last_rolling_value() -> None:
 
     assert np.isnan(last.values[:-1]).all()
     np.testing.assert_array_equal(last.values[-1], rolling.run(returns).values[-1])
+
+
+def _standardized(returns: np.ndarray, vols: np.ndarray) -> np.ndarray:
+    z = np.full(returns.shape, np.nan)
+    z[1:] = returns[1:] / vols[:-1]
+    return z
+
+
+def test_filtered_historical_matches_formula_after_ewma_warm_up() -> None:
+    returns = simulated_returns(n=300)
+    vol_model = EwmaVolatility(ConstantDecay(0.94))
+    vols = vol_model.run(returns).values
+    z = _standardized(returns.values, vols)
+
+    var = FilteredHistoricalSimulationsModel(
+        cf=0.95, filter=VolatilityFilter(vol_model), window=Trailing(length=50)
+    ).run(returns)
+
+    # The backcast takes the first 20 returns, so the first standardized
+    # return is on date 20, and the first window holds dates 20 to 69 (R16).
+    assert np.isnan(z[:20]).all()
+    assert np.isnan(var.values[:69]).all()
+    assert not np.isnan(var.values[69:]).any()
+    for t in range(69, 300):
+        expected = vols[t] * np.quantile(z[t - 49 : t + 1], 0.05, axis=0)
+        np.testing.assert_allclose(var.values[t], expected)
+
+
+def test_filtered_historical_steps_from_first_standardized_return() -> None:
+    returns = simulated_returns(n=300)
+    vol_model = EwmaVolatility(ConstantDecay(0.94))
+    vols = vol_model.run(returns).values
+    z = _standardized(returns.values, vols)
+
+    var = FilteredHistoricalSimulationsModel(
+        cf=0.95,
+        filter=VolatilityFilter(vol_model),
+        window=Trailing(length=50, step=7),
+    ).run(returns)
+
+    # The steps count from the first window, on dates 20 to 69: windows end on
+    # dates 69, 76, ..., and each value is held until the next.
+    assert not np.isnan(var.values[69:]).any()
+    for t in range(69, 300):
+        end = 69 + 7 * ((t - 69) // 7)
+        expected = vols[end] * np.quantile(z[end - 49 : end + 1], 0.05, axis=0)
+        np.testing.assert_allclose(var.values[t], expected)
+
+
+def test_filtered_historical_with_constant_mean_and_vol_is_historical() -> None:
+    # A constant shift and scale move the quantile with them, so they cancel.
+    returns = returns_series(n=60, n_assets=2)
+    fhs = FilteredHistoricalSimulationsModel(
+        cf=0.9,
+        filter=VolatilityFilter(
+            ConstantVolatility(np.array([0.01, 0.03])),
+            mean_model=ConstantMean(np.array([0.001, -0.002])),
+        ),
+        window=Trailing(length=20),
+    )
+    hs = HistoricalSimulationsModel(cf=0.9, window=Trailing(length=20))
+
+    var = fhs.run(returns)
+
+    # The first return has no forecast before it, so FHS starts a date later.
+    assert np.isnan(var.values[:20]).all()
+    assert not np.isnan(var.values[20:]).any()
+    np.testing.assert_allclose(var.values[20:], hs.run(returns).values[20:])
+
+
+def test_filtered_historical_on_last_window_is_the_last_rolling_value() -> None:
+    returns = simulated_returns(n=300)
+    vol_filter = VolatilityFilter(EwmaVolatility(ConstantDecay(0.94)))
+
+    last = FilteredHistoricalSimulationsModel(
+        cf=0.99, filter=vol_filter, window=Last(length=100)
+    ).run(returns)
+    rolling = FilteredHistoricalSimulationsModel(
+        cf=0.99, filter=vol_filter, window=Trailing(length=100)
+    ).run(returns)
+
+    assert np.isnan(last.values[:-1]).all()
+    np.testing.assert_allclose(last.values[-1], rolling.values[-1])
+
+
+def test_filtered_historical_rescales_with_the_mean_and_vol_of_each_date() -> None:
+    dates = returns_series(n=40).dates
+    rng = np.random.default_rng(3)
+    filtered = TimeSeries(dates=dates, values=rng.standard_t(5, (40, 2)))
+    means = TimeSeries(dates=dates, values=rng.normal(0, 1e-3, (40, 2)))
+    vols = TimeSeries(dates=dates, values=rng.uniform(0.005, 0.02, (40, 2)))
+    model = FilteredHistoricalSimulationsModel(
+        cf=0.9,
+        filter=VolatilityFilter(ConstantVolatility(0.01)),
+        window=Trailing(length=10),
+    )
+
+    var = model.compute(filtered=filtered, means=means, vols=vols)
+
+    z, m, v = filtered.values, means.values, vols.values
+    assert np.isnan(var.values[:9]).all()
+    for t in range(9, 40):
+        expected = m[t] + v[t] * np.quantile(z[t - 9 : t + 1], 0.1, axis=0)
+        np.testing.assert_allclose(var.values[t], expected)
