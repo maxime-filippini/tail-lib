@@ -18,6 +18,7 @@ from tail_lib.windows import Windows
 
 if TYPE_CHECKING:
     from tail_lib._typing import FloatArray
+    from tail_lib.graph import Dependencies
 
 
 @dataclass(frozen=True)
@@ -171,6 +172,9 @@ class ConstantDecay(DecayModel):
             msg = "Decay factor has to be in [0,1]!"
             raise ValueError(msg)
 
+    def dependencies(self) -> Dependencies:  # noqa: D102
+        return {}
+
     def evaluate(self, cache: Cache) -> TimeSeries:  # noqa: D102
         return self.compute(cache.returns)
 
@@ -317,6 +321,9 @@ class EwmaDecayCalibration(DecayModel):
     def start(self) -> EwmaStart:
         """How the variance recursion of each fit gets its first value."""
         return self._start
+
+    def dependencies(self) -> Dependencies:  # noqa: D102
+        return {}
 
     def evaluate(self, cache: Cache) -> TimeSeries:  # noqa: D102
         return self.compute(cache.returns)

@@ -11,11 +11,22 @@ Working rules, from `CLAUDE.md` and the developer:
   `docs/architecture.md`, e.g. every backtest runs on every model (R4).
 - Commit only when the developer says so. Commits have no co-author trailer.
 
-State as of 2026-10-23: branch `feat/model-api`, not pushed, all checks
-green (ty, ruff, 142 tests), everything committed.
+State as of 2026-10-24: branch `feat/model-api`, not pushed, all checks
+green (ty, ruff, 157 tests). Uncommitted: `Node.dependencies()` (step 1
+below), awaiting review, and `examples/backtest_hs_fhs.py` with its ruff
+ignores in `pyproject.toml`, to be rewritten with nodes in step 3.
 
 ## Next up
 
+0. **Runs built from nodes (R17)**, see the decision below. One change each:
+   1. `Node.dependencies()` on every node, with a test that it matches what
+      `evaluate` reads. Done, awaiting review.
+   2. `Run` takes model nodes and backtest functions, and walks the graph to
+      find the run inputs and `last` windows before computing.
+      `Run.from_spec(spec)` builds the nodes with the `Builder`, then makes
+      the same `Run`.
+   3. Docs: rewrite "From Python" in `docs/architecture.md`, and the example
+      script, with nodes.
 1. **Literature reference for historical simulation.**
    `HistoricalSimulationsModel`'s docstring has none (`CLAUDE.md` asks for
    one), e.g. Jorion, *Value at Risk*.
@@ -66,17 +77,28 @@ every default. Tested on specs holding every spec class.
 
 ### Runs from Python code (R17)
 
-Notebooks and scripts build spec objects in Python and call `Run`, like the
-JSON service: specs are the one way in to a run. Chosen by the developer
-over the alternatives, kept here in case a model defined outside the
-library has to join a run:
+Python code (notebooks, scripts) builds nodes and passes them to `Run`.
+Specs are the form that can be deserialized, for the JSON service; they are
+not written by hand in Python. This replaces an earlier choice of specs as
+the one way in. Chosen by the developer:
 
-- B: `Run` takes built nodes, and `Run.from_spec` builds them first.
-  Backtests stay templates (specs, or a function of the `Overshootings`),
-  and the input and `last`-window checks need nodes to list the nodes they
-  read. Node-built runs can't be saved as specs.
-- C: B, plus nodes that give back their spec, so node-built runs can be
-  saved (R12, D4).
+- Backtests are given to a run as functions from a model's `Overshootings`
+  to a test node, e.g. `KupiecTest` itself, or
+  `lambda ovs: KupiecTest(ovs, window=Trailing(length=250))`. ty checks
+  lambdas; it accepts `functools.partial` without checking its arguments.
+  ES backtests may later need the model too, not only its overshootings.
+  Rejected: a settings class per backtest (duplicates its spec), and
+  backtest nodes bound to each model by hand (loses "every backtest on
+  every model", R4).
+- Nodes list the nodes they read (`dependencies()`), so `Run` can find run
+  inputs and `last` windows up front. It also gives names for R12. Rejected:
+  no graph walk, which reports missing inputs mid-run and can't reject a
+  backtested `last` model.
+- `Run.from_spec(spec)` builds the nodes, then makes the same `Run`.
+  `RunSpec` keeps its own `last`-window check, for errors with a spec path
+  (R9b).
+- Not now: a node-built run can't be written back as a spec, which saving
+  what ran (R12) and reusing results (D4) may need later.
 
 ## Small open points
 

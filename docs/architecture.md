@@ -41,6 +41,12 @@ volatility), a VaR model, or a backtest.
   with `cache.get(node)`, then calls `compute`.
 - `compute(...)` is pure: it uses only its arguments and the node's own
   constructor settings (see `CLAUDE.md`).
+- `dependencies()` lists the nodes `evaluate` reads, keyed by the
+  constructor argument each comes from, e.g. `{"vol_model": ...,
+  "mean_model": ...}`. So a graph can be walked without computing it. The
+  returns and the named run inputs are not nodes, so they are not listed.
+  `tests/test_dependencies.py` checks, for one node of each library type,
+  that it matches what `evaluate` asks the cache for.
 - `Cache(returns, inputs)` belongs to one returns series. It computes each
   node at most once, identified by instance, and detects cycles. It also
   holds the named run inputs (R13): `cache.input(name)` checks the input is
@@ -179,7 +185,10 @@ library needs to join a run.
 ## Adding a node type
 
 1. Write the node: `evaluate` gathers inputs from the cache, `compute` is
-   pure, and the docstring states the formula, the timing and a reference.
+   pure, `dependencies` lists the nodes `evaluate` reads, and the docstring
+   states the formula, the timing and a reference. Add one instance to
+   `_one_node_of_each_type` in `tests/test_dependencies.py`: the test fails
+   until you do.
 2. Add its spec to `specs.py`, with value ranges matching the node's checks,
    and add the spec to its role's union.
 3. Add a `case` to the role's `_build_...` method in `build.py`. Because of

@@ -12,6 +12,7 @@ from tail_lib.time_series import TimeSeries
 
 if TYPE_CHECKING:
     from tail_lib._typing import FloatArray
+    from tail_lib.graph import Dependencies
 
 
 class MeanModel(Preprocessor):
@@ -27,6 +28,9 @@ class ZeroMean(MeanModel):
 
     The mean on date `t` is `0`, for every series. It uses no returns.
     """
+
+    def dependencies(self) -> Dependencies:  # noqa: D102
+        return {}
 
     def evaluate(self, cache: Cache) -> TimeSeries:  # noqa: D102
         return self.compute(cache.returns)
@@ -63,6 +67,9 @@ class ConstantMean(MeanModel):
 
         """
         self._mean = np.asarray(mean)
+
+    def dependencies(self) -> Dependencies:  # noqa: D102
+        return {}
 
     def evaluate(self, cache: Cache) -> TimeSeries:  # noqa: D102
         return self.compute(cache.returns)

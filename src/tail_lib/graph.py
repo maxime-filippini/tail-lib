@@ -29,6 +29,9 @@ class Node[T](ABC):
     Subclasses implement `evaluate`, which gets the inputs of the node from a
     `Cache`, then computes its output. The computation itself usually lives in
     a `compute` method, whose arguments are the inputs.
+
+    Subclasses also implement `dependencies`, which lists the nodes `evaluate`
+    reads, so a graph of nodes can be walked without computing it.
     """
 
     @abstractmethod
@@ -41,6 +44,19 @@ class Node[T](ABC):
 
         Returns:
             T: The output of this node.
+
+        """
+
+    @abstractmethod
+    def dependencies(self) -> Dependencies:
+        """List the nodes `evaluate` gets from the cache.
+
+        Each is keyed by the constructor argument it comes from, e.g.
+        `{"vol_model": ..., "mean_model": ...}` for a Gaussian model. The
+        returns and the named run inputs are not nodes, so they are not listed.
+
+        Returns:
+            Dependencies: The nodes this node reads, by name.
 
         """
 
@@ -61,6 +77,12 @@ class Node[T](ABC):
 
         """
         return Cache(returns, inputs).get(self)
+
+
+# The nodes a node reads have different output types, which a mapping can't
+# express one by one: `Any` stands for each node's own output type.
+type Dependencies = Mapping[str, Node[Any]]
+"""The nodes a node reads, by name, see `Node.dependencies`."""
 
 
 class Preprocessor(Node[TimeSeries]):

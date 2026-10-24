@@ -2,6 +2,7 @@ import numpy as np
 import pytest
 
 from tail_lib.graph import Cache
+from tail_lib.graph import Dependencies
 from tail_lib.graph import Pool
 from tail_lib.graph import Preprocessor
 from tail_lib.models.ewma import EwmaDecayCalibration
@@ -36,6 +37,9 @@ class _FilteredReturnsModel(ValueAtRiskModel):
         self._vol_model = vol_model
         self._filter = VolatilityFilter(vol_model)
 
+    def dependencies(self) -> Dependencies:
+        return {"filter": self._filter, "vol_model": self._vol_model}
+
     def evaluate(self, cache: Cache) -> TimeSeries:
         filtered = cache.get(self._filter)
         vols = cache.get(self._vol_model)
@@ -59,6 +63,9 @@ def test_run_rejects_cyclic_preprocessors() -> None:
     class _Chained(VolatilityModel):
         def __init__(self) -> None:
             self.dependency: Preprocessor | None = None
+
+        def dependencies(self) -> Dependencies:
+            return {} if self.dependency is None else {"dependency": self.dependency}
 
         def evaluate(self, cache: Cache) -> TimeSeries:
             if self.dependency is not None:

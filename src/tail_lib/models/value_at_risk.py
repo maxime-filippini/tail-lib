@@ -23,6 +23,7 @@ if TYPE_CHECKING:
         _InterpolationMethod as NumpyInterpolationMethod,
     )
 
+    from tail_lib.graph import Dependencies
     from tail_lib.models.volatility import VolatilityModel
 
 
@@ -94,6 +95,9 @@ class ValueAtRiskInput(ValueAtRiskModel):
         """The name of the input."""
         return self._name
 
+    def dependencies(self) -> Dependencies:  # noqa: D102
+        return {}
+
     def evaluate(self, cache: Cache) -> TimeSeries:  # noqa: D102
         return cache.input(self._name)
 
@@ -130,6 +134,9 @@ class HistoricalSimulationsModel(ValueAtRiskModel):
         super().__init__(cf=cf)
         self._window = window
         self._interpolation = interpolation
+
+    def dependencies(self) -> Dependencies:  # noqa: D102
+        return {}
 
     def evaluate(self, cache: Cache) -> TimeSeries:  # noqa: D102
         return self.compute(cache.returns)
@@ -175,6 +182,9 @@ class GaussianModel(ValueAtRiskModel):
         super().__init__(cf=cf)
         self._vol_model = vol_model
         self._mean_model = ZeroMean() if mean_model is None else mean_model
+
+    def dependencies(self) -> Dependencies:  # noqa: D102
+        return {"vol_model": self._vol_model, "mean_model": self._mean_model}
 
     def evaluate(self, cache: Cache) -> TimeSeries:  # noqa: D102
         means = cache.get(self._mean_model)
