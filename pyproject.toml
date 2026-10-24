@@ -21,6 +21,10 @@ dev = [
     "ruff>=0.17.0",
     "ty>=0.0.90",
 ]
+docs = [
+    "mkdocstrings-python>=2.0.10",
+    "zensical>=0.0.72",
+]
 
 [tool.ruff]
 exclude = ["./.user"]

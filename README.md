@@ -10,6 +10,15 @@ comparison of the models that compute them.
   numbers.
 - `docs/open-points.md`: pending work and design questions.
 
+The user documentation (guide and API reference) is a
+[Zensical](https://zensical.org) site, configured in `zensical.toml`, with
+its pages in `docs/guide/` and `docs/reference/`:
+
+```sh
+uv run --group docs zensical serve   # preview on http://localhost:8000
+uv run --group docs zensical build   # write the site to site/
+```
+
 ## Checks
 
 ```sh

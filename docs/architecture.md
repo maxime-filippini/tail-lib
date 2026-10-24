@@ -39,6 +39,16 @@ How tail-lib is organized, and how a call flows from a spec to the numbers
 | `build.py` | `Builder`: specs to nodes, one node per distinct spec (R9a, D3). |
 | `run.py` | `RunSpec`, `Run` (from nodes, or from a spec with `Run.from_spec`), `BacktestFunction`, `RunResult`: models and backtests in one run. |
 
+## User documentation
+
+`zensical.toml` builds a [Zensical](https://zensical.org) site from `docs/`
+(`uv run --group docs zensical serve`). `docs/guide/` is the user guide,
+written by hand; `docs/reference/` is the API reference, generated from the
+docstrings by mkdocstrings (`::: tail_lib.module` lines). The developer docs
+(this file, the requirements, the open points) are under "Development". A
+change to the public API, a spec field or a default also updates the guide:
+`docs/guide/specs.md` has a table of every spec.
+
 ## The node graph (`graph.py`)
 
 Every computation is a `Node[T]`: a preprocessor (a model input such as a
