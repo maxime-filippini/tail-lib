@@ -21,8 +21,9 @@ green (ty, ruff, 229 tests), nothing uncommitted.
    each reviewed on its own: names as identifiers (R20, done), labels on
    the run (R20, done), and step 2 (`run.graph`, `Run.evaluate`, done).
    Step 3 is split in five parts (see "Steps" below): 3a (`ReportData`)
-   done, 3b (`Report`, `save()`), 3c (the frontend scaffold) done, 3d (the
-   CI check) done, awaiting review. 3e next: the graph tab.
+   done, 3b (`Report`, `save()`), 3c (the frontend scaffold), 3d (the CI
+   check) done, 3e (the graph tab) done, awaiting review. Step 4 next: the
+   returns vs VaR tab.
 2. **Serializing results (R12)**, a design to propose first. See "Design
    questions" below.
 
@@ -302,6 +303,11 @@ Spec agreed with the developer on 2026-10-25.
   data aren't committed (developer's call): `npm run types` runs before
   `dev`, `check` and `build`. The sample data, 1000 dates, 2 series
   and 5 models, is 800 kB of JSON: see "File size" below.
+- 3e: the graph is laid out by our own code (`report-app/src/graph/
+  layout.ts`), chosen by the developer over dagre and a force layout. With
+  ECharts the page is 508 kB (173 kB gzipped) before any data. The app's
+  TypeScript has no unit tests (e.g. of the layout): adding vitest is to
+  discuss. Cosmetic: box borders look slightly thicker on the sides.
 - Nodes read through another node are listed in `dependencies()` too, e.g.
   the FHS lists its filter's `vol_model` and `mean_model`, so the graph has
   an edge from the volatility to the FHS as well as through the filter.

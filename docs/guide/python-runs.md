@@ -230,8 +230,8 @@ cache.get(vol)  # already computed, so read for free
 ## Reports
 
 A [`Report`][tail_lib.report.report.Report] computes a run and saves it as
-one HTML file that opens offline (R19). The report page is still a
-placeholder: its tabs are being built.
+one HTML file that opens offline (R19). For now it has the graph of the
+run, each node once with its settings; the other tabs are being built.
 
 ```python
 from tail_lib.report.report import Report

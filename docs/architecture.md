@@ -338,6 +338,23 @@ in a saved report, or the sample data (`npm run sample`) in development.
 CI type checks and rebuilds the page, and fails if it differs from the
 committed one, so the page always matches the app's source.
 
+The graph tab (`src/tabs/GraphTab.svelte`) draws every node once with
+ECharts (`src/charts.ts` registers only the parts used). The positions come
+from `src/graph/layout.ts`, plain code with no layout library (developer's
+choice):
+
+- layer 0 holds the returns and one box per run input, with an arrow to
+  each node reading it (the returns, read by most nodes, have none);
+- a preprocessor sits one layer below the deepest preprocessor it reads;
+- then one layer each for the models, the overshootings and the backtests;
+- each layer is centred, and ordered by the mean position of the boxes it
+  reads above, in one top-down pass, so arrows cross less.
+
+`src/graph/format.ts` writes the labels (display name for models and
+backtests, class, settings on one line) and the hover details (settings in
+full, every path). The chart is drawn at scale 1, and a wide graph scrolls
+sideways; scrolling zooms and dragging pans.
+
 ## Adding a node type
 
 1. Write the node: `evaluate` gathers inputs from the cache, `compute` is

@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { ReportData } from "./report-data";
+  import GraphTab from "./tabs/GraphTab.svelte";
 
   let { data }: { data: ReportData | null } = $props();
 
@@ -36,7 +37,11 @@
     {/each}
   </nav>
   <main>
-    <p class="todo">{active}: not built yet.</p>
+    {#if active === "Graph"}
+      <GraphTab {data} />
+    {:else}
+      <p class="todo">{active}: not built yet.</p>
+    {/if}
   </main>
 {/if}
 
