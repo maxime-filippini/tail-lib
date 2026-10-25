@@ -22,8 +22,8 @@ green (ty, ruff, 229 tests), nothing uncommitted.
    the run (R20, done), and step 2 (`run.graph`, `Run.evaluate`, done).
    Step 3 is split in five parts (see "Steps" below): 3a (`ReportData`)
    done, 3b (`Report`, `save()`), 3c (the frontend scaffold), 3d (the CI
-   check) done, 3e (the graph tab) done, awaiting review. Step 4 next: the
-   returns vs VaR tab.
+   check), 3e (the graph tab) done. Step 4 (the returns vs VaR tab) done,
+   awaiting review. Step 5 next: the backtest table.
 2. **Serializing results (R12)**, a design to propose first. See "Design
    questions" below.
 
@@ -308,6 +308,15 @@ Spec agreed with the developer on 2026-10-25.
   ECharts the page is 508 kB (173 kB gzipped) before any data. The app's
   TypeScript has no unit tests (e.g. of the layout): adding vitest is to
   discuss. Cosmetic: box borders look slightly thicker on the sides.
+- Step 4, chosen by the developer: VaR drawn on the date it forecasts;
+  overshooting dots only in runs with backtests (rejected: the page
+  computing them, and `Run` always holding every model's overshootings).
+  Found while testing: ECharts' default zoom filtering (`filterMode:
+  "filter"`) made the tooltip read the lines a few dates off, and point
+  thinning (`sampling`) can hide extreme returns; both are off. At full
+  width, one-date spikes can look shorter than they are, as there are more
+  dates than pixels: zoom in to read them. `GraphTab` still has its own
+  ECharts setup code, which could use `Chart.svelte`.
 - Nodes read through another node are listed in `dependencies()` too, e.g.
   the FHS lists its filter's `vol_model` and `mean_model`, so the graph has
   an edge from the volatility to the FHS as well as through the filter.

@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { ReportData } from "./report-data";
   import GraphTab from "./tabs/GraphTab.svelte";
+  import ReturnsVarTab from "./tabs/ReturnsVarTab.svelte";
 
   let { data }: { data: ReportData | null } = $props();
 
@@ -15,6 +16,8 @@
   type Tab = (typeof tabs)[number];
 
   let active: Tab = $state("Graph");
+  // The series the charts show, when the returns have several.
+  let series = $state(0);
 </script>
 
 {#if data === null}
@@ -35,10 +38,22 @@
     {#each tabs as tab (tab)}
       <button class:active={tab === active} onclick={() => (active = tab)}>{tab}</button>
     {/each}
+    {#if data.series.length > 1}
+      <label class="series">
+        Series
+        <select bind:value={series}>
+          {#each data.series as label, index (index)}
+            <option value={index}>{label}</option>
+          {/each}
+        </select>
+      </label>
+    {/if}
   </nav>
   <main>
     {#if active === "Graph"}
       <GraphTab {data} />
+    {:else if active === "Returns vs VaR"}
+      <ReturnsVarTab {data} {series} />
     {:else}
       <p class="todo">{active}: not built yet.</p>
     {/if}
@@ -81,6 +96,15 @@
   nav button.active {
     border-bottom-color: #0969da;
     font-weight: 600;
+  }
+  .series {
+    margin-left: auto;
+    align-self: center;
+    font-size: 0.9rem;
+  }
+  .series select {
+    margin-left: 0.4rem;
+    font: inherit;
   }
   .todo {
     color: #59636e;

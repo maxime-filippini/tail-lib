@@ -355,6 +355,18 @@ backtests, class, settings on one line) and the hover details (settings in
 full, every path). The chart is drawn at scale 1, and a wide graph scrolls
 sideways; scrolling zooms and dragging pans.
 
+The returns vs VaR tab (`src/tabs/ReturnsVarTab.svelte`) charts one series,
+picked by the selector in the header (shared by the tabs). Each model's VaR
+is drawn on the date it forecasts: the VaR of date `t - 1` on date `t`
+(D1), next to the return it is tested against, so an overshooting is a
+return below the line on the same date (developer's choice). Dots mark the
+overshootings, read from each model's `Overshootings` output, so only runs
+with backtests have them: the page computes nothing itself. Points are
+dated (`[date, value]` on a time axis), and zooming keeps every point, so
+the tooltip reads every line at the same date. `src/Chart.svelte` is the
+ECharts wrapper the tabs share; `src/models.ts` lists the models with their
+overshootings node.
+
 ## Adding a node type
 
 1. Write the node: `evaluate` gathers inputs from the cache, `compute` is
