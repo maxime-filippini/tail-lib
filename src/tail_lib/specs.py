@@ -56,6 +56,9 @@ def _identifier(name: str) -> str:
 type Name = Annotated[str, AfterValidator(_identifier)]
 """The name of a model, a backtest or a run input: a Python identifier."""
 
+type Label = Annotated[str, Field(min_length=1)]
+"""The display name of a model or a backtest, any non-empty text."""
+
 
 def _shape(value: Any) -> str:  # noqa: ANN401 - pydantic passes raw input.
     return "list" if isinstance(value, list | tuple) else "single"

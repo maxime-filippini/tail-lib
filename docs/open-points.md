@@ -18,8 +18,8 @@ green (ty, ruff, 229 tests), nothing uncommitted.
 
 1. **Run report (R19)**, spec agreed on 2026-10-25, see "Run report" under
    "Design questions". Step 1 (nodes describe their settings) done. Then,
-   each reviewed on its own: names as identifiers (R20, done, awaiting
-   review), labels on the run (R20), and step 2.
+   each reviewed on its own: names as identifiers (R20, done), labels on
+   the run (R20, done, awaiting review), and step 2.
 2. **Serializing results (R12)**, a design to propose first. See "Design
    questions" below.
 
@@ -105,7 +105,9 @@ developer:
   overriding): models and backtests are named by dict keys, and each run
   input name belongs to one node. Models reading the same input share its
   node; two different nodes with one input name are an error, even if they
-  agree.
+  agree. A model and a backtest can't share a name either (2026-10-25), so
+  one `labels` mapping covers both (R20). Rejected: separate model and
+  backtest label mappings, and one label applying to both.
 - Not now: a node-built run can't be written back as a spec, which saving
   what ran (R12) and reusing results (D4) may need later.
 
@@ -172,7 +174,8 @@ Spec agreed with the developer on 2026-10-25.
 - Names and labels (R20): model, backtest and input names are Python
   identifiers, so paths are unambiguous. Friendly names are an optional
   `labels` mapping on `Run` and `RunSpec`, from a model or backtest name to
-  its display name, falling back to the name. Rejected: labels on the report
+  its display name, falling back to the name: `run.labels` holds every
+  name, filled in (chosen over a `run.label(name)` method). Rejected: labels on the report
   only (a report from a JSON spec, R17, would need its own place to send
   them), and a `label` field per spec (specs differing only by label would
   no longer share a node, D3).

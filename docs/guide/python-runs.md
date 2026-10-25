@@ -74,6 +74,22 @@ node per model, and all the backtests of that model share it. Backtests are
 named, so several versions of one test can sit side by side, e.g. on 250 and
 500 dates. See [Backtests](backtests.md) for the tests and their results.
 
+## Names and labels
+
+Model, backtest and input names are Python identifiers (letters, digits and
+underscores, not starting with a digit), and a model and a backtest can't
+share a name. For display, e.g. in a report, give friendlier names in
+`labels`:
+
+```python
+run = Run(
+    models,
+    backtests={"kupiec_250": lambda ovs: KupiecTest(ovs, window=Trailing(length=250))},
+    labels={"fhs_500": "Filtered HS, 500 days", "kupiec_250": "Kupiec, 250 days"},
+)
+run.labels  # every model and backtest, by name; unlabelled names as they are
+```
+
 ## Results
 
 `run.run(returns)` returns a [`RunResult`][tail_lib.run.RunResult]:

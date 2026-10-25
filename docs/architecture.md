@@ -21,7 +21,10 @@ How tail-lib is organized, and how a call flows from a spec to the numbers
 - **Names** (R20): model, backtest and run input names are Python
   identifiers, checked by `check_name` in `Run`, in the input nodes, and in
   specs (`Name`). So the dotted paths through a run's graph, e.g.
-  `models.gauss.vol_model`, are unambiguous.
+  `models.gauss.vol_model`, are unambiguous. A model and a backtest can't
+  share a name. Display names are `labels` on `Run` and `RunSpec`, checked
+  once by `_check_names_and_labels` in `run.py`; `run.labels` fills in
+  every name, unlabelled ones as they are.
 
 ## Modules
 
