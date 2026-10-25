@@ -232,8 +232,8 @@ cache.get(vol)  # already computed, so read for free
 A [`Report`][tail_lib.report.report.Report] computes a run and saves it as
 one HTML file that opens offline (R19). For now it has the graph of the
 run, each node once with its settings, and the returns against each
-model's VaR, with the overshootings marked; the other tabs are being
-built.
+model's VaR, with the overshootings marked, and a table of every
+backtest, coloured by rejection; the other tabs are being built.
 
 ```python
 from tail_lib.report.report import Report

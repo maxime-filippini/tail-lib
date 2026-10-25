@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { ReportData } from "./report-data";
+  import BacktestsTab from "./tabs/BacktestsTab.svelte";
   import GraphTab from "./tabs/GraphTab.svelte";
   import ReturnsVarTab from "./tabs/ReturnsVarTab.svelte";
 
@@ -16,8 +17,10 @@
   type Tab = (typeof tabs)[number];
 
   let active: Tab = $state("Graph");
-  // The series the charts show, when the returns have several.
+  // The series the charts show, when the returns have several. The graph
+  // and the backtest table show every series, so they have no selector.
   let series = $state(0);
+  const seriesTabs: readonly Tab[] = ["Returns vs VaR", "Rolling backtests", "Node outputs"];
 </script>
 
 {#if data === null}
@@ -38,7 +41,7 @@
     {#each tabs as tab (tab)}
       <button class:active={tab === active} onclick={() => (active = tab)}>{tab}</button>
     {/each}
-    {#if data.series.length > 1}
+    {#if data.series.length > 1 && seriesTabs.includes(active)}
       <label class="series">
         Series
         <select bind:value={series}>
@@ -54,6 +57,8 @@
       <GraphTab {data} />
     {:else if active === "Returns vs VaR"}
       <ReturnsVarTab {data} {series} />
+    {:else if active === "Backtests"}
+      <BacktestsTab {data} />
     {:else}
       <p class="todo">{active}: not built yet.</p>
     {/if}

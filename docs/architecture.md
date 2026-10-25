@@ -367,6 +367,15 @@ the tooltip reads every line at the same date. `src/Chart.svelte` is the
 ECharts wrapper the tabs share; `src/models.ts` lists the models with their
 overshootings node.
 
+The backtests tab (`src/tabs/BacktestsTab.svelte`) is one table, a row per
+model, backtest and series: the window, dates tested, overshootings,
+observed and expected rates, statistic and p-value. A backtest on rolling
+windows shows its last window, named from its `window` setting (e.g. "250
+dates to 2025-10-31 (last of 731 windows)"). The p-value cell is red,
+with "rejected", below a level set above the table, 5% by default and not
+saved; green otherwise (developer's choices). The series selector shows
+only on the tabs that chart one series.
+
 ## Adding a node type
 
 1. Write the node: `evaluate` gathers inputs from the cache, `compute` is
