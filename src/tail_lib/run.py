@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from functools import partial
+from types import MappingProxyType
 from typing import TYPE_CHECKING
 from typing import Annotated
 from typing import Any
@@ -17,6 +18,7 @@ from typing import Any
 from pydantic import Field
 from pydantic import model_validator
 
+from tail_lib._checks import check_name
 from tail_lib.backtests.overshootings import Overshootings
 from tail_lib.build import BacktestResult
 from tail_lib.build import Builder
@@ -28,6 +30,7 @@ from tail_lib.models.value_at_risk import HistoricalSimulationsModel
 from tail_lib.models.value_at_risk import ValueAtRiskInput
 from tail_lib.models.volatility import VolatilityInput
 from tail_lib.specs import BacktestSpec
+from tail_lib.specs import Label
 from tail_lib.specs import Name
 from tail_lib.specs import Spec
 from tail_lib.specs import ValueAtRiskSpec
@@ -53,10 +56,19 @@ class RunSpec(Spec):
     A model with a `last` window, or with an input that has one, gives one
     value-at-risk, the forecast for a date after the data. It has nothing to
     backtest, so a run with backtests rejects it.
+
+    `labels` gives display names to models and backtests, e.g. for a report
+    (R20), as in `Run`.
     """
 
     models: Annotated[dict[Name, ValueAtRiskSpec], Field(min_length=1)]
     backtests: dict[Name, BacktestSpec] = Field(default_factory=dict)
+    labels: dict[Name, Label] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _check_names_and_labels(self) -> RunSpec:
+        _check_names_and_labels(self.models, self.backtests, self.labels)
+        return self
 
     @model_validator(mode="after")
     def _check_backtested_models_have_a_history(self) -> RunSpec:
@@ -91,12 +103,66 @@ class RunResult:
     backtests: dict[str, dict[str, BacktestResult]]
 
 
+@dataclass(frozen=True)
+class GraphNode:
+    """A node of a run's graph, with every path it is reached by.
+
+    Attributes:
+        node (Node[Any]): The node.
+        paths (tuple[str, ...]): Its paths from the run, e.g.
+            `models.gauss.vol_model`, or `backtests.gauss.kupiec.overshootings`
+            for a model's overshootings. A node shared by several readers has
+            several (D3).
+
+    """
+
+    # The nodes of a graph have different output types: `Any` stands for each.
+    node: Node[Any]
+    paths: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class GraphEdge:
+    """An edge of a run's graph: a node reading another one.
+
+    Attributes:
+        source (Node[Any]): The node read, a dependency of `target`.
+        target (Node[Any]): The node reading it.
+        name (str): The name `target` reads it under, its key in
+            `target.dependencies()`, e.g. `vol_model`.
+
+    """
+
+    source: Node[Any]
+    target: Node[Any]
+    name: str
+
+
+@dataclass(frozen=True)
+class RunGraph:
+    """Every node of a run, each once, and the edges between them.
+
+    Attributes:
+        nodes (tuple[GraphNode, ...]): Each distinct node, in the order a
+            depth-first walk reaches it: from each model, then from each
+            backtest of each model.
+        edges (tuple[GraphEdge, ...]): One edge per dependency of each node.
+
+    """
+
+    nodes: tuple[GraphNode, ...]
+    edges: tuple[GraphEdge, ...]
+
+
 type BacktestFunction = Callable[[Overshootings], Node[BacktestResult]]
 """Makes a backtest node from a model's overshootings, e.g. `KupiecTest` itself."""
 
 
 class Run:
     """Models and their backtests, computed on any returns series.
+
+    Models and backtests have distinct names, which can be given friendlier
+    display names, `labels`, e.g. for a report (R20).
 
     Every backtest runs on every model (R4). Each model gets one
     `Overshootings` node, shared by all its backtests; a model node given
@@ -107,25 +173,34 @@ class Run:
     `Node.dependencies`, to find the inputs it reads (R13), and to reject
     backtests on a model with a `last` window, which gives one forecast, for
     a date after the data. Each input name belongs to one node: models that
-    read the same input share that node.
+    read the same input share that node. The whole graph, backtests
+    included, is in `graph`.
     """
 
     def __init__(
         self,
         models: Mapping[str, ValueAtRiskModel],
         backtests: Mapping[str, BacktestFunction] | None = None,
+        labels: Mapping[str, str] | None = None,
     ) -> None:
         """Build a run from model nodes.
 
         Args:
             models (Mapping[str, ValueAtRiskModel]): The models, by name.
+                Names, like backtest names, are Python identifiers.
             backtests (Mapping[str, BacktestFunction] | None): The backtests,
                 by name, each as a function from a model's overshootings to
                 the test node, e.g. `KupiecTest`, or
                 `lambda ovs: KupiecTest(ovs, window=Trailing(length=250))`.
+            labels (Mapping[str, str] | None): Display names, by model or
+                backtest name, e.g. `{"gauss_99": "Gaussian 99%"}`. Names
+                without one are shown as they are.
 
         Raises:
-            ValueError: If there is no model, if two different nodes read the
+            ValueError: If there is no model, if a model or backtest name
+                isn't a Python identifier, if a model and a backtest share a
+                name, if a label is empty or names no model or backtest, if
+                two different nodes read the
                 same run input, or if there are backtests and a model has a
                 `last` window, or reads a node that has one.
 
@@ -134,6 +209,16 @@ class Run:
             msg = "A run needs at least one model!"
             raise ValueError(msg)
         backtests = {} if backtests is None else backtests
+        labels = {} if labels is None else labels
+        # Names appear in paths through the graph, e.g. `models.gauss`.
+        for name in models:
+            check_name("Model", name)
+        for name in backtests:
+            check_name("Backtest", name)
+        _check_names_and_labels(models, backtests, labels)
+        self._labels = MappingProxyType(
+            {name: labels.get(name, name) for name in [*models, *backtests]}
+        )
 
         # Every node of each model, with its path from the run, e.g.
         # `models.gauss.vol_model.calibration`.
@@ -146,15 +231,27 @@ class Run:
         self._input_names = _input_names(graphs)
 
         self._models = Pool(dict(models))
-        # One pool of backtests per distinct model node, on its overshootings.
-        pools: dict[ValueAtRiskModel, Pool[BacktestResult]] = {}
+        # One set of backtest nodes per distinct model node, on its
+        # overshootings.
+        tests: dict[ValueAtRiskModel, dict[str, Node[BacktestResult]]] = {}
         for model in models.values():
-            if model not in pools:
+            if model not in tests:
                 ovs = Overshootings(model)
-                pools[model] = Pool(
-                    {name: make(ovs) for name, make in backtests.items()}
-                )
-        self._backtests = {name: pools[model] for name, model in models.items()}
+                tests[model] = {name: make(ovs) for name, make in backtests.items()}
+        self._backtests = {name: Pool(tests[model]) for name, model in models.items()}
+
+        # The graph is walked from each model, then from each of its
+        # backtests, which reach the model again through its overshootings.
+        # A graph's nodes have different output types: `Any` stands for each.
+        roots: list[tuple[str, Node[Any]]] = [
+            (f"models.{name}", model) for name, model in models.items()
+        ]
+        roots += [
+            (f"backtests.{model_name}.{test_name}", test)
+            for model_name, model in models.items()
+            for test_name, test in tests[model].items()
+        ]
+        self._graph = _run_graph(roots)
 
     @classmethod
     def from_spec(cls, spec: RunSpec) -> Run:
@@ -180,12 +277,25 @@ class Run:
             name: partial(builder.backtest, backtest)
             for name, backtest in spec.backtests.items()
         }
-        return cls(models, backtests)
+        return cls(models, backtests, spec.labels)
+
+    @property
+    def labels(self) -> Mapping[str, str]:
+        """The display name of every model and backtest, by name.
+
+        A name without a label is its own display name.
+        """
+        return self._labels
 
     @property
     def input_names(self) -> frozenset[str]:
         """The names of the inputs the run reads, to pass to `run`."""
         return self._input_names
+
+    @property
+    def graph(self) -> RunGraph:
+        """Every node of the run, each once, with its paths and edges."""
+        return self._graph
 
     def run(
         self,
@@ -208,19 +318,78 @@ class Run:
                 before computing anything.
 
         """
-        given = {} if inputs is None else inputs
-        missing = self._input_names - given.keys()
+        return self.evaluate(Cache(returns, inputs))
+
+    def evaluate(self, cache: Cache) -> RunResult:
+        """Compute the models, then their backtests, on a cache.
+
+        Every node of the run is then in the cache, so reading a node of
+        `graph` from it costs nothing.
+
+        Args:
+            cache (Cache): The cache, holding the returns and the run inputs.
+                It can be shared, e.g. with pools.
+
+        Returns:
+            RunResult: The value-at-risk of each model, and its backtests.
+
+        Raises:
+            KeyError: If an input the run reads is missing from the cache.
+                This is checked before computing anything.
+
+        """
+        missing = self._input_names - cache.input_names
         if missing:
-            msg = f"Missing inputs {sorted(missing)}! Inputs given: {sorted(given)}."
+            msg = (
+                f"Missing inputs {sorted(missing)}! Inputs given: "
+                f"{sorted(cache.input_names)}."
+            )
             raise KeyError(msg)
 
-        cache = Cache(returns, given)
         models = self._models.evaluate(cache)
         backtests = {
             model_name: pool.evaluate(cache)
             for model_name, pool in self._backtests.items()
         }
         return RunResult(models=models, backtests=backtests)
+
+
+def _check_names_and_labels(
+    models: Mapping[str, object],
+    backtests: Mapping[str, object],
+    labels: Mapping[str, str],
+) -> None:
+    """Check models and backtests have distinct names, and every label a name.
+
+    Args:
+        models (Mapping[str, object]): The models, or their specs, by name.
+        backtests (Mapping[str, object]): The backtests, or their specs, by
+            name.
+        labels (Mapping[str, str]): The display names, by model or backtest
+            name.
+
+    Raises:
+        ValueError: If a model and a backtest share a name, or if a label is
+            empty or names no model or backtest.
+
+    """
+    shared = models.keys() & backtests.keys()
+    if shared:
+        msg = f"Names {sorted(shared)} are both a model and a backtest!"
+        raise ValueError(msg)
+
+    unknown = labels.keys() - models.keys() - backtests.keys()
+    if unknown:
+        msg = (
+            f"Labels {sorted(unknown)} name no model or backtest! Models: "
+            f"{sorted(models)}, backtests: {sorted(backtests)}."
+        )
+        raise ValueError(msg)
+
+    empty = [name for name, label in labels.items() if not label]
+    if empty:
+        msg = f"Labels of {sorted(empty)} are empty!"
+        raise ValueError(msg)
 
 
 type _Graph = list[tuple[str, Node[Any]]]
@@ -301,6 +470,37 @@ def _graph(path: str, node: Node[Any]) -> _Graph:
     for name, dependency in node.dependencies().items():
         graph += _graph(f"{path}.{name}", dependency)
     return graph
+
+
+def _run_graph(roots: list[tuple[str, Node[Any]]]) -> RunGraph:
+    """Gather the graph of a run from its roots, each node once.
+
+    Args:
+        roots (list[tuple[str, Node[Any]]]): The models and backtests, each
+            with its path, e.g. `models.gauss` or `backtests.gauss.kupiec`.
+
+    Returns:
+        RunGraph: Each distinct node with its paths, in depth-first order
+            from the roots, and the edges to each node from its
+            dependencies.
+
+    """
+    # Nodes are identified by instance, as in the cache, and dicts keep the
+    # order they are first reached in.
+    paths: dict[Node[Any], list[str]] = {}
+    for root_path, root in roots:
+        for path, node in _graph(root_path, root):
+            paths.setdefault(node, []).append(path)
+
+    nodes = tuple(
+        GraphNode(node, tuple(node_paths)) for node, node_paths in paths.items()
+    )
+    edges = tuple(
+        GraphEdge(source=dependency, target=node, name=name)
+        for node in paths
+        for name, dependency in node.dependencies().items()
+    )
+    return RunGraph(nodes=nodes, edges=edges)
 
 
 def _input_name(node: Node[Any]) -> str | None:

@@ -8,6 +8,7 @@ from typing import assert_never
 
 import numpy as np
 
+from tail_lib._checks import check_name
 from tail_lib._checks import check_positive
 from tail_lib._checks import check_probability
 from tail_lib.distributions import Gaussian
@@ -26,6 +27,7 @@ if TYPE_CHECKING:
     )
 
     from tail_lib.graph import Dependencies
+    from tail_lib.graph import Settings
     from tail_lib.models.volatility import VolatilityFilter
     from tail_lib.models.volatility import VolatilityModel
 
@@ -83,11 +85,17 @@ class ValueAtRiskInput(ValueAtRiskModel):
         """Build the model.
 
         Args:
-            name (str): The name of the input, as passed to `run`.
+            name (str): The name of the input, as passed to `run`: a Python
+                identifier.
             cf (float): The confidence level the forecasts were computed at.
+
+        Raises:
+            ValueError: If the name isn't a Python identifier, or the
+                confidence level isn't in (0, 1).
 
         """
         super().__init__(cf=cf)
+        check_name("Input", name)
         self._name = name
 
     @property
@@ -97,6 +105,9 @@ class ValueAtRiskInput(ValueAtRiskModel):
 
     def dependencies(self) -> Dependencies:  # noqa: D102
         return {}
+
+    def settings(self) -> Settings:  # noqa: D102
+        return {"name": self._name, "cf": self._cf}
 
     def evaluate(self, cache: Cache) -> TimeSeries:  # noqa: D102
         return cache.input(self._name)
@@ -145,6 +156,13 @@ class HistoricalSimulationsModel(ValueAtRiskModel):
 
     def dependencies(self) -> Dependencies:  # noqa: D102
         return {}
+
+    def settings(self) -> Settings:  # noqa: D102
+        return {
+            "cf": self._cf,
+            "window": self._window,
+            "interpolation": self._interpolation,
+        }
 
     def evaluate(self, cache: Cache) -> TimeSeries:  # noqa: D102
         return self.compute(cache.returns)
@@ -238,6 +256,13 @@ class FilteredHistoricalSimulationsModel(ValueAtRiskModel):
             "mean_model": self._filter.mean_model,
         }
 
+    def settings(self) -> Settings:  # noqa: D102
+        return {
+            "cf": self._cf,
+            "window": self._window,
+            "interpolation": self._interpolation,
+        }
+
     def evaluate(self, cache: Cache) -> TimeSeries:  # noqa: D102
         filtered = cache.get(self._filter)
         means = cache.get(self._filter.mean_model)
@@ -304,6 +329,9 @@ class GaussianModel(ValueAtRiskModel):
 
     def dependencies(self) -> Dependencies:  # noqa: D102
         return {"vol_model": self._vol_model, "mean_model": self._mean_model}
+
+    def settings(self) -> Settings:  # noqa: D102
+        return {"cf": self._cf}
 
     def evaluate(self, cache: Cache) -> TimeSeries:  # noqa: D102
         means = cache.get(self._mean_model)

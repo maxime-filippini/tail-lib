@@ -21,6 +21,7 @@ from tail_lib.windows import Windows
 if TYPE_CHECKING:
     from tail_lib._typing import FloatArray
     from tail_lib.graph import Dependencies
+    from tail_lib.graph import Settings
 
 
 @dataclass(frozen=True)
@@ -173,6 +174,9 @@ class ConstantDecay(DecayModel):
     def dependencies(self) -> Dependencies:  # noqa: D102
         return {}
 
+    def settings(self) -> Settings:  # noqa: D102
+        return {"decay_factor": self._decay_factor}
+
     def evaluate(self, cache: Cache) -> TimeSeries:  # noqa: D102
         return self.compute(cache.returns)
 
@@ -322,6 +326,14 @@ class EwmaDecayCalibration(DecayModel):
 
     def dependencies(self) -> Dependencies:  # noqa: D102
         return {}
+
+    def settings(self) -> Settings:  # noqa: D102
+        return {
+            "window": self._window,
+            "bounds": self._bounds,
+            "start": self._start,
+            "n_iter": self._n_iter,
+        }
 
     def evaluate(self, cache: Cache) -> TimeSeries:  # noqa: D102
         return self.compute(cache.returns)

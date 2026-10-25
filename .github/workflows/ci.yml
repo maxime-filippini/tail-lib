@@ -117,6 +117,55 @@ jobs:
       - name: Build wheel
         run: uv build --wheel
 
+  report-app:
+    name: Check the report page
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version-file: .python-version
+
+      # The page's types are generated from `ReportData`, in Python.
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: report-app/.nvmrc
+          cache: npm
+          cache-dependency-path: report-app/package-lock.json
+
+      - name: Install the app's dependencies
+        working-directory: report-app
+        run: npm ci
+
+      - name: Type check the app
+        working-directory: report-app
+        run: npm run check
+
+      - name: Build the page
+        working-directory: report-app
+        run: npm run build
+
+      # The built page is committed, so pip installs need no Node. It has to
+      # be the page the app's source builds.
+      - name: Check the committed page is up to date
+        run: |
+          if ! git diff --exit-code -- src/tail_lib/report/index.html; then
+            echo "::error file=src/tail_lib/report/index.html::The committed report page is out of date: run \`npm run build\` in report-app/ and commit it."
+            exit 1
+          fi
+
   docs:
     name: Build docs
     runs-on: ubuntu-latest

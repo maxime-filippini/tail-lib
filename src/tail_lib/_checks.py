@@ -26,6 +26,28 @@ def check_probability(name: str, value: float) -> None:
         raise ValueError(msg)
 
 
+def check_name(kind: str, name: str) -> None:
+    """Check that a name, e.g. a model's, is a Python identifier.
+
+    Names appear in dotted paths through a run's graph, e.g.
+    `models.gauss.vol_model`, so a name can't hold a dot, a space or a dash.
+
+    Args:
+        kind (str): What the name is, for the message, e.g. "Model".
+        name (str): The name.
+
+    Raises:
+        ValueError: If it isn't a Python identifier.
+
+    """
+    if not name.isidentifier():
+        msg = (
+            f"{kind} name has to be a Python identifier (letters, digits and "
+            f"underscores, not starting with a digit), got {name!r}!"
+        )
+        raise ValueError(msg)
+
+
 def check_unit_interval(name: str, value: FloatArray | float) -> None:
     """Check that a value, e.g. a decay factor, is in [0,1], every element of it.
 

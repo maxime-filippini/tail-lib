@@ -16,7 +16,17 @@ green (ty, ruff, 229 tests), nothing uncommitted.
 
 ## Next up
 
-1. **Serializing results (R12)**, a design to propose first. See "Design
+1. **Run report (R19)**, every step built; spec agreed on 2026-10-25, see "Run report" under
+   "Design questions". Step 1 (nodes describe their settings) done. Then,
+   each reviewed on its own: names as identifiers (R20, done), labels on
+   the run (R20, done), and step 2 (`run.graph`, `Run.evaluate`, done).
+   Step 3 is split in five parts (see "Steps" below): 3a (`ReportData`)
+   done, 3b (`Report`, `save()`), 3c (the frontend scaffold), 3d (the CI
+   check), 3e (the graph tab), 4 (the returns vs VaR tab), 5 (the backtest
+   table), 6 (the rolling backtests tab) done. Step 7 (node outputs on
+   click) done, awaiting review. Left: the "Later" and "Still open" items
+   under "Run report".
+2. **Serializing results (R12)**, a design to propose first. See "Design
    questions" below.
 
 ## Decisions on finished work
@@ -101,12 +111,19 @@ developer:
   overriding): models and backtests are named by dict keys, and each run
   input name belongs to one node. Models reading the same input share its
   node; two different nodes with one input name are an error, even if they
-  agree.
+  agree. A model and a backtest can't share a name either (2026-10-25), so
+  one `labels` mapping covers both (R20). Rejected: separate model and
+  backtest label mappings, and one label applying to both.
 - Not now: a node-built run can't be written back as a spec, which saving
   what ran (R12) and reusing results (D4) may need later.
 
 ## Small open points
 
+- A `Backtest` base class for backtest nodes, which `KupiecTest` (and later
+  tests) inherit from, as VaR models inherit from `ValueAtRiskModel`
+  (developer's request, 2026-10-25). Backtests could then be identified by
+  type: today the report's `_kind` labels as a backtest any node that is
+  neither a VaR model nor a preprocessor (`report/data.py`).
 - Specs from HTTP (R17) are untrusted. To discuss: limits on what one spec
   can ask for (number of models, window lengths), and whether the service
   needs spec errors in a structured form (pydantic's `errors()` gives each
@@ -141,6 +158,182 @@ developer:
 - The branch hasn't been pushed, and there's no PR to `develop` yet.
 
 ## Design questions
+
+### Run report (R19)
+
+Spec agreed with the developer on 2026-10-25.
+
+**Python side**
+
+- `Report(run, returns, inputs=None)` computes the run itself, so it can
+  read every node's output, not only `RunResult`. `report.save(path)`
+  writes the HTML file.
+- `Run.evaluate(cache)` becomes public, like `Pool.evaluate`. `Run.run`
+  turns into a thin wrapper around it. The report builds the `Cache`, calls
+  `run.evaluate(cache)`, then reads each graph node from that same cache.
+  These nodes are already computed, so reading them costs nothing.
+- `Run` exposes its graph: every distinct node once, including the
+  `Overshootings` and backtest nodes, with its paths (a shared node has
+  several, D3) and its edges, labelled by argument name. Chosen for step 2
+  on 2026-10-25: `run.graph` is a frozen `RunGraph` of `nodes` (`GraphNode`:
+  the node and its paths, depth first from the models, then the backtests)
+  and `edges` (`GraphEdge`: from the dependency to the node reading it,
+  with the argument name). Backtest paths mirror `RunResult`:
+  `backtests.<model>.<test>`, then `backtests.<model>.<test>.overshootings`.
+  `Run.evaluate(cache)` checks for missing inputs before computing, through
+  a new read-only `Cache.input_names`; `run()` wraps it.
+- Names and labels (R20): model, backtest and input names are Python
+  identifiers, so paths are unambiguous. Friendly names are an optional
+  `labels` mapping on `Run` and `RunSpec`, from a model or backtest name to
+  its display name, falling back to the name: `run.labels` holds every
+  name, filled in (chosen over a `run.label(name)` method). Rejected: labels on the report
+  only (a report from a JSON spec, R17, would need its own place to send
+  them), and a `label` field per spec (specs differing only by label would
+  no longer share a node, D3).
+- Nodes describe their constructor settings, e.g. `cf`, `window`, through
+  an abstract `settings()` next to `dependencies()` (done in step 1).
+  Settings that are nodes stay in `dependencies()`. Graph labels show the
+  class and the settings, with full details on hover.
+- The data passed to the page is one JSON blob, defined by a pydantic
+  `ReportData` model. It is the contract with the frontend, and also the
+  shape the data service could serve later (R17). Draft contents:
+  metadata (title, creation time, tail-lib version), dates, series labels
+  for the batch axes, returns, graph nodes (id, kind, class, settings,
+  paths) and edges, each time-series node's output by node id, and backtest
+  results by model and backtest name. `NaN` becomes `null`.
+- No templating library: Python writes the JSON into a
+  `<script type="application/json">` slot of the built page.
+
+**Frontend**
+
+- The page is an SPA built with Svelte, TypeScript and Vite. ECharts draws
+  both the charts and the graph. `vite-plugin-singlefile` inlines
+  everything into one `index.html`.
+- The source lives in `report-app/` at the repo root, with its own
+  `package.json`. The built `index.html` is committed as package data under
+  `src/tail_lib/report/`. CI rebuilds it and fails if the committed file
+  differs, so pip installs never need Node.
+- The TypeScript types come from `ReportData`'s JSON Schema, so both sides
+  are checked against one contract (R11).
+- Tabs:
+  - **Graph:** one shared DAG, each node once. Returns and inputs at the
+    top, then preprocessors, models, overshootings and backtests.
+  - **Returns vs VaR:** the returns, each model's VaR as a line, and
+    overshootings marked. Models toggle from the legend.
+  - **Backtests:** a table per model and backtest with n_obs,
+    overshootings, observed vs expected rate, statistic and p-value,
+    coloured by rejection. It shows every series.
+  - **Rolling backtests:** for windowed backtests, the p-value and observed
+    rate at each window's end date.
+  - **Node outputs:** click a graph node (a volatility, a filter, a mean)
+    to chart its output.
+- When there are batch series, a selector picks the series the charts
+  show.
+
+**Steps**, each reviewed on its own:
+
+1. Nodes describe their settings.
+2. `Run` exposes its graph, and `Run.evaluate(cache)`.
+3. In five parts, chosen by the developer on 2026-10-25:
+   - 3a. `ReportData` and `build_report_data(run, cache, ...)`: the JSON
+     contract, pure Python.
+   - 3b. `Report(run, returns, inputs)` and `save(path)`, writing the JSON
+     into a placeholder HTML page.
+   - 3c. The frontend scaffold in `report-app/`, TS types from the JSON
+     Schema, the built page committed as package data, empty tabs.
+   - 3d. The CI check: rebuild the page, fail on a diff.
+   - 3e. The graph tab.
+4. The returns vs VaR tab.
+5. The backtest table.
+6. The rolling backtests tab.
+7. Node outputs on click.
+
+**Rejected**
+
+- Report inputs: `Run + RunResult + returns` (no intermediate outputs) and
+  `RunResult` only (no graph).
+- Node outputs returned by `Run.run` in `RunResult`: overlaps with R12,
+  which is still undesigned.
+- JS loaded from a CDN: needs internet access to render.
+- Vendoring `echarts.min.js` in the Python package (first chosen): the SPA
+  build bundles ECharts instead.
+- Jinja2 or `string.Template` to build the page: replaced by one JSON blob
+  read by the SPA.
+- Building the page during the package build: building a wheel would need
+  Node.
+- Plotly + Mermaid, Plotly + Cytoscape.js, Vega-Lite + Mermaid: two
+  libraries where ECharts does both. Vanilla TS, React and Vue: Svelte
+  chosen.
+- One graph tree per model: hides shared nodes (D3). Labels with only the
+  class and run name: less informative.
+- Batch series: rejecting batched returns, or one chart per series.
+- Hand-written types on both sides: they can drift apart.
+- Settings (step 1, chosen by the developer: an abstract `settings()`
+  returning Python values typed by a `Setting` union): settings returned as
+  JSON by each node (ties nodes to the report format, repeats the
+  conversion), and settings read by introspecting `__init__` (implicit,
+  breaks on renamed or derived attributes). Names `parameters()` (blurs
+  estimable parameters, which are nodes) and `config()`.
+
+**Later (R19)**
+
+- Showing the report inline in Jupyter (`_repr_html_`), and serving it, or
+  its `ReportData` JSON, from the data service (R17).
+
+**Still open**
+
+- File size: every node's output, on every date and for every series, can
+  be large. We may want an option to leave out node outputs, or to
+  downsample.
+- Decided for step 5 (2026-10-25): rejected below a p-value level set in
+  the page, 5% by default and not saved (rejected: fixed 5%, a level set
+  from Python); only the p-value cell is coloured, red with "rejected" or
+  green (rejected: the whole row); a rolling backtest shows its last window
+  (rejected: leaving rolling backtests out of the table).
+- Step 6: the rejection level is shared by the backtests and rolling tabs.
+  The p-value axis is linear, 0 to 1, so small p-values crowd near 0; a log
+  axis is an option.
+- Step 7: clicking a box in the graph opens its output in Node outputs, or
+  Backtests for a backtest node; the returns and run inputs aren't nodes,
+  so clicking them does nothing. How each output reads (percent or plain
+  number) is a small table by class in the page.
+- Decided for 3a (2026-10-25): a node's id is its first path; series are
+  labelled by an optional `series_labels` (one per series, C order over
+  the batch axes), by index otherwise; settings that aren't numbers or
+  text are written as in the specs. Rejected: numbered ids, index labels
+  only, `repr()` of the settings.
+- Counts (`n_obs`, `n_overshootings`) are written as floats in the JSON
+  (`99.0`), as every series of values is `float | null`. Could get an
+  integer type if the page needs it.
+- 3b: the page's data slot holds `__TAIL_LIB_REPORT_DATA__`; the built SPA
+  keeps that slot in `report-app/index.html`. The page's code never writes
+  the placeholder (it checks for JSON instead), so it appears once.
+- 3c: TypeScript is pinned to 6: `svelte-check` doesn't support 7 yet
+  (only through an experimental `--tsgo` setup). ECharts is added in 3e,
+  with the first chart. The build is reproducible (same file on a rebuild),
+  which the CI check (3d) relies on. The generated types and the sample
+  data aren't committed (developer's call): `npm run types` runs before
+  `dev`, `check` and `build`. The sample data, 1000 dates, 2 series
+  and 5 models, is 800 kB of JSON: see "File size" below.
+- 3e: the graph is laid out by our own code (`report-app/src/graph/
+  layout.ts`), chosen by the developer over dagre and a force layout. With
+  ECharts the page is 508 kB (173 kB gzipped) before any data. The app's
+  TypeScript has no unit tests (e.g. of the layout): adding vitest is to
+  discuss. Cosmetic: box borders look slightly thicker on the sides.
+- Step 4, chosen by the developer: VaR drawn on the date it forecasts;
+  overshooting dots only in runs with backtests (rejected: the page
+  computing them, and `Run` always holding every model's overshootings).
+  Found while testing: ECharts' default zoom filtering (`filterMode:
+  "filter"`) made the tooltip read the lines a few dates off, and point
+  thinning (`sampling`) can hide extreme returns; both are off. At full
+  width, one-date spikes can look shorter than they are, as there are more
+  dates than pixels: zoom in to read them. `GraphTab` still has its own
+  ECharts setup code, which could use `Chart.svelte`.
+- Nodes read through another node are listed in `dependencies()` too, e.g.
+  the FHS lists its filter's `vol_model` and `mean_model`, so the graph has
+  an edge from the volatility to the FHS as well as through the filter.
+  The developer chose (2026-10-25) to keep `dependencies()` free of display
+  concerns: revisit in the report only if the drawing needs it.
 
 ### Serializing results (R12) and reusing them (D4)
 
@@ -204,6 +397,19 @@ The simulator's recursions run on the residuals `r - mu`, while the
 volatility models run on the raw returns. A model only filters back the
 simulated volatilities with a zero mean, until the volatility models can
 read demeaned returns: see "Returns as a node".
+
+### Runs without VaR models (declined for now)
+
+A `Run` only takes VaR models, since each gets an `Overshootings` node.
+To compute volatilities, means or filters on their own, use `Pool` or
+`node.run` (option C, chosen by the developer on 2026-10-25). This skips
+the run's up-front input checks, and has no spec form. If it's needed
+later, the options were: (A) a separate `preprocessors` argument on `Run`
+and in `RunResult`, with one spec dict per kind (`volatilities`, `means`,
+`filters`), as volatility and mean specs share `type` values such as
+`constant` and `input` (recommended, and overlaps with R12); (B) widen
+`models` to any `Node[TimeSeries]` and backtest only the VaR ones
+(rejected: which models get backtested depends on hidden type checks).
 
 ### Spec shorthands and defaults (R9a)
 

@@ -20,6 +20,7 @@ if TYPE_CHECKING:
     from tail_lib.backtests.overshootings import Overshootings
     from tail_lib.graph import Cache
     from tail_lib.graph import Dependencies
+    from tail_lib.graph import Settings
     from tail_lib.time_series import TimeSeries
     from tail_lib.windows import Last
     from tail_lib.windows import Trailing
@@ -165,6 +166,9 @@ class KupiecTest(Node[KupiecResult]):
 
     def dependencies(self) -> Dependencies:  # noqa: D102
         return {"overshootings": self._overshootings}
+
+    def settings(self) -> Settings:  # noqa: D102
+        return {"window": self._window}
 
     def evaluate(self, cache: Cache) -> KupiecResult:  # noqa: D102
         return self.compute(cache.get(self._overshootings))

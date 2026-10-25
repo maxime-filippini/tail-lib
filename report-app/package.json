@@ -1,0 +1,28 @@
+{
+  "name": "tail-lib-report-app",
+  "private": true,
+  "type": "module",
+  "description": "The page of tail-lib's run reports (R19), built into one HTML file.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "check": "svelte-check --tsconfig ./tsconfig.json --fail-on-warnings",
+    "predev": "npm run types",
+    "prebuild": "npm run types",
+    "precheck": "npm run types",
+    "types": "uv run python scripts/export_schema.py && json2ts --input src/report-data.schema.json --output src/report-data.d.ts --additionalProperties false",
+    "sample": "uv run python scripts/export_sample.py"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^7.3.1",
+    "json-schema-to-typescript": "^16.0.0",
+    "svelte": "^5.57.2",
+    "svelte-check": "^4.7.7",
+    "typescript": "^6.0.3",
+    "vite": "^8.3.5",
+    "vite-plugin-singlefile": "^2.3.4"
+  },
+  "dependencies": {
+    "echarts": "^6.1.0"
+  }
+}

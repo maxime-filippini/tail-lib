@@ -1,3 +1,5 @@
+import re
+
 import numpy as np
 import pytest
 
@@ -341,6 +343,7 @@ _BACKTESTING_RUN = {
         "kupiec_250": {"type": "kupiec", "window": {"type": "trailing", "length": 250}},
         "kupiec_last": {"type": "kupiec", "window": {"type": "last", "length": 250}},
     },
+    "labels": {"fhs": "Filtered HS 99%", "kupiec_250": "Kupiec, 250 days"},
 }
 
 _PRODUCTION_RUN = {
@@ -549,3 +552,112 @@ def test_a_model_under_two_names_is_backtested_once(
 def test_a_run_from_nodes_needs_a_model() -> None:
     with pytest.raises(ValueError, match="at least one model"):
         Run({})
+
+
+@pytest.mark.parametrize(
+    ("models", "backtests", "path"),
+    [
+        ({"gauss 99": "hs"}, {}, "models.gauss 99"),
+        ({"hs": "hs"}, {"kupiec-250": {"type": "kupiec"}}, "backtests.kupiec-250"),
+    ],
+)
+def test_a_run_spec_rejects_names_that_are_not_identifiers(
+    models: dict, backtests: dict, path: str
+) -> None:
+    hs = {
+        "type": "historical",
+        "cf": 0.99,
+        "window": {"type": "trailing", "length": 100},
+    }
+    spec = {"models": dict.fromkeys(models, hs), "backtests": backtests}
+
+    with pytest.raises(ValueError, match="Python identifier") as error:
+        RunSpec.model_validate(spec)
+
+    assert path in str(error.value)
+
+
+def test_a_run_spec_rejects_an_input_name_that_is_not_an_identifier() -> None:
+    spec = {"models": {"ext": {"type": "input", "name": "var.ext", "cf": 0.99}}}
+
+    with pytest.raises(ValueError, match="Python identifier") as error:
+        RunSpec.model_validate(spec)
+
+    assert "models.ext.input.name" in str(error.value)
+
+
+@pytest.mark.parametrize("name", ["gauss.99", "gauss 99", "99_gauss", ""])
+def test_a_run_from_nodes_rejects_a_model_name_that_is_not_an_identifier(
+    name: str,
+) -> None:
+    model = HistoricalSimulationsModel(cf=0.99, window=Trailing(length=100))
+
+    with pytest.raises(ValueError, match=f"Model name .* got {re.escape(repr(name))}"):
+        Run({name: model})
+
+
+def test_a_run_from_nodes_rejects_a_backtest_name_that_is_not_an_identifier() -> None:
+    model = HistoricalSimulationsModel(cf=0.99, window=Trailing(length=100))
+
+    with pytest.raises(ValueError, match=r"Backtest name .* got 'kupiec-250'"):
+        Run({"hs": model}, {"kupiec-250": KupiecTest})
+
+
+def _hs() -> HistoricalSimulationsModel:
+    return HistoricalSimulationsModel(cf=0.99, window=Trailing(length=100))
+
+
+def test_labels_fall_back_to_the_names() -> None:
+    run = Run(
+        {"hs": _hs(), "hs_2": _hs()},
+        {"kupiec": KupiecTest},
+        labels={"hs": "Historical 99%"},
+    )
+
+    assert run.labels == {"hs": "Historical 99%", "hs_2": "hs_2", "kupiec": "kupiec"}
+
+
+def test_a_run_from_a_spec_has_its_labels() -> None:
+    run = Run.from_spec(RunSpec.model_validate(_BACKTESTING_RUN))
+
+    assert run.labels["fhs"] == "Filtered HS 99%"
+    assert run.labels["kupiec_250"] == "Kupiec, 250 days"
+    assert run.labels["hs"] == "hs"
+
+
+def test_a_model_and_a_backtest_can_not_share_a_name() -> None:
+    with pytest.raises(ValueError, match=r"\['kupiec'\] are both a model and"):
+        Run({"kupiec": _hs()}, {"kupiec": KupiecTest})
+
+
+@pytest.mark.parametrize(
+    ("labels", "match"),
+    [
+        ({"gauss": "Gaussian"}, r"Labels \['gauss'\] name no model or backtest"),
+        ({"hs": ""}, r"Labels of \['hs'\] are empty"),
+    ],
+)
+def test_a_run_rejects_bad_labels(labels: dict[str, str], match: str) -> None:
+    with pytest.raises(ValueError, match=match):
+        Run({"hs": _hs()}, labels=labels)
+
+
+@pytest.mark.parametrize(
+    ("extra", "match"),
+    [
+        ({"backtests": {"hs": {"type": "kupiec"}}}, "both a model and a backtest"),
+        ({"labels": {"gauss": "Gaussian"}}, "name no model or backtest"),
+        ({"labels": {"hs": ""}}, "labels.hs"),
+    ],
+)
+def test_a_run_spec_rejects_shared_names_and_bad_labels(
+    extra: dict, match: str
+) -> None:
+    window = {"type": "trailing", "length": 100}
+    spec = {
+        "models": {"hs": {"type": "historical", "cf": 0.99, "window": window}},
+        **extra,
+    }
+
+    with pytest.raises(ValueError, match=match):
+        RunSpec.model_validate(spec)

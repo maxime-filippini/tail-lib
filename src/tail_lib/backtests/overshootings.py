@@ -12,6 +12,7 @@ from tail_lib.time_series import TimeSeries
 if TYPE_CHECKING:
     from tail_lib.graph import Cache
     from tail_lib.graph import Dependencies
+    from tail_lib.graph import Settings
     from tail_lib.models.value_at_risk import ValueAtRiskModel
 
 
@@ -72,6 +73,9 @@ class Overshootings(Preprocessor):
 
     def dependencies(self) -> Dependencies:  # noqa: D102
         return {"var_model": self._var_model}
+
+    def settings(self) -> Settings:  # noqa: D102
+        return {}
 
     def evaluate(self, cache: Cache) -> TimeSeries:  # noqa: D102
         return self.compute(cache.returns, var=cache.get(self._var_model))

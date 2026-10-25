@@ -5,6 +5,7 @@ from tail_lib.graph import Cache
 from tail_lib.graph import Dependencies
 from tail_lib.graph import Pool
 from tail_lib.graph import Preprocessor
+from tail_lib.graph import Settings
 from tail_lib.models.ewma import EwmaDecayCalibration
 from tail_lib.models.value_at_risk import GaussianModel
 from tail_lib.models.value_at_risk import HistoricalSimulationsModel
@@ -40,6 +41,9 @@ class _FilteredReturnsModel(ValueAtRiskModel):
     def dependencies(self) -> Dependencies:
         return {"filter": self._filter, "vol_model": self._vol_model}
 
+    def settings(self) -> Settings:
+        return {"cf": self._cf}
+
     def evaluate(self, cache: Cache) -> TimeSeries:
         filtered = cache.get(self._filter)
         vols = cache.get(self._vol_model)
@@ -66,6 +70,9 @@ def test_run_rejects_cyclic_preprocessors() -> None:
 
         def dependencies(self) -> Dependencies:
             return {} if self.dependency is None else {"dependency": self.dependency}
+
+        def settings(self) -> Settings:
+            return {}
 
         def evaluate(self, cache: Cache) -> TimeSeries:
             if self.dependency is not None:

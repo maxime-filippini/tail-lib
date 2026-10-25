@@ -63,6 +63,9 @@ Requirements are numbered so changes and reviews can cite them (e.g. "R4").
   field or value is wrong and what was expected (e.g. a confidence level
   outside (0, 1)), so users know exactly where they went wrong. Checking
   values in the spec as well as in the nodes is fine.
+- **R20** — Model, backtest and run input names are Python identifiers
+  (letters, digits and underscores, not starting with a digit). Reports
+  can show friendlier names, given separately.
 - **R9a** — Users specify models. The library builds the preprocessors those
   models need (e.g. volatility models, calibrations).
 - **R12** — After a run, users can serialize its results: model outputs and
@@ -71,6 +74,15 @@ Requirements are numbered so changes and reviews can cite them (e.g. "R4").
   first mode, or volatilities from the data service) is declared in the spec
   as a named input, and passed in by name at run time. A missing input is an
   error.
+
+### Reporting
+
+- **R19** — Visualize a run in a report: its node graph and charts of its
+  results. A `Report` takes a run and the returns (and run inputs), and
+  saves one self-contained HTML file that opens offline. The report has
+  tabs: the graph, returns vs VaR, a backtest table, rolling backtests, and
+  node outputs. Viewed as a saved file for now; inline in Jupyter and
+  served by the data service (R17) may come later.
 
 ### Maintainability
 

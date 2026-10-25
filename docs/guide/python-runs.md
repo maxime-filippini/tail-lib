@@ -74,6 +74,22 @@ node per model, and all the backtests of that model share it. Backtests are
 named, so several versions of one test can sit side by side, e.g. on 250 and
 500 dates. See [Backtests](backtests.md) for the tests and their results.
 
+## Names and labels
+
+Model, backtest and input names are Python identifiers (letters, digits and
+underscores, not starting with a digit), and a model and a backtest can't
+share a name. For display, e.g. in a report, give friendlier names in
+`labels`:
+
+```python
+run = Run(
+    models,
+    backtests={"kupiec_250": lambda ovs: KupiecTest(ovs, window=Trailing(length=250))},
+    labels={"fhs_500": "Filtered HS, 500 days", "kupiec_250": "Kupiec, 250 days"},
+)
+run.labels  # every model and backtest, by name; unlabelled names as they are
+```
+
 ## Results
 
 `run.run(returns)` returns a [`RunResult`][tail_lib.run.RunResult]:
@@ -163,19 +179,76 @@ today.run(returns).models["hs_500"].values[-1]  # every other date is NaN
 ## Without a run
 
 A single node can be computed on its own with `node.run(returns, inputs)`,
-and a set of named nodes with [`Pool`][tail_lib.graph.Pool]. This is handy to
-look at a model's inputs, e.g. a volatility:
+and a set of named nodes with [`Pool`][tail_lib.graph.Pool]. This is the way
+to compute volatilities, mean models and filters without a VaR model, as a
+`Run` only takes VaR models:
 
 ```python
 from tail_lib.graph import Pool
+from tail_lib.models.mean import ConstantMean
 
 vol.run(returns)  # a TimeSeries
-Pool({"vol": vol, "gauss": models["gauss"]}).run(returns)  # computes vol once
+Pool(
+    {
+        "vol": vol,
+        "filtered": vol_filter,
+        "mean": ConstantMean(0.0005),
+    }
+).run(returns)  # computes vol once
 ```
 
 Here, backtests are wired to their model by hand
 (`KupiecTest(Overshootings(model))`), and missing inputs are only reported
-when read.
+when read. There is no spec form for this: a `RunSpec` only holds VaR
+models.
+
+## The graph of a run
+
+`run.graph` lists every node of the run once, backtests and overshootings
+included, with the paths it is reached by and the edges between nodes:
+
+```python
+for graph_node in run.graph.nodes:
+    type(graph_node.node).__name__, graph_node.paths
+    # e.g. ("EwmaVolatility", ("models.gauss.vol_model", "models.fhs_500.filter.vol_model", ...))
+
+for edge in run.graph.edges:
+    edge.source, edge.name, edge.target  # e.g. vol, "vol_model", gauss
+```
+
+To read the output of any node after a run, compute the run on a cache you
+hold, with `run.evaluate(cache)`; every node of the graph is then in it:
+
+```python
+from tail_lib.graph import Cache
+
+cache = Cache(returns, inputs)
+result = run.evaluate(cache)
+cache.get(vol)  # already computed, so read for free
+```
+
+## Reports
+
+A [`Report`][tail_lib.report.report.Report] computes a run and saves it as
+one HTML file that opens offline (R19). Its tabs:
+
+- **Graph:** every node of the run once, with its settings; click a box to
+  chart its output.
+- **Returns vs VaR:** the returns against each model's VaR, on the date it
+  forecasts, with the overshootings marked.
+- **Backtests:** every backtest of every model, coloured by rejection at a
+  level you set.
+- **Rolling backtests:** the observed rate and p-value of rolling backtests
+  over time.
+- **Node outputs:** the output of any node, e.g. a volatility.
+
+```python
+from tail_lib.report.report import Report
+
+report = Report(run, returns, inputs, title="Daily VaR", series_labels=["SPX", "SX5E"])
+report.save("report.html")
+report.data  # the ReportData shown, e.g. report.data.model_dump_json()
+```
 
 ## Runs built in Python vs from specs
 

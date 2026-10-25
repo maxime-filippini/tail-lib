@@ -18,6 +18,13 @@ How tail-lib is organized, and how a call flows from a spec to the numbers
   `check_probability` for every confidence level, `check_unit_interval` for
   every decay factor), and called by each class that takes the value. Specs
   check value ranges too, for errors with a path (R9b).
+- **Names** (R20): model, backtest and run input names are Python
+  identifiers, checked by `check_name` in `Run`, in the input nodes, and in
+  specs (`Name`). So the dotted paths through a run's graph, e.g.
+  `models.gauss.vol_model`, are unambiguous. A model and a backtest can't
+  share a name. Display names are `labels` on `Run` and `RunSpec`, checked
+  once by `_check_names_and_labels` in `run.py`; `run.labels` fills in
+  every name, unlabelled ones as they are.
 
 ## Modules
 
@@ -33,6 +40,8 @@ How tail-lib is organized, and how a call flows from a spec to the numbers
 | `models/value_at_risk.py` | `ValueAtRiskModel`, `ValueAtRiskInput`, `HistoricalSimulationsModel` (D2), `FilteredHistoricalSimulationsModel`, `GaussianModel`. |
 | `backtests/overshootings.py` | `overshootings` (function) and `Overshootings` (node). |
 | `backtests/kupiec.py` | `kupiec_pof` (function), `KupiecResult`, `KupiecTest` (node). |
+| `report/data.py` | `ReportData`, the JSON contract with the report page, and `build_report_data` (R19). |
+| `report/report.py`, `report/index.html` | `Report`: computes a run and saves its data in the report page, package data built from `report-app/` (R19). |
 | `distributions.py` | `Distribution`, the base class of distributions with zero mean and unit variance, and `Gaussian`, `StudentT`. Each draws values (`draw`) and gives its quantiles (`quantile`): the simulator draws its shocks from them, and `GaussianModel` reads the Gaussian quantile. |
 | `simulation.py` | `Simulator` and its processes `ArProcess`, `EwmaProcess`, `GarchProcess`; the output `Simulation` (R18). |
 | `specs.py` | Pydantic specs mirroring each node, with value ranges (R9, R9b). |
@@ -65,6 +74,14 @@ volatility), a VaR model, or a backtest.
   returns and the named run inputs are not nodes, so they are not listed.
   `tests/test_dependencies.py` checks, for one node of each library type,
   that it matches what `evaluate` asks the cache for.
+- `settings()` lists the node's other constructor arguments, the ones that
+  are not nodes, with the values the node uses, defaults included, e.g.
+  `{"cf": 0.99, "window": Trailing(250), "interpolation": "linear"}`. The
+  values stay Python objects (windows, EWMA starts, arrays), typed by the
+  `Setting` union; turning them into JSON is the report's job (R19). With
+  `dependencies()`, it covers every constructor argument:
+  `tests/test_dependencies.py` checks this for one node of each library
+  type.
 - `Cache(returns, inputs)` belongs to one returns series. It computes each
   node at most once, identified by instance, and detects cycles. It also
   holds the named run inputs (R13): `cache.input(name)` checks the input is
@@ -120,12 +137,20 @@ pydantic. YAML could later be a loader producing dicts.
    are backtests, rejects a model with a `last` window
    anywhere in its graph, giving the path through the graph, e.g.
    `models.today.vol_model.calibration.window`. Each distinct model node
-   gets one `Overshootings`, shared by all its backtests.
-4. **Check inputs.** `run.run(returns, inputs)` checks that every input in
-   `run.input_names` is given before computing anything (R13). Inputs no
-   node reads are ignored.
-5. **Compute.** One `Cache`: the models' pool, then each model's pool of
-   backtests. The result is a `RunResult`: `models[name]` is the VaR series,
+   gets one `Overshootings`, shared by all its backtests. Last, it walks
+   the whole graph again, from each model, then from each backtest of each
+   model, into `run.graph` (a `RunGraph`): each distinct node once, as a
+   `GraphNode` with every path it is reached by, e.g.
+   `models.gauss.vol_model` or `backtests.gauss.kupiec.overshootings`, and
+   one `GraphEdge` per dependency, from the node read to its reader,
+   labelled with the dependency's name. The report reads it (R19).
+4. **Check inputs.** `run.run(returns, inputs)` makes a `Cache` and calls
+   `run.evaluate(cache)`, which checks that every input in
+   `run.input_names` is in `cache.input_names` before computing anything
+   (R13). Inputs no node reads are ignored.
+5. **Compute.** On that one `Cache`: the models' pool, then each model's
+   pool of backtests. Every node of `run.graph` is then in the cache, so a
+   caller holding the cache, e.g. the report, reads any of them for free. The result is a `RunResult`: `models[name]` is the VaR series,
    `backtests[model][backtest]` is the backtest result.
 
 Example:
@@ -272,10 +297,105 @@ gives back the simulated volatilities exactly. This only holds with a zero
 mean: the simulator's recursion runs on residuals, `EwmaVolatility` on the
 raw returns (see "Returns as a node" in `docs/open-points.md`).
 
+## Run reports (R19)
+
+In progress, see "Run report" in `docs/open-points.md`.
+
+`build_report_data(run, cache, title=..., series_labels=...)` calls
+`run.evaluate(cache)`, then reads every node of `run.graph` from the cache,
+already computed, into a `ReportData`: a pydantic model, the one contract
+with the report page. In it:
+
+- a node is identified by its first path, e.g. `models.gauss.vol_model`;
+  `models` maps each model name to its node id, and each backtest keeps the
+  id of its node;
+- each node has its `kind` (preprocessor, model, overshootings, backtest),
+  class, paths, run input, and settings, written as in the specs, e.g.
+  `{"type": "trailing", "length": 250, "step": 1}`;
+- the batch axes are flattened to one list of series, labelled by
+  `series_labels` or by index (`0`, or `(0, 1)` with several axes); every
+  series of values is a list over the series, then the dates (or windows);
+- `outputs` holds every time-series node's output, by node id; backtests
+  results are by model, then backtest name;
+- `NaN` is written `null`, dates as ISO strings.
+
+`Report(run, returns, inputs, title=..., series_labels=...)` makes a
+`Cache`, calls `build_report_data`, and keeps the result as `report.data`.
+`report.save(path)` reads the page, `report/index.html` (package data,
+built ahead of time, so pip installs need no Node), and replaces the
+placeholder in its data slot, `<script id="report-data"
+type="application/json">__TAIL_LIB_REPORT_DATA__</script>`, with the JSON,
+`<` escaped as `\u003c` so no text in the data can close the script.
+
+The page comes from the report app, `report-app/` (Svelte, TypeScript,
+Vite; see its README). `npm run build` inlines everything into one
+`index.html` (`vite-plugin-singlefile`) and writes it into the package;
+the built file is committed. Its types come from `ReportData`'s JSON
+Schema (`npm run types`, run before `dev`, `check` and `build`, not
+committed), so the page and the Python side check against one contract
+(R11). The page reads its data in `src/data.ts`: the slot's JSON
+in a saved report, or the sample data (`npm run sample`) in development.
+CI type checks and rebuilds the page, and fails if it differs from the
+committed one, so the page always matches the app's source.
+
+The graph tab (`src/tabs/GraphTab.svelte`) draws every node once with
+ECharts (`src/charts.ts` registers only the parts used). The positions come
+from `src/graph/layout.ts`, plain code with no layout library (developer's
+choice):
+
+- layer 0 holds the returns and one box per run input, with an arrow to
+  each node reading it (the returns, read by most nodes, have none);
+- a preprocessor sits one layer below the deepest preprocessor it reads;
+- then one layer each for the models, the overshootings and the backtests;
+- each layer is centred, and ordered by the mean position of the boxes it
+  reads above, in one top-down pass, so arrows cross less.
+
+`src/graph/format.ts` writes the labels (display name for models and
+backtests, class, settings on one line) and the hover details (settings in
+full, every path). The chart is drawn at scale 1, and a wide graph scrolls
+sideways; scrolling zooms and dragging pans.
+
+The returns vs VaR tab (`src/tabs/ReturnsVarTab.svelte`) charts one series,
+picked by the selector in the header (shared by the tabs). Each model's VaR
+is drawn on the date it forecasts: the VaR of date `t - 1` on date `t`
+(D1), next to the return it is tested against, so an overshooting is a
+return below the line on the same date (developer's choice). Dots mark the
+overshootings, read from each model's `Overshootings` output, so only runs
+with backtests have them: the page computes nothing itself. Points are
+dated (`[date, value]` on a time axis), and zooming keeps every point, so
+the tooltip reads every line at the same date. `src/Chart.svelte` is the
+ECharts wrapper the tabs share; `src/models.ts` lists the models with their
+overshootings node.
+
+The backtests tab (`src/tabs/BacktestsTab.svelte`) is one table, a row per
+model, backtest and series: the window, dates tested, overshootings,
+observed and expected rates, statistic and p-value. A backtest on rolling
+windows shows its last window, named from its `window` setting (e.g. "250
+dates to 2025-10-31 (last of 731 windows)"). The p-value cell is red,
+with "rejected", below a level set above the table, 5% by default and not
+saved; green otherwise (developer's choices). The series selector shows
+only on the tabs that chart one series.
+
+The rolling backtests tab (`src/tabs/RollingTab.svelte`) has one chart per
+backtest with several windows, for the selected series: the observed rate
+on top, with each model's expected rate dashed, and the p-value below,
+with the rejection level dashed in red. Each point is a window, on its
+last date. The level lives in `App.svelte`, shared by the backtests and
+rolling tabs.
+
+The node outputs tab (`src/tabs/NodeOutputsTab.svelte`) charts the output
+of one node, for the selected series, on the dates it holds them (a VaR on
+the date it is computed, unlike the returns vs VaR tab). The node is picked
+in a list, or by clicking its box in the graph: `GraphTab` passes the id to
+`App.svelte`, which opens this tab, or Backtests for a backtest node. Decay
+factors, filtered returns and overshooting flags read as plain numbers,
+the other outputs as percentages.
+
 ## Adding a node type
 
 1. Write the node: `evaluate` gathers inputs from the cache, `compute` is
-   pure, `dependencies` lists the nodes `evaluate` reads, and the docstring
+   pure, `dependencies` lists the nodes `evaluate` reads, `settings` lists
+   its other constructor arguments, and the docstring
    states the formula, the timing and a reference. Add one instance to
    `_one_node_of_each_type` in `tests/test_dependencies.py`: the test fails
    until you do.
