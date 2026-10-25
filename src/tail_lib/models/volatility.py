@@ -25,6 +25,7 @@ from tail_lib.windows import Windows
 if TYPE_CHECKING:
     from tail_lib._typing import FloatArray
     from tail_lib.graph import Dependencies
+    from tail_lib.graph import Settings
 
 
 class VolatilityModel(Preprocessor):
@@ -60,6 +61,9 @@ class VolatilityInput(VolatilityModel):
     def dependencies(self) -> Dependencies:  # noqa: D102
         return {}
 
+    def settings(self) -> Settings:  # noqa: D102
+        return {"name": self._name}
+
     def evaluate(self, cache: Cache) -> TimeSeries:  # noqa: D102
         return cache.input(self._name)
 
@@ -82,6 +86,9 @@ class ConstantVolatility(VolatilityModel):
 
     def dependencies(self) -> Dependencies:  # noqa: D102
         return {}
+
+    def settings(self) -> Settings:  # noqa: D102
+        return {"vol": self._vol}
 
     def evaluate(self, cache: Cache) -> TimeSeries:  # noqa: D102
         return self.compute(cache.returns)
@@ -138,6 +145,9 @@ class EwmaVolatility(VolatilityModel):
 
     def dependencies(self) -> Dependencies:  # noqa: D102
         return {"decay": self._decay}
+
+    def settings(self) -> Settings:  # noqa: D102
+        return {"start": self._start}
 
     def evaluate(self, cache: Cache) -> TimeSeries:  # noqa: D102
         decay = cache.get(self._decay)
@@ -199,6 +209,9 @@ class FittedEwmaVolatility(VolatilityModel):
 
     def dependencies(self) -> Dependencies:  # noqa: D102
         return {"calibration": self._calibration}
+
+    def settings(self) -> Settings:  # noqa: D102
+        return {}
 
     def evaluate(self, cache: Cache) -> TimeSeries:  # noqa: D102
         decay = cache.get(self._calibration)
@@ -320,6 +333,9 @@ class VolatilityFilter(Preprocessor):
 
     def dependencies(self) -> Dependencies:  # noqa: D102
         return {"vol_model": self._vol_model, "mean_model": self._mean_model}
+
+    def settings(self) -> Settings:  # noqa: D102
+        return {}
 
     def evaluate(self, cache: Cache) -> TimeSeries:  # noqa: D102
         means = cache.get(self._mean_model)

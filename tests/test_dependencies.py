@@ -115,3 +115,28 @@ def test_run_sees_the_inputs_and_windows_of_every_node(node: Node[Any]) -> None:
     # windows. The walk has to recognize each of them.
     assert _input_name(node) == getattr(node, "name", None)
     assert _window(node) is getattr(node, "window", None)
+
+
+@pytest.mark.parametrize(
+    "node", _one_node_of_each_type(), ids=lambda node: type(node).__name__
+)
+def test_settings_and_dependencies_cover_the_constructor_arguments(
+    node: Node[Any],
+) -> None:
+    # Every constructor argument is either a setting or a dependency. A
+    # dependency may also be a node read through another one, e.g. the
+    # `vol_model` of a filtered historical simulation's filter.
+    # A node without its own `__init__` shows `object`'s `*args, **kwargs`.
+    parameters = inspect.signature(type(node).__init__).parameters.values()
+    arguments = {
+        parameter.name
+        for parameter in parameters
+        if parameter.name != "self"
+        and parameter.kind not in {parameter.VAR_POSITIONAL, parameter.VAR_KEYWORD}
+    }
+    settings = set(node.settings())
+    dependencies = set(node.dependencies())
+
+    assert settings <= arguments
+    assert not settings & dependencies
+    assert arguments <= settings | dependencies

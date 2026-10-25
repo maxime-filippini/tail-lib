@@ -26,6 +26,7 @@ if TYPE_CHECKING:
     )
 
     from tail_lib.graph import Dependencies
+    from tail_lib.graph import Settings
     from tail_lib.models.volatility import VolatilityFilter
     from tail_lib.models.volatility import VolatilityModel
 
@@ -98,6 +99,9 @@ class ValueAtRiskInput(ValueAtRiskModel):
     def dependencies(self) -> Dependencies:  # noqa: D102
         return {}
 
+    def settings(self) -> Settings:  # noqa: D102
+        return {"name": self._name, "cf": self._cf}
+
     def evaluate(self, cache: Cache) -> TimeSeries:  # noqa: D102
         return cache.input(self._name)
 
@@ -145,6 +149,13 @@ class HistoricalSimulationsModel(ValueAtRiskModel):
 
     def dependencies(self) -> Dependencies:  # noqa: D102
         return {}
+
+    def settings(self) -> Settings:  # noqa: D102
+        return {
+            "cf": self._cf,
+            "window": self._window,
+            "interpolation": self._interpolation,
+        }
 
     def evaluate(self, cache: Cache) -> TimeSeries:  # noqa: D102
         return self.compute(cache.returns)
@@ -238,6 +249,13 @@ class FilteredHistoricalSimulationsModel(ValueAtRiskModel):
             "mean_model": self._filter.mean_model,
         }
 
+    def settings(self) -> Settings:  # noqa: D102
+        return {
+            "cf": self._cf,
+            "window": self._window,
+            "interpolation": self._interpolation,
+        }
+
     def evaluate(self, cache: Cache) -> TimeSeries:  # noqa: D102
         filtered = cache.get(self._filter)
         means = cache.get(self._filter.mean_model)
@@ -304,6 +322,9 @@ class GaussianModel(ValueAtRiskModel):
 
     def dependencies(self) -> Dependencies:  # noqa: D102
         return {"vol_model": self._vol_model, "mean_model": self._mean_model}
+
+    def settings(self) -> Settings:  # noqa: D102
+        return {"cf": self._cf}
 
     def evaluate(self, cache: Cache) -> TimeSeries:  # noqa: D102
         means = cache.get(self._mean_model)

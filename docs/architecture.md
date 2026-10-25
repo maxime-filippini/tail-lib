@@ -65,6 +65,14 @@ volatility), a VaR model, or a backtest.
   returns and the named run inputs are not nodes, so they are not listed.
   `tests/test_dependencies.py` checks, for one node of each library type,
   that it matches what `evaluate` asks the cache for.
+- `settings()` lists the node's other constructor arguments, the ones that
+  are not nodes, with the values the node uses, defaults included, e.g.
+  `{"cf": 0.99, "window": Trailing(250), "interpolation": "linear"}`. The
+  values stay Python objects (windows, EWMA starts, arrays), typed by the
+  `Setting` union; turning them into JSON is the report's job (R19). With
+  `dependencies()`, it covers every constructor argument:
+  `tests/test_dependencies.py` checks this for one node of each library
+  type.
 - `Cache(returns, inputs)` belongs to one returns series. It computes each
   node at most once, identified by instance, and detects cycles. It also
   holds the named run inputs (R13): `cache.input(name)` checks the input is
@@ -275,7 +283,8 @@ raw returns (see "Returns as a node" in `docs/open-points.md`).
 ## Adding a node type
 
 1. Write the node: `evaluate` gathers inputs from the cache, `compute` is
-   pure, `dependencies` lists the nodes `evaluate` reads, and the docstring
+   pure, `dependencies` lists the nodes `evaluate` reads, `settings` lists
+   its other constructor arguments, and the docstring
    states the formula, the timing and a reference. Add one instance to
    `_one_node_of_each_type` in `tests/test_dependencies.py`: the test fails
    until you do.

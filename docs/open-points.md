@@ -17,7 +17,8 @@ green (ty, ruff, 229 tests), nothing uncommitted.
 ## Next up
 
 1. **Run report (R19)**, spec agreed on 2026-10-25, see "Run report" under
-   "Design questions". Step 1 next: nodes describe their settings.
+   "Design questions". Step 1 (nodes describe their settings) done, awaiting
+   review. Step 2 next: `Run` exposes its graph, and `Run.evaluate(cache)`.
 2. **Serializing results (R12)**, a design to propose first. See "Design
    questions" below.
 
@@ -160,10 +161,10 @@ Spec agreed with the developer on 2026-10-25.
 - `Run` exposes its graph: every distinct node once, including the
   `Overshootings` and backtest nodes, with its paths (a shared node has
   several, D3) and its edges, labelled by argument name.
-- Nodes describe their constructor settings, e.g. `cf`, `window`, through a
-  new method next to `dependencies()` (name to decide in step 1). Settings
-  that are nodes stay in `dependencies()`. Graph labels show the class and
-  the settings, with full details on hover.
+- Nodes describe their constructor settings, e.g. `cf`, `window`, through
+  an abstract `settings()` next to `dependencies()` (done in step 1).
+  Settings that are nodes stay in `dependencies()`. Graph labels show the
+  class and the settings, with full details on hover.
 - The data passed to the page is one JSON blob, defined by a pydantic
   `ReportData` model. It is the contract with the frontend, and also the
   shape the data service could serve later (R17). Draft contents:
@@ -231,6 +232,12 @@ Spec agreed with the developer on 2026-10-25.
   class and run name: less informative.
 - Batch series: rejecting batched returns, or one chart per series.
 - Hand-written types on both sides: they can drift apart.
+- Settings (step 1, chosen by the developer: an abstract `settings()`
+  returning Python values typed by a `Setting` union): settings returned as
+  JSON by each node (ties nodes to the report format, repeats the
+  conversion), and settings read by introspecting `__init__` (implicit,
+  breaks on renamed or derived attributes). Names `parameters()` (blurs
+  estimable parameters, which are nodes) and `config()`.
 
 **Later (R19)**
 

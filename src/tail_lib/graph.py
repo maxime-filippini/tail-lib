@@ -22,6 +22,11 @@ from tail_lib.time_series import TimeSeries
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
+    from tail_lib._typing import FloatArray
+    from tail_lib.models.ewma import EwmaStart
+    from tail_lib.windows import Last
+    from tail_lib.windows import Trailing
+
 
 class Node[T](ABC):
     """A computation on a returns time series, with an output of type `T`.
@@ -31,7 +36,9 @@ class Node[T](ABC):
     a `compute` method, whose arguments are the inputs.
 
     Subclasses also implement `dependencies`, which lists the nodes `evaluate`
-    reads, so a graph of nodes can be walked without computing it.
+    reads, so a graph of nodes can be walked without computing it, and
+    `settings`, which lists the node's other constructor arguments, so the
+    graph can be described, e.g. in a report (R19).
     """
 
     @abstractmethod
@@ -62,6 +69,21 @@ class Node[T](ABC):
 
         """
 
+    @abstractmethod
+    def settings(self) -> Settings:
+        """List the constructor arguments that are not nodes.
+
+        Each is keyed by its constructor argument, with the value the node
+        uses, defaults included, e.g. `{"cf": 0.99, "window": Trailing(250),
+        "interpolation": "linear"}` for a historical simulation. Arguments
+        that are nodes are in `dependencies` instead, so together they cover
+        every constructor argument.
+
+        Returns:
+            Settings: The settings of this node, by name.
+
+        """
+
     def run(
         self,
         returns: TimeSeries,
@@ -85,6 +107,20 @@ class Node[T](ABC):
 # express one by one: `Any` stands for each node's own output type.
 type Dependencies = Mapping[str, Node[Any]]
 """The nodes a node reads, by name, see `Node.dependencies`."""
+
+type Setting = (
+    float | str | tuple[float, float] | Trailing | Last | EwmaStart | FloatArray | None
+)
+"""A constructor argument of a node that is not a node, see `Node.settings`.
+
+The kinds of settings the library's nodes take: numbers (a confidence level, a
+number of iterations), names, bounds, windows, EWMA starts, and arrays (a
+value per series). `None` is an unset option, e.g. a backtest on the whole
+sample.
+"""
+
+type Settings = Mapping[str, Setting]
+"""The settings of a node, by name, see `Node.settings`."""
 
 
 class Preprocessor(Node[TimeSeries]):
