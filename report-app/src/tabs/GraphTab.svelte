@@ -6,7 +6,9 @@
   import { layout } from "../graph/layout";
   import type { ReportData } from "../report-data";
 
-  let { data }: { data: ReportData } = $props();
+  // `onselect` gets the id of a clicked node; the returns and run inputs,
+  // which aren't nodes, aren't selectable.
+  let { data, onselect }: { data: ReportData; onselect: (id: string) => void } = $props();
 
   // Box size and spacing, in pixels before any zoom.
   const BOX = { width: 200, height: 64 };
@@ -93,6 +95,12 @@
   onMount(() => {
     const chart = init(container);
     chart.setOption(option());
+    chart.on("click", (params) => {
+      const id = (params.data as { id?: string } | undefined)?.id;
+      if (params.dataType === "node" && id !== undefined && graph.boxes.some((b) => b.id === id && b.node !== null)) {
+        onselect(id);
+      }
+    });
     const observer = new ResizeObserver(() => chart.resize());
     observer.observe(container);
     return () => {
@@ -104,7 +112,8 @@
 
 <p class="hint">
   Each node once, data flowing down. Hover a box for its settings and paths, an arrow
-  for the name it is read under. Scroll to zoom, drag to pan.
+  for the name it is read under; click a box to chart its output. Scroll to zoom, drag
+  to pan.
 </p>
 <div class="legend">
   {#each Object.entries(COLORS) as [kind, color] (kind)}

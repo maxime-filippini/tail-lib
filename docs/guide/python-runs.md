@@ -230,11 +230,17 @@ cache.get(vol)  # already computed, so read for free
 ## Reports
 
 A [`Report`][tail_lib.report.report.Report] computes a run and saves it as
-one HTML file that opens offline (R19). For now it has the graph of the
-run, each node once with its settings, and the returns against each
-model's VaR, with the overshootings marked, and a table of every
-backtest, coloured by rejection, and the p-values of rolling backtests
-over time; node outputs are being built.
+one HTML file that opens offline (R19). Its tabs:
+
+- **Graph:** every node of the run once, with its settings; click a box to
+  chart its output.
+- **Returns vs VaR:** the returns against each model's VaR, on the date it
+  forecasts, with the overshootings marked.
+- **Backtests:** every backtest of every model, coloured by rejection at a
+  level you set.
+- **Rolling backtests:** the observed rate and p-value of rolling backtests
+  over time.
+- **Node outputs:** the output of any node, e.g. a volatility.
 
 ```python
 from tail_lib.report.report import Report

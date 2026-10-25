@@ -16,15 +16,16 @@ green (ty, ruff, 229 tests), nothing uncommitted.
 
 ## Next up
 
-1. **Run report (R19)**, spec agreed on 2026-10-25, see "Run report" under
+1. **Run report (R19)**, every step built; spec agreed on 2026-10-25, see "Run report" under
    "Design questions". Step 1 (nodes describe their settings) done. Then,
    each reviewed on its own: names as identifiers (R20, done), labels on
    the run (R20, done), and step 2 (`run.graph`, `Run.evaluate`, done).
    Step 3 is split in five parts (see "Steps" below): 3a (`ReportData`)
    done, 3b (`Report`, `save()`), 3c (the frontend scaffold), 3d (the CI
    check), 3e (the graph tab), 4 (the returns vs VaR tab), 5 (the backtest
-   table) done. Step 6 (the rolling backtests tab) done, awaiting review.
-   Step 7 next: node outputs on click.
+   table), 6 (the rolling backtests tab) done. Step 7 (node outputs on
+   click) done, awaiting review. Left: the "Later" and "Still open" items
+   under "Run report".
 2. **Serializing results (R12)**, a design to propose first. See "Design
    questions" below.
 
@@ -292,6 +293,10 @@ Spec agreed with the developer on 2026-10-25.
 - Step 6: the rejection level is shared by the backtests and rolling tabs.
   The p-value axis is linear, 0 to 1, so small p-values crowd near 0; a log
   axis is an option.
+- Step 7: clicking a box in the graph opens its output in Node outputs, or
+  Backtests for a backtest node; the returns and run inputs aren't nodes,
+  so clicking them does nothing. How each output reads (percent or plain
+  number) is a small table by class in the page.
 - Decided for 3a (2026-10-25): a node's id is its first path; series are
   labelled by an optional `series_labels` (one per series, C order over
   the batch axes), by index otherwise; settings that aren't numbers or

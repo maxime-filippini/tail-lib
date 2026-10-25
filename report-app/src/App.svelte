@@ -2,12 +2,13 @@
   import type { ReportData } from "./report-data";
   import BacktestsTab from "./tabs/BacktestsTab.svelte";
   import GraphTab from "./tabs/GraphTab.svelte";
+  import NodeOutputsTab from "./tabs/NodeOutputsTab.svelte";
   import ReturnsVarTab from "./tabs/ReturnsVarTab.svelte";
   import RollingTab from "./tabs/RollingTab.svelte";
 
   let { data }: { data: ReportData | null } = $props();
 
-  // The tabs agreed for R19. Each is filled in its own step.
+  // The tabs agreed for R19.
   const tabs = [
     "Graph",
     "Returns vs VaR",
@@ -24,6 +25,20 @@
   // The p-value level below which a backtest is rejected, in percent, set
   // in the backtests tab. Not saved: a report always opens at 5%.
   let level = $state(5);
+  // The node charted in the node outputs tab, picked there or in the graph.
+  let selectedNode: string | null = $state(null);
+
+  // A click in the graph: a backtest's result is a table, in Backtests;
+  // any other node's output is charted in Node outputs.
+  function selectNode(id: string): void {
+    if (data?.nodes.find((n) => n.id === id)?.kind === "backtest") {
+      active = "Backtests";
+    } else {
+      selectedNode = id;
+      active = "Node outputs";
+    }
+  }
+
   const seriesTabs: readonly Tab[] = ["Returns vs VaR", "Rolling backtests", "Node outputs"];
 </script>
 
@@ -58,15 +73,15 @@
   </nav>
   <main>
     {#if active === "Graph"}
-      <GraphTab {data} />
+      <GraphTab {data} onselect={selectNode} />
     {:else if active === "Returns vs VaR"}
       <ReturnsVarTab {data} {series} />
     {:else if active === "Backtests"}
       <BacktestsTab {data} bind:level />
     {:else if active === "Rolling backtests"}
       <RollingTab {data} {series} {level} />
-    {:else}
-      <p class="todo">{active}: not built yet.</p>
+    {:else if active === "Node outputs"}
+      <NodeOutputsTab {data} {series} bind:selected={selectedNode} />
     {/if}
   </main>
 {/if}
@@ -116,8 +131,5 @@
   .series select {
     margin-left: 0.4rem;
     font: inherit;
-  }
-  .todo {
-    color: #59636e;
   }
 </style>

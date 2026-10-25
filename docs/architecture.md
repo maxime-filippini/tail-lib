@@ -383,6 +383,14 @@ with the rejection level dashed in red. Each point is a window, on its
 last date. The level lives in `App.svelte`, shared by the backtests and
 rolling tabs.
 
+The node outputs tab (`src/tabs/NodeOutputsTab.svelte`) charts the output
+of one node, for the selected series, on the dates it holds them (a VaR on
+the date it is computed, unlike the returns vs VaR tab). The node is picked
+in a list, or by clicking its box in the graph: `GraphTab` passes the id to
+`App.svelte`, which opens this tab, or Backtests for a backtest node. Decay
+factors, filtered returns and overshooting flags read as plain numbers,
+the other outputs as percentages.
+
 ## Adding a node type
 
 1. Write the node: `evaluate` gathers inputs from the cache, `compute` is
