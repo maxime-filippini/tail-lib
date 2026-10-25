@@ -19,9 +19,9 @@ green (ty, ruff, 229 tests), nothing uncommitted.
 1. **Run report (R19)**, spec agreed on 2026-10-25, see "Run report" under
    "Design questions". Step 1 (nodes describe their settings) done. Then,
    each reviewed on its own: names as identifiers (R20, done), labels on
-   the run (R20, done), and step 2 (`run.graph`, `Run.evaluate`, done,
-   awaiting review). Step 3 next: `ReportData`, `Report`, `save()`, the
-   frontend scaffold, the CI check and the graph tab.
+   the run (R20, done), and step 2 (`run.graph`, `Run.evaluate`, done).
+   Step 3 is split in five parts (see "Steps" below): 3a (`ReportData`)
+   done, awaiting review. 3b next: `Report` and `save()`.
 2. **Serializing results (R12)**, a design to propose first. See "Design
    questions" below.
 
@@ -115,6 +115,11 @@ developer:
 
 ## Small open points
 
+- A `Backtest` base class for backtest nodes, which `KupiecTest` (and later
+  tests) inherit from, as VaR models inherit from `ValueAtRiskModel`
+  (developer's request, 2026-10-25). Backtests could then be identified by
+  type: today the report's `_kind` labels as a backtest any node that is
+  neither a VaR model nor a preprocessor (`report/data.py`).
 - Specs from HTTP (R17) are untrusted. To discuss: limits on what one spec
   can ask for (number of models, window lengths), and whether the service
   needs spec errors in a structured form (pydantic's `errors()` gives each
@@ -225,8 +230,15 @@ Spec agreed with the developer on 2026-10-25.
 
 1. Nodes describe their settings.
 2. `Run` exposes its graph, and `Run.evaluate(cache)`.
-3. `ReportData`, `Report` and `save()`, the frontend scaffold, the CI
-   check, and the graph tab.
+3. In five parts, chosen by the developer on 2026-10-25:
+   - 3a. `ReportData` and `build_report_data(run, cache, ...)`: the JSON
+     contract, pure Python.
+   - 3b. `Report(run, returns, inputs)` and `save(path)`, writing the JSON
+     into a placeholder HTML page.
+   - 3c. The frontend scaffold in `report-app/`, TS types from the JSON
+     Schema, the built page committed as package data, empty tabs.
+   - 3d. The CI check: rebuild the page, fail on a diff.
+   - 3e. The graph tab.
 4. The returns vs VaR tab.
 5. The backtest table.
 6. The rolling backtests tab.
@@ -271,7 +283,11 @@ Spec agreed with the developer on 2026-10-25.
   downsample.
 - The default chart colour for a rejected backtest, and its threshold
   (5% to start?).
-- Node ids in the blob, e.g. each node's first path.
+- Decided for 3a (2026-10-25): a node's id is its first path; series are
+  labelled by an optional `series_labels` (one per series, C order over
+  the batch axes), by index otherwise; settings that aren't numbers or
+  text are written as in the specs. Rejected: numbered ids, index labels
+  only, `repr()` of the settings.
 - Nodes read through another node are listed in `dependencies()` too, e.g.
   the FHS lists its filter's `vol_model` and `mean_model`, so the graph has
   an edge from the volatility to the FHS as well as through the filter.

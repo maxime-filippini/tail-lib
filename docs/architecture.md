@@ -40,6 +40,7 @@ How tail-lib is organized, and how a call flows from a spec to the numbers
 | `models/value_at_risk.py` | `ValueAtRiskModel`, `ValueAtRiskInput`, `HistoricalSimulationsModel` (D2), `FilteredHistoricalSimulationsModel`, `GaussianModel`. |
 | `backtests/overshootings.py` | `overshootings` (function) and `Overshootings` (node). |
 | `backtests/kupiec.py` | `kupiec_pof` (function), `KupiecResult`, `KupiecTest` (node). |
+| `report/data.py` | `ReportData`, the JSON contract with the report page, and `build_report_data` (R19). |
 | `distributions.py` | `Distribution`, the base class of distributions with zero mean and unit variance, and `Gaussian`, `StudentT`. Each draws values (`draw`) and gives its quantiles (`quantile`): the simulator draws its shocks from them, and `GaussianModel` reads the Gaussian quantile. |
 | `simulation.py` | `Simulator` and its processes `ArProcess`, `EwmaProcess`, `GarchProcess`; the output `Simulation` (R18). |
 | `specs.py` | Pydantic specs mirroring each node, with value ranges (R9, R9b). |
@@ -294,6 +295,28 @@ checks that `EwmaVolatility` with the true decay and starting volatility
 gives back the simulated volatilities exactly. This only holds with a zero
 mean: the simulator's recursion runs on residuals, `EwmaVolatility` on the
 raw returns (see "Returns as a node" in `docs/open-points.md`).
+
+## Run reports (R19)
+
+In progress, see "Run report" in `docs/open-points.md`.
+
+`build_report_data(run, cache, title=..., series_labels=...)` calls
+`run.evaluate(cache)`, then reads every node of `run.graph` from the cache,
+already computed, into a `ReportData`: a pydantic model, the one contract
+with the report page. In it:
+
+- a node is identified by its first path, e.g. `models.gauss.vol_model`;
+  `models` maps each model name to its node id, and each backtest keeps the
+  id of its node;
+- each node has its `kind` (preprocessor, model, overshootings, backtest),
+  class, paths, run input, and settings, written as in the specs, e.g.
+  `{"type": "trailing", "length": 250, "step": 1}`;
+- the batch axes are flattened to one list of series, labelled by
+  `series_labels` or by index (`0`, or `(0, 1)` with several axes); every
+  series of values is a list over the series, then the dates (or windows);
+- `outputs` holds every time-series node's output, by node id; backtests
+  results are by model, then backtest name;
+- `NaN` is written `null`, dates as ISO strings.
 
 ## Adding a node type
 
