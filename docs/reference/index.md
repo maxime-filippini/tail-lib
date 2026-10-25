@@ -6,7 +6,7 @@ its parameters.
 
 | Page | Module | Contents |
 |---|---|---|
-| [Runs](run.md) | `tail_lib.run` | `Run`, `RunSpec`, `RunResult`: models and backtests in one run. |
+| [Runs](run.md) | `tail_lib.run` | `Run`, `RunSpec`, `RunResult`, `RunGraph`: models and backtests in one run, and its graph. |
 | [Specs](specs.md) | `tail_lib.specs` | The spec classes: models written as data. |
 | [Value-at-risk models](value-at-risk.md) | `tail_lib.models.value_at_risk` | Historical, filtered historical, Gaussian, input. |
 | [Volatility models](volatility.md) | `tail_lib.models.volatility` | Constant, EWMA, fitted EWMA, input, and the volatility filter. |

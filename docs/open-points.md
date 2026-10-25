@@ -19,7 +19,9 @@ green (ty, ruff, 229 tests), nothing uncommitted.
 1. **Run report (R19)**, spec agreed on 2026-10-25, see "Run report" under
    "Design questions". Step 1 (nodes describe their settings) done. Then,
    each reviewed on its own: names as identifiers (R20, done), labels on
-   the run (R20, done, awaiting review), and step 2.
+   the run (R20, done), and step 2 (`run.graph`, `Run.evaluate`, done,
+   awaiting review). Step 3 next: `ReportData`, `Report`, `save()`, the
+   frontend scaffold, the CI check and the graph tab.
 2. **Serializing results (R12)**, a design to propose first. See "Design
    questions" below.
 

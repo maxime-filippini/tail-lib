@@ -135,12 +135,20 @@ pydantic. YAML could later be a loader producing dicts.
    are backtests, rejects a model with a `last` window
    anywhere in its graph, giving the path through the graph, e.g.
    `models.today.vol_model.calibration.window`. Each distinct model node
-   gets one `Overshootings`, shared by all its backtests.
-4. **Check inputs.** `run.run(returns, inputs)` checks that every input in
-   `run.input_names` is given before computing anything (R13). Inputs no
-   node reads are ignored.
-5. **Compute.** One `Cache`: the models' pool, then each model's pool of
-   backtests. The result is a `RunResult`: `models[name]` is the VaR series,
+   gets one `Overshootings`, shared by all its backtests. Last, it walks
+   the whole graph again, from each model, then from each backtest of each
+   model, into `run.graph` (a `RunGraph`): each distinct node once, as a
+   `GraphNode` with every path it is reached by, e.g.
+   `models.gauss.vol_model` or `backtests.gauss.kupiec.overshootings`, and
+   one `GraphEdge` per dependency, from the node read to its reader,
+   labelled with the dependency's name. The report reads it (R19).
+4. **Check inputs.** `run.run(returns, inputs)` makes a `Cache` and calls
+   `run.evaluate(cache)`, which checks that every input in
+   `run.input_names` is in `cache.input_names` before computing anything
+   (R13). Inputs no node reads are ignored.
+5. **Compute.** On that one `Cache`: the models' pool, then each model's
+   pool of backtests. Every node of `run.graph` is then in the cache, so a
+   caller holding the cache, e.g. the report, reads any of them for free. The result is a `RunResult`: `models[name]` is the VaR series,
    `backtests[model][backtest]` is the backtest result.
 
 Example:

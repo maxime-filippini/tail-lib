@@ -202,6 +202,31 @@ Here, backtests are wired to their model by hand
 when read. There is no spec form for this: a `RunSpec` only holds VaR
 models.
 
+## The graph of a run
+
+`run.graph` lists every node of the run once, backtests and overshootings
+included, with the paths it is reached by and the edges between nodes:
+
+```python
+for graph_node in run.graph.nodes:
+    type(graph_node.node).__name__, graph_node.paths
+    # e.g. ("EwmaVolatility", ("models.gauss.vol_model", "models.fhs_500.filter.vol_model", ...))
+
+for edge in run.graph.edges:
+    edge.source, edge.name, edge.target  # e.g. vol, "vol_model", gauss
+```
+
+To read the output of any node after a run, compute the run on a cache you
+hold, with `run.evaluate(cache)`; every node of the graph is then in it:
+
+```python
+from tail_lib.graph import Cache
+
+cache = Cache(returns, inputs)
+result = run.evaluate(cache)
+cache.get(vol)  # already computed, so read for free
+```
+
 ## Runs built in Python vs from specs
 
 A run built from nodes has no spec, so it can't be written back as JSON. To

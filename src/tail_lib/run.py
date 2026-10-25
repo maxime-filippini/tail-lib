@@ -103,6 +103,57 @@ class RunResult:
     backtests: dict[str, dict[str, BacktestResult]]
 
 
+@dataclass(frozen=True)
+class GraphNode:
+    """A node of a run's graph, with every path it is reached by.
+
+    Attributes:
+        node (Node[Any]): The node.
+        paths (tuple[str, ...]): Its paths from the run, e.g.
+            `models.gauss.vol_model`, or `backtests.gauss.kupiec.overshootings`
+            for a model's overshootings. A node shared by several readers has
+            several (D3).
+
+    """
+
+    # The nodes of a graph have different output types: `Any` stands for each.
+    node: Node[Any]
+    paths: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class GraphEdge:
+    """An edge of a run's graph: a node reading another one.
+
+    Attributes:
+        source (Node[Any]): The node read, a dependency of `target`.
+        target (Node[Any]): The node reading it.
+        name (str): The name `target` reads it under, its key in
+            `target.dependencies()`, e.g. `vol_model`.
+
+    """
+
+    source: Node[Any]
+    target: Node[Any]
+    name: str
+
+
+@dataclass(frozen=True)
+class RunGraph:
+    """Every node of a run, each once, and the edges between them.
+
+    Attributes:
+        nodes (tuple[GraphNode, ...]): Each distinct node, in the order a
+            depth-first walk reaches it: from each model, then from each
+            backtest of each model.
+        edges (tuple[GraphEdge, ...]): One edge per dependency of each node.
+
+    """
+
+    nodes: tuple[GraphNode, ...]
+    edges: tuple[GraphEdge, ...]
+
+
 type BacktestFunction = Callable[[Overshootings], Node[BacktestResult]]
 """Makes a backtest node from a model's overshootings, e.g. `KupiecTest` itself."""
 
@@ -122,7 +173,8 @@ class Run:
     `Node.dependencies`, to find the inputs it reads (R13), and to reject
     backtests on a model with a `last` window, which gives one forecast, for
     a date after the data. Each input name belongs to one node: models that
-    read the same input share that node.
+    read the same input share that node. The whole graph, backtests
+    included, is in `graph`.
     """
 
     def __init__(
@@ -179,15 +231,27 @@ class Run:
         self._input_names = _input_names(graphs)
 
         self._models = Pool(dict(models))
-        # One pool of backtests per distinct model node, on its overshootings.
-        pools: dict[ValueAtRiskModel, Pool[BacktestResult]] = {}
+        # One set of backtest nodes per distinct model node, on its
+        # overshootings.
+        tests: dict[ValueAtRiskModel, dict[str, Node[BacktestResult]]] = {}
         for model in models.values():
-            if model not in pools:
+            if model not in tests:
                 ovs = Overshootings(model)
-                pools[model] = Pool(
-                    {name: make(ovs) for name, make in backtests.items()}
-                )
-        self._backtests = {name: pools[model] for name, model in models.items()}
+                tests[model] = {name: make(ovs) for name, make in backtests.items()}
+        self._backtests = {name: Pool(tests[model]) for name, model in models.items()}
+
+        # The graph is walked from each model, then from each of its
+        # backtests, which reach the model again through its overshootings.
+        # A graph's nodes have different output types: `Any` stands for each.
+        roots: list[tuple[str, Node[Any]]] = [
+            (f"models.{name}", model) for name, model in models.items()
+        ]
+        roots += [
+            (f"backtests.{model_name}.{test_name}", test)
+            for model_name, model in models.items()
+            for test_name, test in tests[model].items()
+        ]
+        self._graph = _run_graph(roots)
 
     @classmethod
     def from_spec(cls, spec: RunSpec) -> Run:
@@ -228,6 +292,11 @@ class Run:
         """The names of the inputs the run reads, to pass to `run`."""
         return self._input_names
 
+    @property
+    def graph(self) -> RunGraph:
+        """Every node of the run, each once, with its paths and edges."""
+        return self._graph
+
     def run(
         self,
         returns: TimeSeries,
@@ -249,13 +318,34 @@ class Run:
                 before computing anything.
 
         """
-        given = {} if inputs is None else inputs
-        missing = self._input_names - given.keys()
+        return self.evaluate(Cache(returns, inputs))
+
+    def evaluate(self, cache: Cache) -> RunResult:
+        """Compute the models, then their backtests, on a cache.
+
+        Every node of the run is then in the cache, so reading a node of
+        `graph` from it costs nothing.
+
+        Args:
+            cache (Cache): The cache, holding the returns and the run inputs.
+                It can be shared, e.g. with pools.
+
+        Returns:
+            RunResult: The value-at-risk of each model, and its backtests.
+
+        Raises:
+            KeyError: If an input the run reads is missing from the cache.
+                This is checked before computing anything.
+
+        """
+        missing = self._input_names - cache.input_names
         if missing:
-            msg = f"Missing inputs {sorted(missing)}! Inputs given: {sorted(given)}."
+            msg = (
+                f"Missing inputs {sorted(missing)}! Inputs given: "
+                f"{sorted(cache.input_names)}."
+            )
             raise KeyError(msg)
 
-        cache = Cache(returns, given)
         models = self._models.evaluate(cache)
         backtests = {
             model_name: pool.evaluate(cache)
@@ -380,6 +470,37 @@ def _graph(path: str, node: Node[Any]) -> _Graph:
     for name, dependency in node.dependencies().items():
         graph += _graph(f"{path}.{name}", dependency)
     return graph
+
+
+def _run_graph(roots: list[tuple[str, Node[Any]]]) -> RunGraph:
+    """Gather the graph of a run from its roots, each node once.
+
+    Args:
+        roots (list[tuple[str, Node[Any]]]): The models and backtests, each
+            with its path, e.g. `models.gauss` or `backtests.gauss.kupiec`.
+
+    Returns:
+        RunGraph: Each distinct node with its paths, in depth-first order
+            from the roots, and the edges to each node from its
+            dependencies.
+
+    """
+    # Nodes are identified by instance, as in the cache, and dicts keep the
+    # order they are first reached in.
+    paths: dict[Node[Any], list[str]] = {}
+    for root_path, root in roots:
+        for path, node in _graph(root_path, root):
+            paths.setdefault(node, []).append(path)
+
+    nodes = tuple(
+        GraphNode(node, tuple(node_paths)) for node, node_paths in paths.items()
+    )
+    edges = tuple(
+        GraphEdge(source=dependency, target=node, name=name)
+        for node in paths
+        for name, dependency in node.dependencies().items()
+    )
+    return RunGraph(nodes=nodes, edges=edges)
 
 
 def _input_name(node: Node[Any]) -> str | None:

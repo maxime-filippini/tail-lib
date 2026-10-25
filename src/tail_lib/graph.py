@@ -161,6 +161,11 @@ class Cache:
         """The returns every node is computed on."""
         return self._returns
 
+    @property
+    def input_names(self) -> frozenset[str]:
+        """The names of the run inputs given to the cache."""
+        return frozenset(self._inputs)
+
     def input(self, name: str) -> TimeSeries:
         """Get a named input of the run.
 
