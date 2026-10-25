@@ -21,8 +21,8 @@ green (ty, ruff, 229 tests), nothing uncommitted.
    each reviewed on its own: names as identifiers (R20, done), labels on
    the run (R20, done), and step 2 (`run.graph`, `Run.evaluate`, done).
    Step 3 is split in five parts (see "Steps" below): 3a (`ReportData`)
-   done, 3b (`Report`, `save()`) done, 3c (the frontend scaffold) done,
-   awaiting review. 3d next: the CI check.
+   done, 3b (`Report`, `save()`), 3c (the frontend scaffold) done, 3d (the
+   CI check) done, awaiting review. 3e next: the graph tab.
 2. **Serializing results (R12)**, a design to propose first. See "Design
    questions" below.
 

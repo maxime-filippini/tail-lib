@@ -335,6 +335,8 @@ Schema (`npm run types`, run before `dev`, `check` and `build`, not
 committed), so the page and the Python side check against one contract
 (R11). The page reads its data in `src/data.ts`: the slot's JSON
 in a saved report, or the sample data (`npm run sample`) in development.
+CI type checks and rebuilds the page, and fails if it differs from the
+committed one, so the page always matches the app's source.
 
 ## Adding a node type
 

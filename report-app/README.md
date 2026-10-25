@@ -22,6 +22,10 @@ npm run check    # svelte-check: types, with no warnings
 npm run build    # rewrites src/tail_lib/report/index.html: commit it
 ```
 
+CI runs `npm ci`, `npm run check` and `npm run build` (job "Check the
+report page"), and fails if the built page differs from the committed one.
+The Node version is in `.nvmrc`.
+
 ## The data contract
 
 The page reads one JSON document, `ReportData`
