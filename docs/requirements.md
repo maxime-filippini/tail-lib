@@ -72,6 +72,15 @@ Requirements are numbered so changes and reviews can cite them (e.g. "R4").
   as a named input, and passed in by name at run time. A missing input is an
   error.
 
+### Reporting
+
+- **R19** — Visualize a run in a report: its node graph and charts of its
+  results. A `Report` takes a run and the returns (and run inputs), and
+  saves one self-contained HTML file that opens offline. The report has
+  tabs: the graph, returns vs VaR, a backtest table, rolling backtests, and
+  node outputs. Viewed as a saved file for now; inline in Jupyter and
+  served by the data service (R17) may come later.
+
 ### Maintainability
 
 - **R10** — The core developer must always fully understand how the code is

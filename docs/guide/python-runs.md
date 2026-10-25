@@ -163,19 +163,28 @@ today.run(returns).models["hs_500"].values[-1]  # every other date is NaN
 ## Without a run
 
 A single node can be computed on its own with `node.run(returns, inputs)`,
-and a set of named nodes with [`Pool`][tail_lib.graph.Pool]. This is handy to
-look at a model's inputs, e.g. a volatility:
+and a set of named nodes with [`Pool`][tail_lib.graph.Pool]. This is the way
+to compute volatilities, mean models and filters without a VaR model, as a
+`Run` only takes VaR models:
 
 ```python
 from tail_lib.graph import Pool
+from tail_lib.models.mean import ConstantMean
 
 vol.run(returns)  # a TimeSeries
-Pool({"vol": vol, "gauss": models["gauss"]}).run(returns)  # computes vol once
+Pool(
+    {
+        "vol": vol,
+        "filtered": vol_filter,
+        "mean": ConstantMean(0.0005),
+    }
+).run(returns)  # computes vol once
 ```
 
 Here, backtests are wired to their model by hand
 (`KupiecTest(Overshootings(model))`), and missing inputs are only reported
-when read.
+when read. There is no spec form for this: a `RunSpec` only holds VaR
+models.
 
 ## Runs built in Python vs from specs
 
