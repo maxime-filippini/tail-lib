@@ -8,6 +8,7 @@ from typing import assert_never
 
 import numpy as np
 
+from tail_lib._checks import check_name
 from tail_lib._checks import check_positive
 from tail_lib._checks import check_probability
 from tail_lib.distributions import Gaussian
@@ -84,11 +85,17 @@ class ValueAtRiskInput(ValueAtRiskModel):
         """Build the model.
 
         Args:
-            name (str): The name of the input, as passed to `run`.
+            name (str): The name of the input, as passed to `run`: a Python
+                identifier.
             cf (float): The confidence level the forecasts were computed at.
+
+        Raises:
+            ValueError: If the name isn't a Python identifier, or the
+                confidence level isn't in (0, 1).
 
         """
         super().__init__(cf=cf)
+        check_name("Input", name)
         self._name = name
 
     @property

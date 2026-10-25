@@ -8,6 +8,7 @@ from typing import assert_never
 import numpy as np
 from numpy.lib.stride_tricks import sliding_window_view
 
+from tail_lib._checks import check_name
 from tail_lib.graph import Cache
 from tail_lib.graph import Preprocessor
 from tail_lib.models.ewma import DEFAULT_EWMA_START
@@ -48,9 +49,14 @@ class VolatilityInput(VolatilityModel):
         """Build the model.
 
         Args:
-            name (str): The name of the input, as passed to `run`.
+            name (str): The name of the input, as passed to `run`: a Python
+                identifier.
+
+        Raises:
+            ValueError: If the name isn't a Python identifier.
 
         """
+        check_name("Input", name)
         self._name = name
 
     @property

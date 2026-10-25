@@ -18,6 +18,10 @@ How tail-lib is organized, and how a call flows from a spec to the numbers
   `check_probability` for every confidence level, `check_unit_interval` for
   every decay factor), and called by each class that takes the value. Specs
   check value ranges too, for errors with a path (R9b).
+- **Names** (R20): model, backtest and run input names are Python
+  identifiers, checked by `check_name` in `Run`, in the input nodes, and in
+  specs (`Name`). So the dotted paths through a run's graph, e.g.
+  `models.gauss.vol_model`, are unambiguous.
 
 ## Modules
 

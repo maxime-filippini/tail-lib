@@ -63,6 +63,9 @@ Requirements are numbered so changes and reviews can cite them (e.g. "R4").
   field or value is wrong and what was expected (e.g. a confidence level
   outside (0, 1)), so users know exactly where they went wrong. Checking
   values in the spec as well as in the nodes is fine.
+- **R20** — Model, backtest and run input names are Python identifiers
+  (letters, digits and underscores, not starting with a digit). Reports
+  can show friendlier names, given separately.
 - **R9a** — Users specify models. The library builds the preprocessors those
   models need (e.g. volatility models, calibrations).
 - **R12** — After a run, users can serialize its results: model outputs and

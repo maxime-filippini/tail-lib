@@ -17,8 +17,9 @@ green (ty, ruff, 229 tests), nothing uncommitted.
 ## Next up
 
 1. **Run report (R19)**, spec agreed on 2026-10-25, see "Run report" under
-   "Design questions". Step 1 (nodes describe their settings) done, awaiting
-   review. Step 2 next: `Run` exposes its graph, and `Run.evaluate(cache)`.
+   "Design questions". Step 1 (nodes describe their settings) done. Then,
+   each reviewed on its own: names as identifiers (R20, done, awaiting
+   review), labels on the run (R20), and step 2.
 2. **Serializing results (R12)**, a design to propose first. See "Design
    questions" below.
 
@@ -160,7 +161,21 @@ Spec agreed with the developer on 2026-10-25.
   These nodes are already computed, so reading them costs nothing.
 - `Run` exposes its graph: every distinct node once, including the
   `Overshootings` and backtest nodes, with its paths (a shared node has
-  several, D3) and its edges, labelled by argument name.
+  several, D3) and its edges, labelled by argument name. Chosen for step 2
+  on 2026-10-25: `run.graph` is a frozen `RunGraph` of `nodes` (`GraphNode`:
+  the node and its paths, depth first from the models, then the backtests)
+  and `edges` (`GraphEdge`: from the dependency to the node reading it,
+  with the argument name). Backtest paths mirror `RunResult`:
+  `backtests.<model>.<test>`, then `backtests.<model>.<test>.overshootings`.
+  `Run.evaluate(cache)` checks for missing inputs before computing, through
+  a new read-only `Cache.input_names`; `run()` wraps it.
+- Names and labels (R20): model, backtest and input names are Python
+  identifiers, so paths are unambiguous. Friendly names are an optional
+  `labels` mapping on `Run` and `RunSpec`, from a model or backtest name to
+  its display name, falling back to the name. Rejected: labels on the report
+  only (a report from a JSON spec, R17, would need its own place to send
+  them), and a `label` field per spec (specs differing only by label would
+  no longer share a node, D3).
 - Nodes describe their constructor settings, e.g. `cf`, `window`, through
   an abstract `settings()` next to `dependencies()` (done in step 1).
   Settings that are nodes stay in `dependencies()`. Graph labels show the
@@ -252,6 +267,11 @@ Spec agreed with the developer on 2026-10-25.
 - The default chart colour for a rejected backtest, and its threshold
   (5% to start?).
 - Node ids in the blob, e.g. each node's first path.
+- Nodes read through another node are listed in `dependencies()` too, e.g.
+  the FHS lists its filter's `vol_model` and `mean_model`, so the graph has
+  an edge from the volatility to the FHS as well as through the filter.
+  The developer chose (2026-10-25) to keep `dependencies()` free of display
+  concerns: revisit in the report only if the drawing needs it.
 
 ### Serializing results (R12) and reusing them (D4)
 

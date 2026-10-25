@@ -1,3 +1,5 @@
+import re
+
 import numpy as np
 import pytest
 
@@ -549,3 +551,52 @@ def test_a_model_under_two_names_is_backtested_once(
 def test_a_run_from_nodes_needs_a_model() -> None:
     with pytest.raises(ValueError, match="at least one model"):
         Run({})
+
+
+@pytest.mark.parametrize(
+    ("models", "backtests", "path"),
+    [
+        ({"gauss 99": "hs"}, {}, "models.gauss 99"),
+        ({"hs": "hs"}, {"kupiec-250": {"type": "kupiec"}}, "backtests.kupiec-250"),
+    ],
+)
+def test_a_run_spec_rejects_names_that_are_not_identifiers(
+    models: dict, backtests: dict, path: str
+) -> None:
+    hs = {
+        "type": "historical",
+        "cf": 0.99,
+        "window": {"type": "trailing", "length": 100},
+    }
+    spec = {"models": dict.fromkeys(models, hs), "backtests": backtests}
+
+    with pytest.raises(ValueError, match="Python identifier") as error:
+        RunSpec.model_validate(spec)
+
+    assert path in str(error.value)
+
+
+def test_a_run_spec_rejects_an_input_name_that_is_not_an_identifier() -> None:
+    spec = {"models": {"ext": {"type": "input", "name": "var.ext", "cf": 0.99}}}
+
+    with pytest.raises(ValueError, match="Python identifier") as error:
+        RunSpec.model_validate(spec)
+
+    assert "models.ext.input.name" in str(error.value)
+
+
+@pytest.mark.parametrize("name", ["gauss.99", "gauss 99", "99_gauss", ""])
+def test_a_run_from_nodes_rejects_a_model_name_that_is_not_an_identifier(
+    name: str,
+) -> None:
+    model = HistoricalSimulationsModel(cf=0.99, window=Trailing(length=100))
+
+    with pytest.raises(ValueError, match=f"Model name .* got {re.escape(repr(name))}"):
+        Run({name: model})
+
+
+def test_a_run_from_nodes_rejects_a_backtest_name_that_is_not_an_identifier() -> None:
+    model = HistoricalSimulationsModel(cf=0.99, window=Trailing(length=100))
+
+    with pytest.raises(ValueError, match=r"Backtest name .* got 'kupiec-250'"):
+        Run({"hs": model}, {"kupiec-250": KupiecTest})

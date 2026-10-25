@@ -17,6 +17,7 @@ from typing import Any
 from pydantic import Field
 from pydantic import model_validator
 
+from tail_lib._checks import check_name
 from tail_lib.backtests.overshootings import Overshootings
 from tail_lib.build import BacktestResult
 from tail_lib.build import Builder
@@ -119,13 +120,15 @@ class Run:
 
         Args:
             models (Mapping[str, ValueAtRiskModel]): The models, by name.
+                Names, like backtest names, are Python identifiers.
             backtests (Mapping[str, BacktestFunction] | None): The backtests,
                 by name, each as a function from a model's overshootings to
                 the test node, e.g. `KupiecTest`, or
                 `lambda ovs: KupiecTest(ovs, window=Trailing(length=250))`.
 
         Raises:
-            ValueError: If there is no model, if two different nodes read the
+            ValueError: If there is no model, if a model or backtest name
+                isn't a Python identifier, if two different nodes read the
                 same run input, or if there are backtests and a model has a
                 `last` window, or reads a node that has one.
 
@@ -134,6 +137,11 @@ class Run:
             msg = "A run needs at least one model!"
             raise ValueError(msg)
         backtests = {} if backtests is None else backtests
+        # Names appear in paths through the graph, e.g. `models.gauss`.
+        for name in models:
+            check_name("Model", name)
+        for name in backtests:
+            check_name("Backtest", name)
 
         # Every node of each model, with its path from the run, e.g.
         # `models.gauss.vol_model.calibration`.

@@ -20,6 +20,7 @@ from typing import Annotated
 from typing import Any
 from typing import Literal
 
+from pydantic import AfterValidator
 from pydantic import BaseModel
 from pydantic import ConfigDict
 from pydantic import Discriminator
@@ -27,6 +28,7 @@ from pydantic import Field
 from pydantic import Tag
 from pydantic import field_validator
 
+from tail_lib._checks import check_name
 from tail_lib.models.ewma import DEFAULT_DECAY_BOUNDS
 from tail_lib.models.ewma import DEFAULT_FIT_ITERATIONS
 from tail_lib.models.value_at_risk import InterpolationMethod  # noqa: TC001
@@ -45,8 +47,14 @@ type Positive = Annotated[float, Field(gt=0)]
 type Count = Annotated[int, Field(ge=1)]
 """A number of dates or iterations, at least 1."""
 
-type Name = Annotated[str, Field(min_length=1)]
-"""The name of a run input."""
+
+def _identifier(name: str) -> str:
+    check_name("A", name)
+    return name
+
+
+type Name = Annotated[str, AfterValidator(_identifier)]
+"""The name of a model, a backtest or a run input: a Python identifier."""
 
 
 def _shape(value: Any) -> str:  # noqa: ANN401 - pydantic passes raw input.

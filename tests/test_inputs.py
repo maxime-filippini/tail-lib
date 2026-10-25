@@ -72,3 +72,10 @@ def test_misaligned_input_is_an_error() -> None:
 def test_var_input_validates_its_confidence_level() -> None:
     with pytest.raises(ValueError, match="Confidence level"):
         ValueAtRiskInput("var", cf=1.5)
+
+
+def test_input_names_are_identifiers() -> None:
+    with pytest.raises(ValueError, match=r"Input name .* got 'var ext'"):
+        ValueAtRiskInput("var ext", cf=0.99)
+    with pytest.raises(ValueError, match=r"Input name .* got 'vol-ext'"):
+        VolatilityInput("vol-ext")

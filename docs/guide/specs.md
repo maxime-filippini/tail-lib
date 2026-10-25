@@ -56,6 +56,10 @@ result = run.run(returns, inputs={"var_ext": var_ext})
 `backtests`
 :   The backtests by name, optional. Every backtest runs on every model (R4).
 
+Model, backtest and input names are Python identifiers: letters, digits and
+underscores, not starting with a digit, e.g. `gauss_99` but not `gauss 99`
+or `kupiec-250`.
+
 Run inputs aren't listed separately: they are the `input` specs inside the
 models, here `var_ext`. Pass them to `run.run` by name; `run.input_names`
 lists them.
