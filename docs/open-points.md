@@ -21,8 +21,8 @@ green (ty, ruff, 229 tests), nothing uncommitted.
    each reviewed on its own: names as identifiers (R20, done), labels on
    the run (R20, done), and step 2 (`run.graph`, `Run.evaluate`, done).
    Step 3 is split in five parts (see "Steps" below): 3a (`ReportData`)
-   done, 3b (`Report`, `save()`, placeholder page) done, awaiting review.
-   3c next: the frontend scaffold.
+   done, 3b (`Report`, `save()`) done, 3c (the frontend scaffold) done,
+   awaiting review. 3d next: the CI check.
 2. **Serializing results (R12)**, a design to propose first. See "Design
    questions" below.
 
@@ -293,7 +293,15 @@ Spec agreed with the developer on 2026-10-25.
   (`99.0`), as every series of values is `float | null`. Could get an
   integer type if the page needs it.
 - 3b: the page's data slot holds `__TAIL_LIB_REPORT_DATA__`; the built SPA
-  (3c) has to keep that slot in its `index.html`.
+  keeps that slot in `report-app/index.html`. The page's code never writes
+  the placeholder (it checks for JSON instead), so it appears once.
+- 3c: TypeScript is pinned to 6: `svelte-check` doesn't support 7 yet
+  (only through an experimental `--tsgo` setup). ECharts is added in 3e,
+  with the first chart. The build is reproducible (same file on a rebuild),
+  which the CI check (3d) relies on. The generated types and the sample
+  data aren't committed (developer's call): `npm run types` runs before
+  `dev`, `check` and `build`. The sample data, 1000 dates, 2 series
+  and 5 models, is 800 kB of JSON: see "File size" below.
 - Nodes read through another node are listed in `dependencies()` too, e.g.
   the FHS lists its filter's `vol_model` and `mean_model`, so the graph has
   an edge from the volatility to the FHS as well as through the filter.

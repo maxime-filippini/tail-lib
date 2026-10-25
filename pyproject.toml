@@ -51,6 +51,8 @@ ignore = [
 "tests/**" = ["D", "INP001", "S101"]
 # Examples are standalone scripts, not a package, and print their results.
 "examples/**" = ["INP001", "T201"]
+# The report app's scripts are standalone, run by its npm scripts.
+"report-app/scripts/**" = ["INP001"]
 
 [tool.ruff.lint.isort]
 force-single-line = true

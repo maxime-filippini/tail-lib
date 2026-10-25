@@ -1,0 +1,7 @@
+node_modules/
+# Made by `npm run sample`, for `npm run dev`.
+dev/sample-data.json
+# Made by `npm run types`, which runs before dev, check and build, from
+# `ReportData`'s JSON Schema, so they always match the Python side.
+src/report-data.schema.json
+src/report-data.d.ts
