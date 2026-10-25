@@ -21,7 +21,8 @@ green (ty, ruff, 229 tests), nothing uncommitted.
    each reviewed on its own: names as identifiers (R20, done), labels on
    the run (R20, done), and step 2 (`run.graph`, `Run.evaluate`, done).
    Step 3 is split in five parts (see "Steps" below): 3a (`ReportData`)
-   done, awaiting review. 3b next: `Report` and `save()`.
+   done, 3b (`Report`, `save()`, placeholder page) done, awaiting review.
+   3c next: the frontend scaffold.
 2. **Serializing results (R12)**, a design to propose first. See "Design
    questions" below.
 
@@ -288,6 +289,11 @@ Spec agreed with the developer on 2026-10-25.
   the batch axes), by index otherwise; settings that aren't numbers or
   text are written as in the specs. Rejected: numbered ids, index labels
   only, `repr()` of the settings.
+- Counts (`n_obs`, `n_overshootings`) are written as floats in the JSON
+  (`99.0`), as every series of values is `float | null`. Could get an
+  integer type if the page needs it.
+- 3b: the page's data slot holds `__TAIL_LIB_REPORT_DATA__`; the built SPA
+  (3c) has to keep that slot in its `index.html`.
 - Nodes read through another node are listed in `dependencies()` too, e.g.
   the FHS lists its filter's `vol_model` and `mean_model`, so the graph has
   an edge from the volatility to the FHS as well as through the filter.

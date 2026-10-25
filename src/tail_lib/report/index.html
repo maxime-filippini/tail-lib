@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>tail-lib report</title>
+    <!-- Placeholder page, until the report app is built (R19, step 3c). -->
+    <script id="report-data" type="application/json">__TAIL_LIB_REPORT_DATA__</script>
+  </head>
+  <body>
+    <h1 id="title">tail-lib report</h1>
+    <p id="summary"></p>
+    <script>
+      const data = JSON.parse(document.getElementById("report-data").textContent);
+      document.title = data.metadata.title;
+      document.getElementById("title").textContent = data.metadata.title;
+      document.getElementById("summary").textContent =
+        `${Object.keys(data.models).length} models, ${data.nodes.length} nodes, ` +
+        `${data.dates.length} dates, ${data.series.length} series.`;
+    </script>
+  </body>
+</html>

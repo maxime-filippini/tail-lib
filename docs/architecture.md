@@ -41,6 +41,7 @@ How tail-lib is organized, and how a call flows from a spec to the numbers
 | `backtests/overshootings.py` | `overshootings` (function) and `Overshootings` (node). |
 | `backtests/kupiec.py` | `kupiec_pof` (function), `KupiecResult`, `KupiecTest` (node). |
 | `report/data.py` | `ReportData`, the JSON contract with the report page, and `build_report_data` (R19). |
+| `report/report.py`, `report/index.html` | `Report`: computes a run and saves its data in the report page, package data (R19). |
 | `distributions.py` | `Distribution`, the base class of distributions with zero mean and unit variance, and `Gaussian`, `StudentT`. Each draws values (`draw`) and gives its quantiles (`quantile`): the simulator draws its shocks from them, and `GaussianModel` reads the Gaussian quantile. |
 | `simulation.py` | `Simulator` and its processes `ArProcess`, `EwmaProcess`, `GarchProcess`; the output `Simulation` (R18). |
 | `specs.py` | Pydantic specs mirroring each node, with value ranges (R9, R9b). |
@@ -317,6 +318,16 @@ with the report page. In it:
 - `outputs` holds every time-series node's output, by node id; backtests
   results are by model, then backtest name;
 - `NaN` is written `null`, dates as ISO strings.
+
+`Report(run, returns, inputs, title=..., series_labels=...)` makes a
+`Cache`, calls `build_report_data`, and keeps the result as `report.data`.
+`report.save(path)` reads the page, `report/index.html` (package data,
+built ahead of time, so pip installs need no Node), and replaces the
+placeholder in its data slot, `<script id="report-data"
+type="application/json">__TAIL_LIB_REPORT_DATA__</script>`, with the JSON,
+`<` escaped as `\u003c` so no text in the data can close the script.
+The page is a placeholder showing a summary until the report app is built
+(step 3c).
 
 ## Adding a node type
 

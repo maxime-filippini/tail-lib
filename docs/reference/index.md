@@ -17,4 +17,4 @@ its parameters.
 | [Time series and calendars](time-series.md) | `tail_lib.time_series`, `tail_lib.calendar` | `TimeSeries`, `Calendar`. |
 | [Simulation](simulation.md) | `tail_lib.simulation`, `tail_lib.distributions` | `Simulator`, its processes, and distributions. |
 | [Node graph](graph.md) | `tail_lib.graph`, `tail_lib.build` | `Node`, `Cache`, `Pool`, `Builder`: how runs compute. |
-| [Reports](report.md) | `tail_lib.report.data` | `ReportData`, `build_report_data`: a run's graph and results as one JSON document. |
+| [Reports](report.md) | `tail_lib.report.report`, `tail_lib.report.data` | `Report`, `ReportData`: a run's graph and results, saved as one HTML file. |

@@ -227,6 +227,20 @@ result = run.evaluate(cache)
 cache.get(vol)  # already computed, so read for free
 ```
 
+## Reports
+
+A [`Report`][tail_lib.report.report.Report] computes a run and saves it as
+one HTML file that opens offline (R19). The report page is still a
+placeholder: its tabs are being built.
+
+```python
+from tail_lib.report.report import Report
+
+report = Report(run, returns, inputs, title="Daily VaR", series_labels=["SPX", "SX5E"])
+report.save("report.html")
+report.data  # the ReportData shown, e.g. report.data.model_dump_json()
+```
+
 ## Runs built in Python vs from specs
 
 A run built from nodes has no spec, so it can't be written back as JSON. To
