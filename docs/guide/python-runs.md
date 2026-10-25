@@ -233,7 +233,8 @@ A [`Report`][tail_lib.report.report.Report] computes a run and saves it as
 one HTML file that opens offline (R19). For now it has the graph of the
 run, each node once with its settings, and the returns against each
 model's VaR, with the overshootings marked, and a table of every
-backtest, coloured by rejection; the other tabs are being built.
+backtest, coloured by rejection, and the p-values of rolling backtests
+over time; node outputs are being built.
 
 ```python
 from tail_lib.report.report import Report

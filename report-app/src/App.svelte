@@ -3,6 +3,7 @@
   import BacktestsTab from "./tabs/BacktestsTab.svelte";
   import GraphTab from "./tabs/GraphTab.svelte";
   import ReturnsVarTab from "./tabs/ReturnsVarTab.svelte";
+  import RollingTab from "./tabs/RollingTab.svelte";
 
   let { data }: { data: ReportData | null } = $props();
 
@@ -20,6 +21,9 @@
   // The series the charts show, when the returns have several. The graph
   // and the backtest table show every series, so they have no selector.
   let series = $state(0);
+  // The p-value level below which a backtest is rejected, in percent, set
+  // in the backtests tab. Not saved: a report always opens at 5%.
+  let level = $state(5);
   const seriesTabs: readonly Tab[] = ["Returns vs VaR", "Rolling backtests", "Node outputs"];
 </script>
 
@@ -58,7 +62,9 @@
     {:else if active === "Returns vs VaR"}
       <ReturnsVarTab {data} {series} />
     {:else if active === "Backtests"}
-      <BacktestsTab {data} />
+      <BacktestsTab {data} bind:level />
+    {:else if active === "Rolling backtests"}
+      <RollingTab {data} {series} {level} />
     {:else}
       <p class="todo">{active}: not built yet.</p>
     {/if}

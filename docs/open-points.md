@@ -22,9 +22,9 @@ green (ty, ruff, 229 tests), nothing uncommitted.
    the run (R20, done), and step 2 (`run.graph`, `Run.evaluate`, done).
    Step 3 is split in five parts (see "Steps" below): 3a (`ReportData`)
    done, 3b (`Report`, `save()`), 3c (the frontend scaffold), 3d (the CI
-   check), 3e (the graph tab), 4 (the returns vs VaR tab) done. Step 5 (the
-   backtest table) done, awaiting review. Step 6 next: the rolling
-   backtests tab.
+   check), 3e (the graph tab), 4 (the returns vs VaR tab), 5 (the backtest
+   table) done. Step 6 (the rolling backtests tab) done, awaiting review.
+   Step 7 next: node outputs on click.
 2. **Serializing results (R12)**, a design to propose first. See "Design
    questions" below.
 
@@ -289,6 +289,9 @@ Spec agreed with the developer on 2026-10-25.
   from Python); only the p-value cell is coloured, red with "rejected" or
   green (rejected: the whole row); a rolling backtest shows its last window
   (rejected: leaving rolling backtests out of the table).
+- Step 6: the rejection level is shared by the backtests and rolling tabs.
+  The p-value axis is linear, 0 to 1, so small p-values crowd near 0; a log
+  axis is an option.
 - Decided for 3a (2026-10-25): a node's id is its first path; series are
   labelled by an optional `series_labels` (one per series, C order over
   the batch axes), by index otherwise; settings that aren't numbers or

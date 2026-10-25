@@ -376,6 +376,13 @@ with "rejected", below a level set above the table, 5% by default and not
 saved; green otherwise (developer's choices). The series selector shows
 only on the tabs that chart one series.
 
+The rolling backtests tab (`src/tabs/RollingTab.svelte`) has one chart per
+backtest with several windows, for the selected series: the observed rate
+on top, with each model's expected rate dashed, and the p-value below,
+with the rejection level dashed in red. Each point is a window, on its
+last date. The level lives in `App.svelte`, shared by the backtests and
+rolling tabs.
+
 ## Adding a node type
 
 1. Write the node: `evaluate` gathers inputs from the cache, `compute` is

@@ -5,11 +5,9 @@
   import { modelEntries, percent } from "../models";
   import type { KupiecData, ReportData } from "../report-data";
 
-  let { data }: { data: ReportData } = $props();
-
-  // Rejected when the p-value is below this level, in percent. Not saved:
-  // a report always opens at 5%.
-  let level = $state(5);
+  // `level`: rejected when the p-value is below it, in percent. Shared with
+  // the rolling backtests tab.
+  let { data, level = $bindable() }: { data: ReportData; level: number } = $props();
 
   const models = $derived(modelEntries(data));
   const settings = $derived(new Map(data.nodes.map((node) => [node.id, node.settings])));
