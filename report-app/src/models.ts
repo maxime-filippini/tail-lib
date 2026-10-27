@@ -15,10 +15,10 @@ export interface ModelEntry {
 export function modelEntries(data: ReportData): ModelEntry[] {
   const kinds = new Map(data.nodes.map((node) => [node.id, node.kind]));
   return Object.entries(data.models).map(([name, nodeId]) => {
-    // An overshootings node reads its model as `var_model`.
+    // An overshootings node reads its model as `var`.
     const edge = data.edges.find(
       (e) =>
-        e.source === nodeId && e.name === "var_model" && kinds.get(e.target) === "overshootings",
+        e.source === nodeId && e.name === "var" && kinds.get(e.target) === "overshootings",
     );
     return {
       name,

@@ -208,11 +208,9 @@ def test_backtests_of_a_model_share_its_overshootings() -> None:
     class _CountingOvershootings(Overshootings):
         n_calls = 0
 
-        def compute(
-            self, returns: TimeSeries, /, *, var_model: TimeSeries
-        ) -> TimeSeries:
+        def compute(self, returns: TimeSeries, /, *, var: TimeSeries) -> TimeSeries:
             _CountingOvershootings.n_calls += 1
-            return super().compute(returns, var_model=var_model)
+            return super().compute(returns, var=var)
 
     model = GaussianModel(cf=0.99, vol=ConstantVolatility(0.01))
     ovs = _CountingOvershootings(model)

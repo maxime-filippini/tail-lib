@@ -64,13 +64,13 @@ def test_the_graph_lists_each_node_once_with_all_its_paths() -> None:
         "models.gauss.vol",
         "models.fhs.filter.vol",
         "models.fhs.vol",
-        "backtests.gauss.kupiec.overshootings.var_model.vol",
-        "backtests.fhs.kupiec.overshootings.var_model.filter.vol",
-        "backtests.fhs.kupiec.overshootings.var_model.vol",
+        "backtests.gauss.kupiec.overshootings.var.vol",
+        "backtests.fhs.kupiec.overshootings.var.filter.vol",
+        "backtests.fhs.kupiec.overshootings.var.vol",
     )
     assert paths[gauss] == (
         "models.gauss",
-        "backtests.gauss.kupiec.overshootings.var_model",
+        "backtests.gauss.kupiec.overshootings.var",
     )
 
 
@@ -131,8 +131,8 @@ def test_a_model_under_two_names_is_one_node_with_two_paths() -> None:
     assert paths[gauss] == (
         "models.a",
         "models.b",
-        "backtests.a.kupiec.overshootings.var_model",
-        "backtests.b.kupiec.overshootings.var_model",
+        "backtests.a.kupiec.overshootings.var",
+        "backtests.b.kupiec.overshootings.var",
     )
     kupiec = next(n for n in run.graph.nodes if isinstance(n.node, KupiecTest))
     assert kupiec.paths == ("backtests.a.kupiec", "backtests.b.kupiec")

@@ -57,27 +57,27 @@ class Overshootings(Preprocessor):
     model flag its overshootings once.
 
     Attributes:
-        var_model (ValueAtRiskModel): The model whose forecasts are tested.
+        var (ValueAtRiskModel): The model whose forecasts are tested.
 
     """
 
-    var_model: ValueAtRiskModel
+    var: ValueAtRiskModel
 
     @property
     def cf_var(self) -> float:
         """The confidence level of the value-at-risk model."""
-        return self.var_model.cf
+        return self.var.cf
 
-    def compute(self, returns: TimeSeries, /, *, var_model: TimeSeries) -> TimeSeries:
+    def compute(self, returns: TimeSeries, /, *, var: TimeSeries) -> TimeSeries:
         """Flag the overshootings, see `overshootings`.
 
         Args:
             returns (TimeSeries): The returns.
-            var_model (TimeSeries): The value-at-risk, the output of the
-                `var_model` node, on the dates of the returns.
+            var (TimeSeries): The value-at-risk, the output of the `var`
+                node, on the dates of the returns.
 
         Returns:
             TimeSeries: The overshooting flags.
 
         """
-        return overshootings(var_model, returns)
+        return overshootings(var, returns)

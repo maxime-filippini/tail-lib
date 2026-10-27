@@ -301,8 +301,8 @@ Done in step 2b (2026-10-27), no output changed:
   `decay_factor` is `value`. So run and report paths read like spec paths,
   e.g. `models.gauss.vol.decay`, and the report shows the decay's setting
   as `value`.
-- `Overshootings.var_model` keeps its name: it has no spec to follow. To
-  rename with the context (step 5) if wanted.
+- `Overshootings.var_model` kept its name here: it has no spec to follow.
+  Renamed `var` after step 4b, see below.
 - `compute` arguments keep their names (`means`, `vols`, `decay`): they
   become the field names in step 4, where `compute` takes one keyword per
   input.
@@ -353,10 +353,9 @@ Done in step 4a (2026-10-27), no output changed:
   (`_OWN_EVALUATE`), and checks every `__post_init__` reaches
   `Node.__post_init__`, where the check runs.
 - `compute` keywords are the field names: the Gaussian's `compute` takes
-  `vol` and `mean` (were `vols` and `means`), `Overshootings`' takes
-  `var_model` (was `var`), so the VaR series is read as `var_model`, a
-  bit odd; renaming the field (e.g. to `model`) is a one-line change to
-  decide. Kupiec takes the returns, unused, like every `compute`.
+  `vol` and `mean` (were `vols` and `means`), `Overshootings`' took
+  `var_model`, the field's name (renamed `var` after step 4b, see below).
+  Kupiec takes the returns, unused, like every `compute`.
 - The input nodes' `compute` raises `TypeError`: they keep reading the
   run's inputs in `evaluate` until 4d.
 - `Backtest[T]` (in `graph.py`) is the base class of backtest nodes.
@@ -370,6 +369,17 @@ Done in step 4b (2026-10-27), no output changed:
   positional-only (`returns, /`), like the nodes of 4a.
 - Nothing else had to change: step 3 had already made the EWMA read only its
   decay's output, not its calibration's settings.
+
+Done after step 4b (2026-10-27), developer's choice, no output changed:
+
+- `Overshootings.var_model` is `var`, so its `compute` reads the VaR series
+  as `var`, not as `var_model`. `var` names both the model the field holds
+  and the series `compute` gets. Rejected: `model`, as unclear as
+  `var_model` inside `compute`.
+- Run and report paths through overshootings end in `var`, e.g.
+  `backtests.gauss.kupiec.overshootings.var.vol`. The report page finds a
+  model's overshootings by that edge name (`report-app/src/models.ts`), so
+  the built page is rebuilt.
 
 **Still open**
 
