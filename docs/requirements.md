@@ -41,17 +41,20 @@ Requirements are numbered so changes and reviews can cite them (e.g. "R4").
   where every portfolio has a value: a late-starting portfolio makes every
   portfolio of the run start on its first date. Users who want portfolios
   treated differently split them into several runs.
-- **R22** — A run computes its VaR models between a lower and an upper date,
+- **R22** — A run returns its VaR models between a lower and an upper date,
   so every model's VaR covers the same dates. Before computing, the run
   checks that every VaR model can be computed over the whole range from the
   trimmed returns, and fails otherwise. VaR models are computed on every
   date of the range, not on a schedule. Backtests run on the VaRs of the
   range.
-- **R23** — The dates of the nodes upstream of the VaR models (e.g. an EWMA
-  volatility feeding an FHS or a Gaussian model) follow from the VaR range
-  and from the warm-up each node needs. Depending on the node, it starts on
-  the first date it is needed, or as early as possible: an EWMA volatility's
-  recursion starts on the first available date.
+- **R23** — Nodes compute from the common trimmed start of the returns,
+  and the requested range selects the results afterward (2026-10-27,
+  replacing per-node spans and start rules). Calibrations count their step
+  from the first complete training window of that history, independently
+  of the requested range. A one-date run uses the latest calibration; it
+  need not recalibrate on that date. The extra historical computation is
+  accepted for simplicity. Callers can trim the history themselves to
+  choose a different calibration anchor.
 - **R24** — Nodes compute on time series, which keep track of the dates.
   Every node's time series output has the same dates and shape as the
   run's returns, throughout the graph (2026-10-26). Backtest results are
@@ -149,7 +152,8 @@ The core developer needs to confirm them.
   latest result available on it.
 - **D6** — *Independent schedules.* For VaR models, superseded by R22: they
   are computed on every date of the run's range. Calibrations keep their
-  step. Each node has its own window and step. A
+  step, anchored to the common trimmed history (R23). Each node has its own
+  window and step. A
   node reads its inputs as of its own calculation date, i.e. their latest
   values on that date. A windowed model gets, for each window, the returns in
   the window and its inputs as of the window's last date.

@@ -13,7 +13,7 @@ Working rules, from `CLAUDE.md` and the developer:
 
 State as of 2026-10-27: branch `feat/context-api`, from `develop`, not
 pushed. ty and ruff (excluding the untracked `examples/t.ipynb`) pass, as
-do all 667 tests. The notebook still imports the removed `Run` and has an
+do all 679 tests. The notebook still imports the removed `Run` and has an
 existing import-order lint error; it is left untouched.
 
 ## Next up
@@ -24,10 +24,12 @@ existing import-order lint error; it is left untouched.
    of `Run`, `RunResult`, `Cache`, `Pool`, `node.run` and `Builder`.
    Follow-up, agreed on 2026-10-27: backtest declarations (`Kupiec(name=...)`
    inside a context, with `Context.add_backtest` underneath) are committed;
-   see "Backtest declarations" below. Next is the run date range, from step 2.
+   see "Backtest declarations" below. Next is the simplified run date range.
 2. **Run date range (R21–R23)**, agreed with the developer on 2026-10-25,
-   see "Run date range" under "Design questions". Step 1 (docs) done,
-   awaiting review. Steps 2 to 5 wait for the context API.
+   simplified on 2026-10-27: compute from the common trimmed history,
+   then select the range. No per-node spans or `Context.plan`. See "Run
+   date range" under "Design questions". Common-history trimming (R21)
+   is complete. Next: per-execution bounds.
 3. **Run report (R19)**, every step built; spec agreed on 2026-10-25, see "Run report" under
    "Design questions". Step 1 (nodes describe their settings) done. Then,
    each reviewed on its own: names as identifiers (R20, done), labels on
@@ -685,11 +687,12 @@ Done in step 5c-3 (2026-10-27), no pinned output changed:
 ### Run date range (R21–R23)
 
 Agreed with the developer on 2026-10-25, after the risk-manager review
-(`docs/reviews/2026-10-25-risk-manager-review.md`, finding 1). Today,
-`Windows(..., skip_leading_nan=True)` starts the windows on the first date
-where every series has a value. FHS and rolling backtests use it, so with a
-`step` above 1, adding a later-starting portfolio to a run shifts every
-portfolio's windows and changes its results.
+(`docs/reviews/2026-10-25-risk-manager-review.md`, finding 1), and simplified
+on 2026-10-27. Before common-history trimming, FHS and rolling backtests
+used `Windows(..., skip_leading_nan=True)` to start windows on the first
+date where every series had a value. With a `step` above 1, adding a
+later-starting portfolio shifted every portfolio's windows and changed
+its results, while other models kept the earlier history.
 
 **Agreed**
 
@@ -698,23 +701,24 @@ portfolio's windows and changes its results.
   portfolios differently, split them into several runs.
 - The run computes its VaR models on every date between a lower and an
   upper date (R22). VaR models lose their `step`; calibrations keep theirs.
-- Each node declares, for each dependency, how many dates before its first
-  output it needs (e.g. an FHS on 500 dates needs 499 dates of filtered
-  returns before; the filter needs the volatility of the date before). The
-  `Context` walks the graph back from the VaR range and gives each node its
-  span, and the VaR covers exactly the range. Each node computes on its
-  span, but its output keeps the dates and shape of the run's returns
-  (R24, 2026-10-26, replacing outputs of different lengths per node).
-  Proposed, to settle in step 3: dates outside a node's span are `NaN`.
-- Each node type has a fixed start rule (R23): the first date it is needed,
-  or the first available date. `EwmaVolatility` starts as early as
-  possible, every other node on the first date it is needed. Only nodes
-  whose values depend on their start are affected by the rule: for the
-  others, starting later only skips work.
-- A shared node starts on the earliest date any of its consumers needs. It
-  is computed once (D3), and its consumers see the same values.
-- A calibration counts its `step` from its first needed date. A run whose
-  range is one date (e.g. today's VaR) so always recalibrates on that date.
+- Bounds belong to one execution of a context: `ctx.run(returns,
+  lower=..., upper=...)`, not to the reusable context. No separate
+  planning call is needed.
+- Nodes compute from the common trimmed start, then the requested range
+  selects results (R23). This replaces per-node spans, start rules and a
+  graph walk backward from the VaR range. Computing unneeded historical
+  windows is accepted for simplicity; optimizing this can wait.
+- Every time series output keeps the dates and shape of the run's
+  trimmed returns throughout the graph (R24). The representation of the
+  selected result range will be settled with the bounds implementation.
+- Shared nodes are computed once (D3), and their consumers see the same
+  values.
+- Calibrations count their `step` from the first complete training window
+  of the trimmed history. Changing only the requested output range does
+  not move refits or change values on overlapping dates. A one-date run
+  uses the latest calibration, rather than always refitting that day.
+  Callers who want a different calibration anchor can trim the supplied
+  history themselves. This trade-off was explicitly accepted on 2026-10-27.
 - Before computing, the run fails if the trimmed returns can't feed every
   VaR model on the whole range, naming the model and the date it needs
   (R22). Proposed, not yet confirmed: also name the portfolio that sets the
@@ -728,19 +732,24 @@ portfolio's windows and changes its results.
 - `NaN`s inside a portfolio's history are left to the review's finding 2
   (validation).
 
-**Steps**, each reviewed on its own. Steps 2 to 5 wait for the context API
-(see "Context API" below, developer's choice on 2026-10-26), and will be
-built on its graph walk rather than on `Node.dependencies()`:
+**Steps**, each reviewed on its own. The context API is complete; the old
+span-planning step is superseded by the simpler full-history design:
 
-1. Docs: R21–R23, R16 and D6 marked superseded, this section.
-2. Nodes declare what they need and their start rule; the `Context` derives
-   each node's span for a given range. No change to results yet; the spans
-   can be inspected before a run.
-3. `Context` takes the lower and upper dates, trims the returns, checks them,
-   and computes each node on its span. `skip_leading_nan` and the VaR
-   `step` go away.
+1. Docs: R21–R23, R16 and D6 marked superseded; updated for the simplified
+   design on 2026-10-27.
+2. Common-history trimming (R21), complete:
+   `Context.run` checks every used input against the original returns,
+   finds the first date where all portfolios have a return, and slices
+   both returns and used inputs from there before computing anything.
+   Empty history or no complete date fails before computing. The caller's
+   data and the context are unchanged. Inputs' own warm-ups do not move
+   the start; missing observations inside the remaining history are left
+   in place. `Results.returns` and every node output use the trimmed grid.
+3. Per-execution lower and upper bounds, history checks and result
+   selection. VaR is daily; calibration steps stay anchored to history.
+   No history declarations, per-node spans or `Context.plan` are needed.
 4. Backtests on the overshootings of the range.
-5. The report shows the range and each node's span.
+5. The report shows the selected range and available history.
 
 **Rejected**
 
@@ -753,12 +762,16 @@ built on its graph walk rather than on `Node.dependencies()`:
   possible instead.
 - A copy of a shared node per consumer: computes it more than once, and
   the same node gives different values to different models.
-- The start rule as a constructor argument: fixed per node type for now.
+- Per-node spans and start rules, declarative history rules and public
+  `Context.plan`: superseded on 2026-10-27 by computing from the common
+  trimmed start and selecting the output range afterward.
 
 **Still open**
 
-- Where the bounds are given (an argument of `Context.run`, a `RunSpec` field,
-  or both) and their defaults. To settle in step 3.
+- Bounds' defaults, behavior for dates absent from the history, how the
+  selected range is exposed on results while retaining R24's graph
+  alignment, and whether `RunSpec` also needs execution bounds. Bounds
+  on `Context.run` are agreed.
 - Whether a one-date range replaces `Last` windows for models.
 
 ### Run report (R19)

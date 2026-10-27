@@ -181,17 +181,31 @@ results["gauss"], results[vol], results.backtests["gauss"]["kupiec"]
   on every model, including models added later (R4). `Kupiec._bind` creates
   `_KupiecTest(Overshootings(model), window=...)`. The executable node
   retains explicit dependencies and the usual signature check (D11).
-- **`run(returns, inputs)`** reports missing inputs before computing, then
+- **`run(returns, inputs)`** reports missing inputs and checks the inputs
+  against the original returns before computing (R13). It finds the first
+  date where every portfolio has a return, using `_first_full_date` from
+  `windows.py`, and slices both returns and used inputs from that date
+  (R21). If there is no such date, including empty returns, it raises
+  `ValueError` before computing. Inputs no node reads are ignored. It then
   computes each node once, in one loop over the graph ordered inputs first
-  (`_inputs_first`): a `RunInput` gets its input, checked against the
-  returns; any other node gets `compute(returns, **outputs)` by field name.
+  (`_inputs_first`): a `RunInput` gets its checked and trimmed input; any
+  other node gets `compute(returns, **outputs)` by field name.
   After each node but a backtest, `_check_output` checks its time series
   (a `TimeSeries`, a `DecayFactors`' `values`, `FilteredReturns`'
   `standardized`) has the dates and shape of the returns (R24), and raises
   `TypeError` for an output holding none.
 - **`Results`** holds every node's output (`outputs`), the named nodes
   (`named`), `models` (name to VaR) and `backtests` (model, then test, to
-  result). `results[node]` or `results["name"]` reads one output.
+  result). Its `returns` are the common trimmed history; every time series
+  output has those dates and shape (R24). `results[node]` or
+  `results["name"]` reads one output.
+
+The date range design was simplified on 2026-10-27 (R23): nodes compute
+from that common history, then the range selects the results. Calibration
+steps stay anchored to the history, so changing only the output range
+does not move refits. There is no per-node span planning or separate
+`plan` call. Common-history trimming is built; per-execution bounds and
+range selection are the next increment, tracked in `open-points.md`.
 
 The node tests use `tests.helpers.run_node(node, returns, inputs)`, which
 binds a node to its own context and reads its output from `Results`. An
@@ -237,10 +251,13 @@ pydantic. YAML could later be a loader producing dicts.
    backtests. The `RunGraph` lists every distinct node with all its paths,
    and one edge per dependency (see "Contexts"). Construction computes
    nothing, and restores any surrounding context, even on error (D10).
-4. **Check inputs.** `ctx.run(returns, inputs)` checks every input named
-   by the graph is given before computing anything (R13). Inputs no node
-   reads are ignored.
-5. **Compute.** The context computes every node once, inputs first (see
+4. **Check inputs and trim.** `ctx.run(returns, inputs)` checks every input
+   named by the graph is given and matches the original returns before
+   computing anything (R13). Inputs no node reads are ignored. Returns
+   and used inputs are sliced from the first date with a return for every
+   portfolio (R21).
+5. **Compute.** The context computes every node once on the common trimmed
+   history, inputs first (see
    "Contexts"). The `Results` holds every output, read by node or name,
    with `models[name]` for the VaR and `backtests[model][test]` for each
    backtest result. A report reads these results without computing again.

@@ -123,13 +123,33 @@ with Context(
 ctx.labels  # every model and backtest, by name; unlabelled names as they are
 ```
 
+## Common history
+
+Each execution starts at the first date where every portfolio has a return.
+An earlier-starting portfolio loses its earlier observations when grouped
+with a later-starting one, so all portfolios use the same history (R21).
+To use different histories, put the portfolios in separate runs.
+
+Pass external inputs on the original dates and with the original shape of
+the returns. The context checks them before trimming, then slices them
+by the same amount as the returns. Missing values in an input do not move
+the start. Missing returns inside the remaining history are left in place.
+If no date has a return for every portfolio, the run fails before computing.
+
+EWMA initialization and calibration windows use this common history.
+Calibrations start with its first complete training window, then repeat
+every `step` observations. Trim the history yourself to choose a different
+calibration anchor. Each execution finds its own start; the context and
+the caller's arrays are unchanged.
+
 ## Results
 
 `ctx.run(returns)` returns [`Results`][tail_lib.context.Results]:
 
 `results.models[model]`
-:   The VaR of the model, a `TimeSeries` on the dates of the returns, with
-    their shape. Dates before the model's first value are `NaN`.
+:   The VaR of the model, a `TimeSeries` on the dates of `results.returns`,
+    the common trimmed history, with its shape. Dates before the model's
+    first value are `NaN`.
 
 `results.backtests[model][backtest]`
 :   The result of a backtest on a model, e.g. a

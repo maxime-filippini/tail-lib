@@ -47,6 +47,7 @@ from tail_lib.models.value_at_risk import ValueAtRiskModel
 from tail_lib.models.volatility import FilteredReturns
 from tail_lib.time_series import TimeSeries
 from tail_lib.windows import Last
+from tail_lib.windows import _first_full_date
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -132,6 +133,11 @@ class Context:
 
     A context without models computes its other nodes, e.g. a volatility on
     its own.
+
+    Each run trims its returns at the first date where every portfolio has
+    a value (R21). All nodes, including calibrations, start from that common
+    history. Run inputs are checked against the original returns and trimmed
+    by the same amount. The context and the caller's arrays are unchanged.
     """
 
     def __init__(
@@ -364,10 +370,11 @@ class Context:
         each node.
 
         Args:
-            returns (TimeSeries): The returns time series.
+            returns (TimeSeries): The returns time series. Leading dates are
+                removed until every portfolio has a value (R21).
             inputs (Mapping[str, TimeSeries] | None): The run inputs, by name,
-                each with the dates and shape of `returns`. Inputs no node
-                reads are ignored.
+                each with the original dates and shape of `returns`. They
+                are trimmed with the returns. Inputs no node reads are ignored.
 
         Returns:
             Results: The output of every node, and the models' value-at-risk
@@ -376,25 +383,38 @@ class Context:
         Raises:
             KeyError: If a run input is missing, checked before computing.
             ValueError: As `graph`, or if a run input or a node's output
-                does not match the returns.
+                does not match the returns, or no date has a return for
+                every portfolio.
             TypeError: If a node other than a backtest outputs no time
                 series.
 
         """
         graph = self.graph()
         inputs = {} if inputs is None else inputs
-        needed = {n.node.name for n in graph.nodes if isinstance(n.node, RunInput)}
+        input_nodes = [n.node for n in graph.nodes if isinstance(n.node, RunInput)]
+        needed = {node.name for node in input_nodes}
         missing = needed - inputs.keys()
         if missing:
             msg = f"Missing inputs {sorted(missing)}! Inputs given: {sorted(inputs)}."
             raise KeyError(msg)
+
+        # Check inputs on the original grid, before slicing can hide a
+        # misalignment. Only inputs the graph reads are checked (R13).
+        inputs = {node.name: _run_input(node, returns, inputs) for node in input_nodes}
+        first = _first_full_date(returns) if returns.n_dates else 0
+        if first == returns.n_dates:
+            msg = "Returns have no date with a value for every portfolio!"
+            raise ValueError(msg)
+        if first:
+            returns = returns[first:]
+            inputs = {name: series[first:] for name, series in inputs.items()}
 
         # Nodes have different output types: `Results` restores the type of
         # each when read by node.
         outputs: dict[Node[Any], Any] = {}
         for node in _inputs_first(n.node for n in graph.nodes):
             if isinstance(node, RunInput):
-                output = _run_input(node, returns, inputs)
+                output = inputs[node.name]
             else:
                 # The node's inputs come before it, so their outputs are known.
                 node_inputs = {
@@ -447,7 +467,8 @@ class Results:
     they were computed on, so a report needs nothing else (R19).
 
     Attributes:
-        returns (TimeSeries): The returns the run computed on.
+        returns (TimeSeries): The returns the run computed on, starting at
+            the first date with a value for every portfolio (R21).
         models (dict[str, TimeSeries]): The value-at-risk of each model, by
             name.
         backtests (dict[str, dict[str, BacktestResult]]): The result of each
