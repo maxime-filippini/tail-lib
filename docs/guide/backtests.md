@@ -58,16 +58,17 @@ Windows start on the first flag (R16), so no window holds a model's warm-up.
 
     ```python
     from tail_lib.backtests.kupiec import KupiecTest
+    from tail_lib.context import Context
     from tail_lib.windows import Last, Trailing
 
-    run = Run(
-        models,
+    with Context(
         backtests={
             "kupiec": KupiecTest,
             "kupiec_250": lambda ovs: KupiecTest(ovs, window=Trailing(length=250)),
             "kupiec_last": lambda ovs: KupiecTest(ovs, window=Last(length=250)),
         },
-    )
+    ) as ctx:
+        ...  # the models
     ```
 
 === "Spec"

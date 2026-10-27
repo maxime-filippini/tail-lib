@@ -151,7 +151,8 @@ Pool(backtests).run(returns)  # the overshootings of `model` are computed once
 ## Contexts (`context.py`)
 
 The context API's replacement for `Run`, built next to it (step 5a of the
-migration; the report and the guide still use `Run`):
+migration). The report, the guide, the example and the regression test use
+it; `Run` stays until specs build contexts (step 6):
 
 ```python
 with Context(backtests={"kupiec": KupiecTest}, labels={"gauss": "Gaussian"}) as ctx:
@@ -299,28 +300,26 @@ versions of one test can sit side by side.
 
 ## From Python
 
-Notebooks and scripts (R17) build nodes and give them to `Run`. A service
-receiving JSON over HTTP parses a `RunSpec` and calls `Run.from_spec`,
-which builds the nodes with a `Builder`, then makes the same `Run`. Both
-then go through the same graph walk and the same computation.
+Notebooks and scripts (R17) build nodes inside a `Context` (see
+"Contexts"). A service receiving JSON over HTTP parses a `RunSpec` and
+calls `Run.from_spec`, which builds the nodes with a `Builder`, then makes
+a `Run`, until `Context.from_spec` replaces it (step 6 of the migration).
 
 ```python
-vol = EwmaVolatility(ConstantDecay(0.94))
-vol_filter = VolatilityFilter(vol)
-models = {
-    f"fhs_{n}": FilteredHistoricalSimulationsModel(
-        cf=0.99, filter=vol_filter, window=Trailing(length=n)
-    )
-    for n in (500, 750)
-} | {"gauss": GaussianModel(cf=0.99, vol=vol)}
-run = Run(
-    models,
+with Context(
     backtests={
         "kupiec": KupiecTest,
         "kupiec_250": lambda ovs: KupiecTest(ovs, window=Trailing(length=250)),
     },
-)
-result = run.run(returns)
+) as ctx:
+    vol = EwmaVolatility(ConstantDecay(0.94))
+    vol_filter = VolatilityFilter(vol)
+    for n in (500, 750):
+        FilteredHistoricalSimulationsModel(
+            cf=0.99, filter=vol_filter, window=Trailing(length=n), name=f"fhs_{n}"
+        )
+    GaussianModel(cf=0.99, vol=vol, name="gauss")
+results = ctx.run(returns)
 ```
 
 - Sharing is by value (D3, D9): `vol` and `vol_filter` above are computed
@@ -333,12 +332,14 @@ result = run.run(returns)
   of a model share its `Overshootings`. ty checks lambdas; it accepts
   `functools.partial` without checking its arguments.
 - Values are checked when each node is built, e.g. `ConstantDecay(1.5)`
-  raises. ty reports a missing argument or a node in the wrong slot, e.g. a
-  mean model given as `vol`.
-- `Run` walks the graph when it is built (step 3 of "From a spec to
-  results"), so missing inputs are reported before computing, and backtests
-  on a model with a `last` window are rejected, with the path to the window.
-- A run built from nodes has no spec, so it can't be written back as JSON.
+  raises, and so is a model built in a context without a name. ty reports
+  a missing argument or a node in the wrong slot, e.g. a mean model given
+  as `vol`.
+- `ctx.run` walks the graph before computing, so missing inputs are
+  reported first, and backtests on a model with a `last` window are
+  rejected, with the path to the window.
+- A context built from nodes has no spec, so it can't be written back as
+  JSON.
 
 Specs can be built in Python too, but only as data: a validated
 description of a run, turned into nodes by `Run.from_spec`, e.g. to record
@@ -348,9 +349,9 @@ tags can be left out, and a list of values (one per series) is a tuple.
 Values are checked when each spec is built, so an error's path starts at
 that spec, e.g. `value.list.1` for `ConstantDecaySpec(value=(0.94, 1.5))`.
 
-Nodes can also be computed without a run, with `Pool` or `node.run` (see
-"The node graph"), e.g. in tests: then each backtest is wired to its model
-by hand, and missing inputs are only reported when read.
+A context without models computes the other nodes built in its block, e.g.
+a volatility on its own. `Pool` and `node.run` (see "The node graph") still
+do it too, until step 5c-3 removes them.
 
 `examples/backtest_hs_fhs.py` runs HS, FHS and a Gaussian model built this
 way, with a rolling Kupiec test.

@@ -9,7 +9,7 @@ Models, all at 99%:
 
 Each model is backtested with Kupiec's test on rolling 250-day windows.
 
-The models are nodes, built in Python and given to a `Run` (R17). Nodes
+The models are nodes, built in Python inside a `Context` (R17, D10). Nodes
 shared by several models are computed once (D3, D9): the EWMA volatility,
 and the filter of both FHS models.
 
@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from tail_lib.backtests.kupiec import KupiecTest
+from tail_lib.context import Context
 from tail_lib.distributions import StudentT
 from tail_lib.models.ewma import ConstantDecay
 from tail_lib.models.value_at_risk import FilteredHistoricalSimulationsModel
@@ -31,7 +32,6 @@ from tail_lib.models.value_at_risk import GaussianModel
 from tail_lib.models.value_at_risk import HistoricalSimulationsModel
 from tail_lib.models.volatility import EwmaVolatility
 from tail_lib.models.volatility import VolatilityFilter
-from tail_lib.run import Run
 from tail_lib.simulation import GarchProcess
 from tail_lib.simulation import Simulator
 from tail_lib.windows import Trailing
@@ -74,41 +74,36 @@ def main() -> None:  # noqa: D103
         f"daily vol {returns.values.std():.2%}."
     )
 
-    # Step 2: the models, as nodes. The EWMA volatility (with its 20-day
-    # backcast) is read by the filter and the Gaussian model; the filter is
-    # read by both FHS models. Each is one node, computed once.
-    vol = EwmaVolatility(ConstantDecay(DECAY))
-    vol_filter = VolatilityFilter(vol)
-    hs = {
-        f"hs_{n}": HistoricalSimulationsModel(cf=CF, window=Trailing(length=n))
-        for n in HS_LENGTHS
-    }
-    fhs = {
-        f"fhs_{n}": FilteredHistoricalSimulationsModel(
-            cf=CF, filter=vol_filter, window=Trailing(length=n)
-        )
-        for n in HS_LENGTHS
-    }
-    gauss = {"gauss_ewma": GaussianModel(cf=CF, vol=vol)}
-    models = hs | fhs | gauss
-    print(f"Step 2: {len(models)} models: {', '.join(models)}.")
-
-    # Step 3: the run. Each backtest is a function from a model's
-    # overshootings to the test, so every model gets the same test (R4).
-    run = Run(
-        models,
+    # Step 2: the context and its models, as nodes. Each backtest is a
+    # function from a model's overshootings to the test, so every model gets
+    # the same test (R4). The EWMA volatility (with its 20-day backcast) is
+    # read by the filter and the Gaussian model; the filter is read by both
+    # FHS models. Each is one node, computed once.
+    with Context(
         backtests={
             "kupiec_250": lambda ovs: KupiecTest(
                 ovs, window=Trailing(length=KUPIEC_LENGTH)
             )
         },
-    )
-    print(f"Step 3: run built, reading {len(run.input_names)} run inputs.")
+    ) as ctx:
+        vol = EwmaVolatility(ConstantDecay(DECAY))
+        vol_filter = VolatilityFilter(vol)
+        for n in HS_LENGTHS:
+            HistoricalSimulationsModel(cf=CF, window=Trailing(length=n), name=f"hs_{n}")
+        for n in HS_LENGTHS:
+            FilteredHistoricalSimulationsModel(
+                cf=CF, filter=vol_filter, window=Trailing(length=n), name=f"fhs_{n}"
+            )
+        GaussianModel(cf=CF, vol=vol, name="gauss_ewma")
+    print(f"Step 2: {len(ctx.models)} models: {', '.join(ctx.models)}.")
+
+    # Step 3: the graph, walked without computing.
+    print(f"Step 3: {len(ctx.graph().nodes)} distinct nodes, backtests included.")
 
     # Step 4: compute the models and their backtests.
-    result = run.run(returns)
+    result = ctx.run(returns)
     print(
-        "Step 4: run computed. First VaR: "
+        "Step 4: computed. First VaR: "
         + ", ".join(
             f"{name} {_first_value_date(var)}" for name, var in result.models.items()
         )

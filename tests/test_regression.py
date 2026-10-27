@@ -2,11 +2,12 @@
 
 The context API migration (see "Context API" in `docs/open-points.md`)
 rewrites how nodes are declared and run, but must not change a number. This
-test computes one node of each type, and the backtests of a run, on fixed
-returns, and compares them with the arrays saved in `data/regression.npz`.
+test computes one node of each type, and the backtests of a context, on
+fixed returns, and compares them with the arrays saved in
+`data/regression.npz`.
 
-Each step of the migration rewrites `_nodes`, `_run` and `_outputs` for the
-new API, and keeps the keys and the saved arrays. A step that changes a
+Each step of the migration rewrites how the nodes are built and computed
+for the new API, and keeps the keys and the saved arrays. A step that changes a
 number on purpose regenerates the file and says why:
 
     uv run python -m tests.test_regression
@@ -26,9 +27,9 @@ import pytest
 from tail_lib.backtests.kupiec import KupiecResult
 from tail_lib.backtests.kupiec import KupiecTest
 from tail_lib.backtests.overshootings import Overshootings
+from tail_lib.context import Context
 from tail_lib.distributions import StudentT
 from tail_lib.graph import Node
-from tail_lib.graph import Pool
 from tail_lib.models.ewma import ConstantDecay
 from tail_lib.models.ewma import DecayModel
 from tail_lib.models.ewma import EwmaDecayCalibration
@@ -44,7 +45,6 @@ from tail_lib.models.volatility import ConstantVolatility
 from tail_lib.models.volatility import EwmaVolatility
 from tail_lib.models.volatility import VolatilityFilter
 from tail_lib.models.volatility import VolatilityInput
-from tail_lib.run import Run
 from tail_lib.simulation import GarchProcess
 from tail_lib.simulation import Simulator
 from tail_lib.time_series import TimeSeries
@@ -74,61 +74,69 @@ def _inputs(returns: TimeSeries) -> dict[str, TimeSeries]:
     shape = returns.values.shape
     return {
         "vol_ext": TimeSeries(dates=returns.dates, values=np.full(shape, 0.012)),
-        "var_ext": TimeSeries(dates=returns.dates, values=np.full(shape, -0.025)),
+        "var_input": TimeSeries(dates=returns.dates, values=np.full(shape, -0.025)),
     }
 
 
-def _models() -> dict[str, ValueAtRiskModel]:
-    """One VaR model of each type and window, by name."""
+# Every node is built inside a context, by the functions below, so it binds
+# to it and is computed even if no model reads it. Models in a context are
+# named: the names are the pinned keys.
+
+_BACKTESTS = {
+    "kupiec": KupiecTest,
+    "kupiec_250": lambda ovs: KupiecTest(ovs, window=Trailing(length=250)),
+    "kupiec_100_step": lambda ovs: KupiecTest(
+        ovs, window=Trailing(length=100, step=10)
+    ),
+    "kupiec_last": lambda ovs: KupiecTest(ovs, window=Last(length=250)),
+}
+"""Kupiec tests on three windows, run on every model with a history."""
+
+
+def _models() -> None:
+    """One VaR model of each type and window, each named."""
     mean = ConstantMean(np.array([1e-4, -2e-4]))
     ewma = EwmaVolatility(ConstantDecay(0.94))
     vol_filter = VolatilityFilter(ewma, mean=mean)
     calibration = EwmaDecayCalibration(Trailing(length=150, step=50))
-    return {
-        "hs": HistoricalSimulationsModel(cf=0.99, window=Trailing(length=250)),
-        "hs_step": HistoricalSimulationsModel(
-            cf=0.99, window=Trailing(length=250, step=5)
-        ),
-        "hs_below": HistoricalSimulationsModel(
-            cf=0.975, window=Trailing(length=250), interpolation="below"
-        ),
-        "hs_above": HistoricalSimulationsModel(
-            cf=0.975, window=Trailing(length=250), interpolation="above"
-        ),
-        "fhs": FilteredHistoricalSimulationsModel(
-            cf=0.99, filter=vol_filter, window=Trailing(length=250)
-        ),
-        "fhs_step": FilteredHistoricalSimulationsModel(
-            cf=0.99, filter=vol_filter, window=Trailing(length=250, step=5)
-        ),
-        "gaussian_ewma": GaussianModel(cf=0.99, vol=ewma, mean=mean),
-        "gaussian_fitted": GaussianModel(cf=0.99, vol=EwmaVolatility(calibration)),
-        "gaussian_input_vol": GaussianModel(cf=0.99, vol=VolatilityInput("vol_ext")),
-        "var_input": ValueAtRiskInput("var_ext", cf=0.99),
-    }
+    HistoricalSimulationsModel(cf=0.99, window=Trailing(length=250), name="hs")
+    HistoricalSimulationsModel(
+        cf=0.99, window=Trailing(length=250, step=5), name="hs_step"
+    )
+    HistoricalSimulationsModel(
+        cf=0.975, window=Trailing(length=250), interpolation="below", name="hs_below"
+    )
+    HistoricalSimulationsModel(
+        cf=0.975, window=Trailing(length=250), interpolation="above", name="hs_above"
+    )
+    FilteredHistoricalSimulationsModel(
+        cf=0.99, filter=vol_filter, window=Trailing(length=250), name="fhs"
+    )
+    FilteredHistoricalSimulationsModel(
+        cf=0.99, filter=vol_filter, window=Trailing(length=250, step=5), name="fhs_step"
+    )
+    GaussianModel(cf=0.99, vol=ewma, mean=mean, name="gaussian_ewma")
+    GaussianModel(cf=0.99, vol=EwmaVolatility(calibration), name="gaussian_fitted")
+    GaussianModel(cf=0.99, vol=VolatilityInput("vol_ext"), name="gaussian_input_vol")
+    # Named after its input, as every run input is.
+    ValueAtRiskInput("var_input", cf=0.99)
 
 
-def _last_models() -> dict[str, ValueAtRiskModel]:
+def _last_models() -> None:
     """Models with a `Last` window: one VaR, so they can't be backtested."""
     ewma = EwmaVolatility(ConstantDecay(0.94))
-    return {
-        "hs_last": HistoricalSimulationsModel(cf=0.99, window=Last(length=250)),
-        "fhs_last": FilteredHistoricalSimulationsModel(
-            cf=0.99, filter=VolatilityFilter(ewma), window=Last(length=250)
-        ),
-    }
-
-
-_CALIBRATION = EwmaDecayCalibration(Trailing(length=150, step=50))
-_CALIBRATION_LAST = EwmaDecayCalibration(Last(length=150))
+    HistoricalSimulationsModel(cf=0.99, window=Last(length=250), name="hs_last")
+    FilteredHistoricalSimulationsModel(
+        cf=0.99, filter=VolatilityFilter(ewma), window=Last(length=250), name="fhs_last"
+    )
 
 
 def _decays() -> dict[str, DecayModel]:
     """One decay model of each type and window, by key."""
     return {
         "decay.constant": ConstantDecay(np.array([0.9, 0.97])),
-        "decay.calibration": _CALIBRATION,
-        "decay.calibration_last": _CALIBRATION_LAST,
+        "decay.calibration": EwmaDecayCalibration(Trailing(length=150, step=50)),
+        "decay.calibration_last": EwmaDecayCalibration(Last(length=150)),
     }
 
 
@@ -143,11 +151,10 @@ def _filters() -> dict[str, VolatilityFilter]:
     }
 
 
-def _nodes() -> dict[str, Node[TimeSeries]]:
-    """One node of each type with a time series output, by key."""
-    models = _models()
+def _preprocessors(gaussian_ewma: ValueAtRiskModel) -> dict[str, Node[TimeSeries]]:
+    """One node of each other type with a time series output, by key."""
     ewma = EwmaVolatility(ConstantDecay(0.94))
-    preprocessors: dict[str, Node[TimeSeries]] = {
+    return {
         "mean.zero": ZeroMean(),
         "mean.constant": ConstantMean(np.array([1e-4, -2e-4])),
         "vol.constant": ConstantVolatility(np.array([0.01, 0.02])),
@@ -156,47 +163,46 @@ def _nodes() -> dict[str, Node[TimeSeries]]:
         "vol.ewma_starting_vol": EwmaVolatility(
             ConstantDecay(np.array([0.9, 0.97])), start=StartingVol(0.01)
         ),
-        "vol.fitted_ewma": EwmaVolatility(_CALIBRATION),
-        "vol.fitted_ewma_last": EwmaVolatility(_CALIBRATION_LAST),
-        "overshootings.gaussian_ewma": Overshootings(models["gaussian_ewma"]),
+        "vol.fitted_ewma": EwmaVolatility(
+            EwmaDecayCalibration(Trailing(length=150, step=50))
+        ),
+        "vol.fitted_ewma_last": EwmaVolatility(EwmaDecayCalibration(Last(length=150))),
+        "overshootings.gaussian_ewma": Overshootings(gaussian_ewma),
     }
-    var_models = {f"var.{name}": model for name, model in models.items()}
-    last = {f"var.{name}": model for name, model in _last_models().items()}
-    return preprocessors | var_models | last
-
-
-def _run() -> Run:
-    """The models with a history, each with Kupiec tests on three windows."""
-    return Run(
-        _models(),
-        backtests={
-            "kupiec": KupiecTest,
-            "kupiec_250": lambda ovs: KupiecTest(ovs, window=Trailing(length=250)),
-            "kupiec_100_step": lambda ovs: KupiecTest(
-                ovs, window=Trailing(length=100, step=10)
-            ),
-            "kupiec_last": lambda ovs: KupiecTest(ovs, window=Last(length=250)),
-        },
-    )
 
 
 def _outputs(returns: TimeSeries) -> dict[str, np.ndarray]:
     """Every pinned output, by key: node values, then backtest fields."""
+    with Context(backtests=_BACKTESTS) as ctx:
+        _models()
+        preprocessors = _preprocessors(ctx.models["gaussian_ewma"])
+        decays = _decays()
+        filters = _filters()
+    with Context() as today:
+        _last_models()
     inputs = _inputs(returns)
-    nodes = Pool(_nodes()).run(returns, inputs)
-    outputs = {f"node.{key}": series.values for key, series in nodes.items()}
+    results = ctx.run(returns, inputs)
+    last = today.run(returns, inputs)
+
+    outputs = {
+        f"node.{key}": results[node].values for key, node in preprocessors.items()
+    }
+    for model_results in (results, last):
+        outputs |= {
+            f"node.var.{name}": var.values for name, var in model_results.models.items()
+        }
     # A decay model's factors are pinned; its refits are tested in test_ewma.
-    decays = Pool(_decays()).run(returns, inputs)
-    outputs |= {f"node.{key}": decay.values.values for key, decay in decays.items()}
+    outputs |= {
+        f"node.{key}": results[decay].values.values for key, decay in decays.items()
+    }
     # A filter's standardized returns are pinned; its mean and volatility are
     # those of its inputs, pinned on their own.
-    filters = Pool(_filters()).run(returns, inputs)
     outputs |= {
-        f"node.{key}": filtered.standardized.values for key, filtered in filters.items()
+        f"node.{key}": results[node].standardized.values
+        for key, node in filters.items()
     }
 
-    result = _run().run(returns, inputs)
-    for model, tests in result.backtests.items():
+    for model, tests in results.backtests.items():
         for test, kupiec in tests.items():
             for field in dataclasses.fields(KupiecResult):
                 key = f"backtest.{model}.{test}.{field.name}"

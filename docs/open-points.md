@@ -18,9 +18,13 @@ pushed. All checks green (ty, ruff, 658 tests).
 
 1. **Context API**, plan agreed with the developer on 2026-10-26, see
    "Context API" under "Design questions". Steps 0 to 4 committed, with the
-   `var` rename. Steps 5a-1 (node names) and 5a-2
-   (`Context`, `Results`) committed. Step 5b (the report on a context)
-   done, awaiting review. Then 5c and 6, each reviewed on its own.
+   `var` rename. Steps 0 to 5b committed. The rest,
+   reordered by the developer on 2026-10-27 so specs run at every commit:
+   5c-1 (the regression test, the example and the guide on contexts) done,
+   awaiting review; then 5c-2 (tests off `node.run`, `Pool` and `Cache`),
+   step 6 (`Context.from_spec`), and 5c-3 (`Run`, `RunResult`, `Cache`,
+   `Pool`, `node.run` and the `Builder` removed), each reviewed on its
+   own.
 2. **Run date range (R21–R23)**, agreed with the developer on 2026-10-25,
    see "Run date range" under "Design questions". Step 1 (docs) done,
    awaiting review. Steps 2 to 5 wait for the context API.
@@ -519,6 +523,30 @@ Done in step 5b (2026-10-27), no output changed:
   section use a context; the rest of the guide moves in 5c.
 - With one name per run input, the sample's and the tests' input model is
   named `var_ext`, after its input (was `external` or `ext`).
+
+Order of the remaining steps, chosen by the developer (2026-10-27): step 6
+(`Context.from_spec`) comes before `Run` is removed, so specs run at every
+commit (rejected: a `Context.from_spec` over today's `Builder`, then
+rewritten; or a gap without specs). Step 5c is split in three: 5c-1 the
+regression test, the example and the guide; 5c-2 the tests off `node.run`,
+`Pool` and `Cache`; 5c-3 the removal, after step 6.
+
+Done in step 5c-1 (2026-10-27), no output changed:
+
+- `tests/test_regression.py` builds every node inside two contexts (one
+  with the Kupiec backtests, one for the `Last` models) and reads them
+  from `Results`. The pinned keys and arrays are unchanged: the VaR input
+  is now named `var_input`, after the model key, since a run input's name
+  is its model's.
+- `examples/backtest_hs_fhs.py` declares its models in a context; it prints
+  the same numbers. Its step 3 prints the number of distinct nodes, as
+  `Context` has no `input_names`.
+- The guide: "Runs in Python" is rewritten around contexts (names, results
+  by node or name, the error table, contexts without models, the graph);
+  the home page, "Backtests" and "Simulation" use a context. Each page's
+  Python blocks were run against simulated returns. "Runs from specs" and
+  the home page's spec block still use `Run.from_spec`, until step 6.
+- `docs/architecture.md`'s "From Python" shows a context.
 
 **Still open**
 

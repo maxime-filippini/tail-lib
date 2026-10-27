@@ -104,6 +104,7 @@ volatility gives back the simulated volatilities exactly:
 ```python
 import numpy as np
 
+from tail_lib.context import Context
 from tail_lib.models.ewma import ConstantDecay, StartingVol
 from tail_lib.models.volatility import EwmaVolatility
 from tail_lib.simulation import EwmaProcess
@@ -111,8 +112,9 @@ from tail_lib.simulation import EwmaProcess
 sim = Simulator(vol=EwmaProcess(decay=0.94, start_vol=0.01)).simulate(
     500, first_date=datetime.date(2020, 1, 1), rng=0
 )
-vol = EwmaVolatility(ConstantDecay(0.94), start=StartingVol(0.01)).run(sim.returns)
-np.allclose(vol.values, sim.vols.values)  # True
+with Context() as ctx:
+    vol = EwmaVolatility(ConstantDecay(0.94), start=StartingVol(0.01))
+np.allclose(ctx.run(sim.returns)[vol].values, sim.vols.values)  # True
 ```
 
 !!! note
