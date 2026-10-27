@@ -410,6 +410,9 @@ the other outputs as percentages.
 3. Add a `case` to the role's `_build_...` method in `build.py`. Because of
    `assert_never`, ty reports a spec type with no case.
 4. Test that the spec builds the same numbers as the node written in Python.
+5. Pin its output in `tests/test_regression.py` (add it to `_nodes`, then
+   `uv run python -m tests.test_regression`), so later refactors can't
+   change its numbers unnoticed.
 
 For a new role (e.g. a second backtest), turn the role's alias into a tagged
 union (`BacktestSpec`, and `BacktestResult` in `build.py`).

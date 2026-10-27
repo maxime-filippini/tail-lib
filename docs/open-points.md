@@ -17,8 +17,9 @@ pushed.
 ## Next up
 
 1. **Context API**, plan agreed with the developer on 2026-10-26, see
-   "Context API" under "Design questions". Step 0 (docs) done, awaiting
-   review. Then steps 1 to 6, each reviewed on its own.
+   "Context API" under "Design questions". Step 0 (docs) reviewed. Step 1
+   (`tests/test_regression.py`) done, awaiting review. Then steps 2 to 6,
+   each reviewed on its own.
 2. **Run date range (R21–R23)**, agreed with the developer on 2026-10-25,
    see "Run date range" under "Design questions". Step 1 (docs) done,
    awaiting review. Steps 2 to 5 wait for the context API.
@@ -192,9 +193,9 @@ proposes a new way to declare and run models. Migration plan agreed on
   today reads its calibration's `window` and `start`.
 - `VolatilityFilter` stays a node, so the FHS spec keeps its nested
   `filter` (see "FHS spec" above), and FHS models on 500 and 750 dates
-  share one filter. Proposed, to settle in step 4c: the filter's output
-  holds the standardized returns, the mean and the volatility, so the FHS
-  takes only `filter`, as `compute` only sees its own inputs.
+  share one filter. The filter's output holds the standardized returns,
+  the mean and the volatility, so the FHS takes only `filter`, as
+  `compute` only sees its own inputs.
 - Node fields take the spec field names, e.g. `vol` and `mean` rather than
   `vol_model` and `mean_model`, so a path through a run reads like the
   path in its spec.
@@ -214,6 +215,15 @@ proposes a new way to declare and run models. Migration plan agreed on
 - A context without VaR models computes its other nodes, e.g. a
   volatility on its own. This replaces `Pool` and `node.run`, and reopens
   "Runs without VaR models" below.
+- A context from a spec: `Context.from_spec(spec)` opens a context with
+  the spec's backtests and labels, and builds each model with plain
+  `match` functions, the model's key in `models` as its name. Value
+  identity shares identical parts (D9), so the `Builder` tables go; the
+  check on an input declared twice differently, and `RunSpec`'s
+  `last`-window check with its paths (R9b), stay. For later: the node
+  dataclasses as the specs (pydantic over them, value ranges as field
+  annotations), which would also write a context back as a spec (R12,
+  D4). Rejected: keeping the `Builder` class.
 - Done before steps 2 to 5 of the run date range, which will use the
   context's graph walk.
 
@@ -232,9 +242,12 @@ Gaussian volatility check and `Gaussian().quantile`; the new
 **Steps**, each reviewed on its own, with every check green:
 
 0. Docs: this section, R24, D9–D11.
-1. Pin the numbers: a test computing one node of each type, and a run with
-   backtests, on fixed simulated returns, against saved arrays. Later
-   steps keep it green, or change it on purpose and say why.
+1. Pin the numbers: `tests/test_regression.py` computes one node of each
+   type, and the Kupiec tests of a run, on fixed returns, against the
+   arrays in `tests/data/regression.npz` (returns included, so the
+   simulator can change). Later steps rewrite how the test builds and runs
+   the nodes, keep its keys and arrays, and stay green, or regenerate the
+   file on purpose (`uv run python -m tests.test_regression`) and say why.
 2. Nodes as frozen dataclasses, identified by value, still on `Cache` and
    `evaluate`. Arrays in fields are stored as tuples, so they hash.
    `dependencies()` and `settings()` written once, from the fields. Then
@@ -251,22 +264,12 @@ Gaussian volatility check and `Gaussian().quantile`; the new
 5. `Context` and `Results`: 5a next to `Run`; 5b the report takes a
    context and reads `Results`; 5c `Run`, `RunResult`, `Cache` and `Pool`
    removed, the example and the guide moved over.
-6. A context from a spec (R9, R9a, R17), see "Still open".
+6. A context from a spec (R9, R9a, R17), `Context.from_spec`.
 7. Then the run date range, from its step 2 (trimming the returns, R21, is
    its step 3).
 
 **Still open**
 
-- Building a context from a spec, to settle before step 6. Recommended:
-  `Context.from_spec(spec)` opens a context with the spec's backtests and
-  labels, and builds each model with plain `match` functions, the model's
-  key in `models` as its name. Value identity shares identical parts (D9),
-  so the `Builder` tables go; the check on an input declared twice
-  differently, and `RunSpec`'s `last`-window check with its paths (R9b),
-  stay. Alternatives: keep the `Builder` class; or, later, let the node
-  dataclasses be the specs (pydantic over them, value ranges as field
-  annotations), which would also write a context back as a spec (R12,
-  D4).
 - Whether `RunSpec` keeps its name.
 - Hashing: nested frozen dataclasses hash again on every lookup. Cache the
   hash if a large run (R6) shows it.
