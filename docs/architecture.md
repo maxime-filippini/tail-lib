@@ -67,8 +67,10 @@ and a `Context` in place of `Run`, `Cache` and `Pool`. See "Context API" in
 `docs/open-points.md`.
 
 Every computation is a `Node[T]`: a preprocessor (a model input such as a
-volatility, a `Preprocessor`), a decay model (a `DecayModel`), a VaR model
-(a `ValueAtRiskModel`), or a backtest (a `Backtest`). Nodes are frozen
+volatility, a `Preprocessor`), a decay model (a `DecayModel`, giving
+`DecayFactors`), a volatility filter (a `VolatilityFilter`, giving
+`FilteredReturns`), a VaR model (a `ValueAtRiskModel`), or a backtest (a
+`Backtest`). Nodes are frozen
 dataclasses,
 identified by value (D9): two nodes of the same class with equal fields,
 their input nodes included, are one node, e.g. two `ZeroMean()` built
@@ -85,19 +87,18 @@ can be hashed; `np.asarray` gives the array back.
   calls `super().__post_init__()` for it.
 - `evaluate(cache)` is written once, in `Node`: it gets each dependency's
   output with `cache.get(node)`, then calls `compute`. Until their step of
-  the migration, the filter, the FHS and the input nodes keep an
-  `evaluate` of their own, and their `compute` isn't checked;
-  `tests/test_dependencies.py` lists them. The input nodes' `compute`
-  refuses to run: their output is read from the run.
+  the migration, the input nodes keep an `evaluate` of their own, and
+  their `compute` isn't checked; `tests/test_dependencies.py` lists them.
+  Their `compute` refuses to run: their output is read from the run.
 - `dependencies()` lists the nodes `evaluate` reads: the fields holding
   nodes, keyed by field, e.g. `{"vol": ..., "mean": ...}`. It
   is written once, in `Node`. So a graph can be walked without computing
   it: `Run` walks it to find its run inputs and `last` windows. The returns
-  and the named run inputs are not nodes, so they are not listed. The FHS
-  is the one override: its `evaluate` also reads its filter's mean and
-  volatility, so it lists them too. `tests/test_dependencies.py` checks,
-  for one node of each library type, that it matches what `evaluate` asks
-  the cache for.
+  and the named run inputs are not nodes, so they are not listed. No node
+  overrides it: a node needing more than its inputs' outputs gets it inside
+  them, e.g. the FHS reads the mean and volatility from its filter's
+  `FilteredReturns`. `tests/test_dependencies.py` checks, for one node of
+  each library type, that it matches what `evaluate` asks the cache for.
 - `settings()` lists the node's other fields, with the values the node
   uses, defaults included, e.g. `{"cf": 0.99, "window": Trailing(250),
   "interpolation": "linear"}`. It is also written once, in `Node`. The

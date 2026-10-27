@@ -10,6 +10,7 @@ import numpy as np
 
 from tail_lib._checks import check_name
 from tail_lib.graph import Cache
+from tail_lib.graph import Node
 from tail_lib.graph import Preprocessor
 from tail_lib.graph import frozen_floats
 from tail_lib.models.ewma import DEFAULT_EWMA_START
@@ -220,8 +221,35 @@ class EwmaVolatility(VolatilityModel):
         return TimeSeries(dates=returns.dates, values=vols)
 
 
+@dataclass(frozen=True, eq=False)
+class FilteredReturns:
+    """The output of a volatility filter: standardized returns, and how.
+
+    A filtered historical simulation rescales its quantiles with the mean and
+    volatility that standardized the returns. They come with the standardized
+    returns, so the simulation reads its filter's output alone.
+
+    Attributes:
+        standardized (TimeSeries): The standardized returns, with the dates
+            and shape of the returns: `z[t] = (r[t] - mean[t - 1]) / vol[t - 1]`.
+        mean (TimeSeries): The means, the output of the filter's `mean`. The
+            mean on date `t` is the forecast for `t + 1`.
+        vol (TimeSeries): The volatilities, the output of the filter's `vol`.
+            The volatility on date `t` is the forecast for `t + 1`.
+
+    """
+
+    standardized: TimeSeries
+    mean: TimeSeries
+    vol: TimeSeries
+
+    def __post_init__(self) -> None:
+        self.standardized.check_aligned(self.mean)
+        self.standardized.check_aligned(self.vol)
+
+
 @dataclass(frozen=True)
-class VolatilityFilter(Preprocessor):
+class VolatilityFilter(Node[FilteredReturns]):
     """Returns standardized by the mean and volatility forecast for their date.
 
     The return of date `t` is filtered with the mean and volatility on date
@@ -231,7 +259,9 @@ class VolatilityFilter(Preprocessor):
 
     The mean is zero by default, so the returns are only divided by their
     volatility. The first date is `NaN`, as are the dates before the first
-    volatility, e.g. during an EWMA backcast.
+    volatility, e.g. during an EWMA backcast. The output, `FilteredReturns`,
+    also holds the mean and volatility, for the filtered historical
+    simulation to rescale with.
 
     Attributes:
         vol (VolatilityModel): The volatility the returns are divided
@@ -244,30 +274,35 @@ class VolatilityFilter(Preprocessor):
     vol: VolatilityModel
     mean: MeanModel = field(default_factory=ZeroMean, kw_only=True)
 
-    def evaluate(self, cache: Cache) -> TimeSeries:  # noqa: D102
-        means = cache.get(self.mean)
-        vols = cache.get(self.vol)
-        return self.compute(cache.returns, means=means, vols=vols)
-
     def compute(
-        self, returns: TimeSeries, *, means: TimeSeries, vols: TimeSeries
-    ) -> TimeSeries:
+        self, returns: TimeSeries, /, *, vol: TimeSeries, mean: TimeSeries
+    ) -> FilteredReturns:
         """Filter the returns by their mean and volatility.
 
         Args:
             returns (TimeSeries): The returns time series.
-            means (TimeSeries): The means, with the same dates and shape as
-                `returns`. The mean on date `t` is the forecast for `t + 1`.
-            vols (TimeSeries): The volatilities, with the same dates and shape as
-                `returns`. The volatility on date `t` is the forecast for `t + 1`.
+            vol (TimeSeries): The volatilities, the output of the `vol` node,
+                with the dates and shape of `returns`. The volatility on date
+                `t` is the forecast for `t + 1`.
+            mean (TimeSeries): The means, the output of the `mean` node, with
+                the dates and shape of `returns`. The mean on date `t` is the
+                forecast for `t + 1`.
 
         Returns:
-            TimeSeries: The filtered returns, `NaN` on the first date and where
-                the mean or volatility of the previous date is.
+            FilteredReturns: The standardized returns, `NaN` on the first date
+                and where the mean or volatility of the previous date is, with
+                the mean and volatility.
+
+        Raises:
+            ValueError: If the mean or volatility does not match the returns.
 
         """
-        returns.check_aligned(means)
-        returns.check_aligned(vols)
+        returns.check_aligned(mean)
+        returns.check_aligned(vol)
         values = np.full(returns.values.shape, np.nan)
-        values[1:] = (returns.values[1:] - means.values[:-1]) / vols.values[:-1]
-        return TimeSeries(dates=returns.dates, values=values)
+        values[1:] = (returns.values[1:] - mean.values[:-1]) / vol.values[:-1]
+        return FilteredReturns(
+            standardized=TimeSeries(dates=returns.dates, values=values),
+            mean=mean,
+            vol=vol,
+        )

@@ -123,9 +123,8 @@ def test_run_sees_the_inputs_and_windows_of_every_node(node: Node[Any]) -> None:
 def test_settings_and_dependencies_cover_the_constructor_arguments(
     node: Node[Any],
 ) -> None:
-    # Every constructor argument is either a setting or a dependency. A
-    # dependency may also be a node read through another one, e.g. the
-    # `vol` of a filtered historical simulation's filter.
+    # Every constructor argument is either a setting or a dependency, and
+    # nothing else is.
     # A node without its own `__init__` shows `object`'s `*args, **kwargs`.
     parameters = inspect.signature(type(node).__init__).parameters.values()
     arguments = {
@@ -137,16 +136,13 @@ def test_settings_and_dependencies_cover_the_constructor_arguments(
     settings = set(node.settings())
     dependencies = set(node.dependencies())
 
-    assert settings <= arguments
     assert not settings & dependencies
-    assert arguments <= settings | dependencies
+    assert settings | dependencies == arguments
 
 
 # Nodes still gathering their inputs in their own `evaluate`, until their
 # step of the context API migration (see `docs/open-points.md`).
 _OWN_EVALUATE = {
-    "VolatilityFilter",
-    "FilteredHistoricalSimulationsModel",
     "VolatilityInput",
     "ValueAtRiskInput",
 }

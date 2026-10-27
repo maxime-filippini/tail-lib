@@ -16,6 +16,7 @@ from tail_lib.models.value_at_risk import HistoricalSimulationsModel
 from tail_lib.models.value_at_risk import ValueAtRiskModel
 from tail_lib.models.volatility import ConstantVolatility
 from tail_lib.models.volatility import EwmaVolatility
+from tail_lib.models.volatility import FilteredReturns
 from tail_lib.models.volatility import VolatilityFilter
 from tail_lib.models.volatility import VolatilityModel
 from tail_lib.time_series import TimeSeries
@@ -50,8 +51,9 @@ class _FilteredReturnsModel(ValueAtRiskModel):
         vols = cache.get(self._vol_model)
         return self.compute(filtered=filtered, vols=vols)
 
-    def compute(self, *, filtered: TimeSeries, vols: TimeSeries) -> TimeSeries:
-        return TimeSeries(dates=filtered.dates, values=filtered.values * vols.values)
+    def compute(self, *, filtered: FilteredReturns, vols: TimeSeries) -> TimeSeries:
+        z = filtered.standardized
+        return TimeSeries(dates=z.dates, values=z.values * vols.values)
 
 
 def test_run_computes_nested_preprocessors_once() -> None:

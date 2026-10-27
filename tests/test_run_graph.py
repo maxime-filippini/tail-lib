@@ -55,18 +55,15 @@ def test_the_graph_lists_each_node_once_with_all_its_paths() -> None:
     # D9), then per model one overshootings node and one backtest.
     n_distinct = 2 + 1 + 1 + 1 + 2 * 2
     assert len(run.graph.nodes) == len(paths) == n_distinct
-    assert paths[ZeroMean()][:3] == (
+    assert paths[ZeroMean()][:2] == (
         "models.gauss.mean",
         "models.fhs.filter.mean",
-        "models.fhs.mean",
     )
     assert paths[vol] == (
         "models.gauss.vol",
         "models.fhs.filter.vol",
-        "models.fhs.vol",
         "backtests.gauss.kupiec.overshootings.var.vol",
         "backtests.fhs.kupiec.overshootings.var.filter.vol",
-        "backtests.fhs.kupiec.overshootings.var.vol",
     )
     assert paths[gauss] == (
         "models.gauss",

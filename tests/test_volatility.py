@@ -215,7 +215,7 @@ def test_volatility_filter_divides_returns_by_vols() -> None:
     returns = returns_series(n=50, n_assets=2)
     vol = ewma(0.94)
 
-    filtered = VolatilityFilter(vol).run(returns)
+    filtered = VolatilityFilter(vol).run(returns).standardized
 
     # The return of date t is divided by the forecast for t, made on t - 1.
     vols = vol.run(returns)
@@ -231,11 +231,12 @@ def test_volatility_filter_takes_off_the_mean_forecast_for_each_date() -> None:
     means = TimeSeries(dates=returns.dates, values=rng.normal(0, 1e-3, (50, 2)))
     vols = TimeSeries(dates=returns.dates, values=rng.uniform(0.005, 0.02, (50, 2)))
 
-    filtered = VolatilityFilter(ConstantVolatility(0.01)).compute(
-        returns, means=means, vols=vols
+    output = VolatilityFilter(ConstantVolatility(0.01)).compute(
+        returns, vol=vols, mean=means
     )
 
     # The mean and volatility forecast for date t are those of date t - 1.
+    filtered = output.standardized
     assert np.isnan(filtered.values[0]).all()
     np.testing.assert_allclose(
         filtered.values[1:],
@@ -247,8 +248,10 @@ def test_volatility_filter_run_uses_its_mean_model() -> None:
     returns = returns_series(n=50, n_assets=2)
     mean = np.array([0.001, -0.002])
 
-    filtered = VolatilityFilter(ConstantVolatility(0.01), mean=ConstantMean(mean)).run(
-        returns
+    filtered = (
+        VolatilityFilter(ConstantVolatility(0.01), mean=ConstantMean(mean))
+        .run(returns)
+        .standardized
     )
 
     np.testing.assert_allclose(filtered.values[1:], (returns.values[1:] - mean) / 0.01)
@@ -263,7 +266,7 @@ def test_volatility_filter_rejects_mismatched_vols() -> None:
 
     with pytest.raises(ValueError, match="dates"):
         VolatilityFilter(ConstantVolatility(0.01)).compute(
-            returns, means=means, vols=vols
+            returns, vol=vols, mean=means
         )
 
 

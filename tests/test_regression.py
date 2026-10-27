@@ -132,6 +132,17 @@ def _decays() -> dict[str, DecayModel]:
     }
 
 
+def _filters() -> dict[str, VolatilityFilter]:
+    """One volatility filter with each kind of mean, by key."""
+    ewma = EwmaVolatility(ConstantDecay(0.94))
+    return {
+        "filter.zero_mean": VolatilityFilter(ewma),
+        "filter.constant_mean": VolatilityFilter(
+            ewma, mean=ConstantMean(np.array([1e-4, -2e-4]))
+        ),
+    }
+
+
 def _nodes() -> dict[str, Node[TimeSeries]]:
     """One node of each type with a time series output, by key."""
     models = _models()
@@ -147,10 +158,6 @@ def _nodes() -> dict[str, Node[TimeSeries]]:
         ),
         "vol.fitted_ewma": EwmaVolatility(_CALIBRATION),
         "vol.fitted_ewma_last": EwmaVolatility(_CALIBRATION_LAST),
-        "filter.zero_mean": VolatilityFilter(ewma),
-        "filter.constant_mean": VolatilityFilter(
-            ewma, mean=ConstantMean(np.array([1e-4, -2e-4]))
-        ),
         "overshootings.gaussian_ewma": Overshootings(models["gaussian_ewma"]),
     }
     var_models = {f"var.{name}": model for name, model in models.items()}
@@ -181,6 +188,12 @@ def _outputs(returns: TimeSeries) -> dict[str, np.ndarray]:
     # A decay model's factors are pinned; its refits are tested in test_ewma.
     decays = Pool(_decays()).run(returns, inputs)
     outputs |= {f"node.{key}": decay.values.values for key, decay in decays.items()}
+    # A filter's standardized returns are pinned; its mean and volatility are
+    # those of its inputs, pinned on their own.
+    filters = Pool(_filters()).run(returns, inputs)
+    outputs |= {
+        f"node.{key}": filtered.standardized.values for key, filtered in filters.items()
+    }
 
     result = _run().run(returns, inputs)
     for model, tests in result.backtests.items():

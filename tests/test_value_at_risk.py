@@ -12,6 +12,7 @@ from tail_lib.models.value_at_risk import GaussianModel
 from tail_lib.models.value_at_risk import HistoricalSimulationsModel
 from tail_lib.models.volatility import ConstantVolatility
 from tail_lib.models.volatility import EwmaVolatility
+from tail_lib.models.volatility import FilteredReturns
 from tail_lib.models.volatility import VolatilityFilter
 from tail_lib.time_series import TimeSeries
 from tail_lib.windows import Last
@@ -229,7 +230,8 @@ def test_filtered_historical_on_last_window_is_the_last_rolling_value() -> None:
 
 
 def test_filtered_historical_rescales_with_the_mean_and_vol_of_each_date() -> None:
-    dates = returns_series(n=40).dates
+    returns = returns_series(n=40, n_assets=2)
+    dates = returns.dates
     rng = np.random.default_rng(3)
     filtered = TimeSeries(dates=dates, values=rng.standard_t(5, (40, 2)))
     means = TimeSeries(dates=dates, values=rng.normal(0, 1e-3, (40, 2)))
@@ -240,7 +242,10 @@ def test_filtered_historical_rescales_with_the_mean_and_vol_of_each_date() -> No
         window=Trailing(length=10),
     )
 
-    var = model.compute(filtered=filtered, means=means, vols=vols)
+    var = model.compute(
+        returns,
+        filter=FilteredReturns(standardized=filtered, mean=means, vol=vols),
+    )
 
     z, m, v = filtered.values, means.values, vols.values
     assert np.isnan(var.values[:9]).all()

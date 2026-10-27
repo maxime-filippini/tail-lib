@@ -172,7 +172,7 @@ The core developer needs to confirm them.
 
 Proposed for the context API (2026-10-26), see "Context API" in
 `docs/open-points.md`. D9 is built (step 2), D11 for the nodes on the generic
-`evaluate` (steps 4a and 4b); D10 is not yet:
+`evaluate` (steps 4a to 4c); D10 is not yet:
 
 - **D9** — *Nodes identified by value.* Two nodes of the same class with
   equal constructor arguments, input nodes included, are one node, wherever

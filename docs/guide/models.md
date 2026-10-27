@@ -260,8 +260,12 @@ z_t = \frac{r_t - \mu_{t-1}}{\sigma_{t-1}}
 | `vol` | A [volatility model](#volatility-models). |
 | `mean` | A [mean model](#mean-models). Defaults to `ZeroMean()`. |
 
-It is the `filter` of a filtered historical simulation. The first date is
-`NaN`, as are the dates before the first volatility.
+It is the `filter` of a filtered historical simulation. It outputs
+[`FilteredReturns`][tail_lib.models.volatility.FilteredReturns]: the
+standardized returns (`standardized`), with the mean (`mean`) and volatility
+(`vol`) that standardized them, which the simulation rescales its quantiles
+with. The first standardized return is `NaN`, as are those before the first
+volatility.
 
 === "Python"
 

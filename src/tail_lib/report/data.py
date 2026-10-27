@@ -40,6 +40,8 @@ from tail_lib.models.ewma import DecayFactors
 from tail_lib.models.ewma import DecayModel
 from tail_lib.models.ewma import StartingVol
 from tail_lib.models.value_at_risk import ValueAtRiskModel
+from tail_lib.models.volatility import FilteredReturns
+from tail_lib.models.volatility import VolatilityFilter
 from tail_lib.run import _input_name
 from tail_lib.time_series import TimeSeries
 from tail_lib.windows import Last
@@ -243,12 +245,16 @@ def build_report_data(
 
     # Every node is already in the cache: `get` only reads it. A decay model
     # gives its decay factors with their refits: the page charts the factors.
+    # A filter gives its standardized returns with the mean and volatility,
+    # charted on their own nodes: the page charts the standardized returns.
     # Backtests don't give a time series: their results are in `backtests`.
     outputs: dict[str, Values] = {}
     for graph_node in run.graph.nodes:
         output = cache.get(graph_node.node)
         if isinstance(output, DecayFactors):
             output = output.values
+        if isinstance(output, FilteredReturns):
+            output = output.standardized
         if isinstance(output, TimeSeries):
             outputs[ids[graph_node.node]] = _values(output.values)
 
@@ -296,7 +302,7 @@ def _kind(node: Node[Any]) -> NodeKind:
             return "overshootings"
         case ValueAtRiskModel():
             return "model"
-        case Preprocessor() | DecayModel():
+        case Preprocessor() | DecayModel() | VolatilityFilter():
             return "preprocessor"
         case Backtest():
             return "backtest"

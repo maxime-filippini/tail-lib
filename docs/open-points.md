@@ -17,9 +17,9 @@ pushed. All checks green (ty, ruff, 624 tests).
 ## Next up
 
 1. **Context API**, plan agreed with the developer on 2026-10-26, see
-   "Context API" under "Design questions". Steps 0 to 4a committed. Step 4b
-   (pure `compute` for the decay models and the EWMA) done, awaiting
-   review. Then 4c and 4d and steps 5 and 6, each reviewed on its own.
+   "Context API" under "Design questions". Steps 0 to 4b committed, with the
+   `var` rename. Step 4c (pure `compute` for the filter and FHS) done,
+   awaiting review. Then 4d and steps 5 and 6, each reviewed on its own.
 2. **Run date range (R21–R23)**, agreed with the developer on 2026-10-25,
    see "Run date range" under "Design questions". Step 1 (docs) done,
    awaiting review. Steps 2 to 5 wait for the context API.
@@ -380,6 +380,29 @@ Done after step 4b (2026-10-27), developer's choice, no output changed:
   `backtests.gauss.kupiec.overshootings.var.vol`. The report page finds a
   model's overshootings by that edge name (`report-app/src/models.ts`), so
   the built page is rebuilt.
+
+Done in step 4c (2026-10-27), no output changed:
+
+- `VolatilityFilter` outputs `FilteredReturns` (in `volatility.py`):
+  `standardized`, the standardized returns, with the `mean` and `vol` that
+  standardized them, as the plan agreed. It checks the three are aligned.
+  The filter is a `Node[FilteredReturns]`, no longer a `Preprocessor`,
+  as decay models stopped being one in step 3. Its `compute` takes `vol`
+  and `mean` (were `vols` and `means`).
+- The FHS's `compute(returns, /, *, filter)` reads the standardized returns,
+  mean and volatility from its filter's output. Its `dependencies()`
+  override and its `evaluate` went, so no node overrides `dependencies()`
+  any more, and `tests/test_dependencies.py` now checks that settings and
+  dependencies are exactly the constructor arguments. The keyword `filter`
+  shadows the builtin: one `noqa: A002`, as the name follows the field and
+  its spec.
+- Run and report paths lose `models.fhs.vol` and `models.fhs.mean`: the
+  FHS reaches them only through `models.fhs.filter`. The report's graph has
+  two edges fewer per FHS model. The report charts a filter's
+  `standardized` returns, as it charts a decay model's `values`, and labels
+  it a preprocessor. The page itself is unchanged.
+- The regression test pins a filter's `standardized` returns, under the
+  same keys.
 
 **Still open**
 

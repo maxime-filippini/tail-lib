@@ -28,7 +28,7 @@ if TYPE_CHECKING:
         _InterpolationMethod as NumpyInterpolationMethod,
     )
 
-    from tail_lib.graph import Dependencies
+    from tail_lib.models.volatility import FilteredReturns
     from tail_lib.models.volatility import VolatilityFilter
     from tail_lib.models.volatility import VolatilityModel
 
@@ -55,9 +55,8 @@ class ValueAtRiskModel(Node[TimeSeries]):
     """Base class for value-at-risk models.
 
     A value-at-risk model is a node whose output is the value-at-risk on each
-    date. Subclasses implement `evaluate`, which gets the inputs of the model
-    from a `Cache`, then computes the value-at-risk. The computation itself
-    usually lives in a `compute` method, whose arguments are the inputs.
+    date. Subclasses implement `compute`, from the returns and the outputs of
+    their inputs, see `Node`.
 
     Building one raises `ValueError` if the confidence level isn't in (0, 1).
 
@@ -218,53 +217,39 @@ class FilteredHistoricalSimulationsModel(ValueAtRiskModel):
     window: Trailing | Last
     interpolation: InterpolationMethod = "linear"
 
-    def dependencies(self) -> Dependencies:
-        """List the filter, and the mean and volatility read through it.
-
-        `evaluate` reads the filter's mean and volatility from the cache too,
-        to rescale the quantile, so they are listed with the filter.
-
-        Returns:
-            Dependencies: The nodes this node reads, by name.
-
-        """
-        return {
-            "filter": self.filter,
-            "vol": self.filter.vol,
-            "mean": self.filter.mean,
-        }
-
-    def evaluate(self, cache: Cache) -> TimeSeries:  # noqa: D102
-        filtered = cache.get(self.filter)
-        means = cache.get(self.filter.mean)
-        vols = cache.get(self.filter.vol)
-        return self.compute(filtered=filtered, means=means, vols=vols)
-
+    # The field is named after the spec's `filter`, so its keyword is too.
     def compute(
-        self, *, filtered: TimeSeries, means: TimeSeries, vols: TimeSeries
+        self,
+        returns: TimeSeries,
+        /,
+        *,
+        filter: FilteredReturns,  # noqa: A002
     ) -> TimeSeries:
         """Compute the value-at-risk on each window.
 
         Args:
-            filtered (TimeSeries): The standardized returns.
-            means (TimeSeries): The means of the returns, with the same dates
-                and shape as `filtered`.
-            vols (TimeSeries): The volatilities of the returns, with the same
-                dates and shape as `filtered`.
+            returns (TimeSeries): The returns. Only their dates and shape are
+                used, to check the filter's output.
+            filter (FilteredReturns): The output of the `filter` node: the
+                standardized returns, with the means and volatilities that
+                rescale the quantiles.
 
         Returns:
-            TimeSeries: The value-at-risk, on the dates of `filtered`.
+            TimeSeries: The value-at-risk, on the dates of the returns.
+
+        Raises:
+            ValueError: If the filter's output does not match the returns.
 
         """
-        filtered.check_aligned(means)
-        filtered.check_aligned(vols)
+        returns.check_aligned(filter.standardized)
 
-        windows = Windows(filtered, self.window, skip_leading_nan=True)
+        windows = Windows(filter.standardized, self.window, skip_leading_nan=True)
         method = _interp_to_numpy_quantile_method(self.interpolation)
         quantiles = np.quantile(windows.values, q=1 - self.cf, method=method, axis=0)
         # Each window is rescaled with the mean and volatility of its last date.
         ends = windows.end_indices
-        return windows.to_series(means.values[ends] + vols.values[ends] * quantiles)
+        mean, vol = filter.mean.values[ends], filter.vol.values[ends]
+        return windows.to_series(mean + vol * quantiles)
 
 
 @dataclass(frozen=True, kw_only=True)
