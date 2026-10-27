@@ -116,12 +116,10 @@ def test_ewma_volatility_rejects_decay_series_on_other_dates() -> None:
 
 def test_fitted_ewma_volatility_starts_after_first_calibration() -> None:
     returns = simulated_returns()
-    vol_model = FittedEwmaVolatility(
-        EwmaDecayCalibration(Trailing(length=100, step=20))
-    )
+    vol = FittedEwmaVolatility(EwmaDecayCalibration(Trailing(length=100, step=20)))
 
-    vols = vol_model.run(returns)
-    var = GaussianModel(cf=0.99, vol_model=vol_model).run(returns)
+    vols = vol.run(returns)
+    var = GaussianModel(cf=0.99, vol=vol).run(returns)
 
     # The first calibration is known on date 99, the end of its window.
     np.testing.assert_array_equal(vols.dates, returns.dates)
@@ -133,13 +131,11 @@ def test_fitted_ewma_volatility_starts_after_first_calibration() -> None:
 
 def test_fitted_ewma_volatility_has_no_look_ahead() -> None:
     returns = simulated_returns()
-    vol_model = FittedEwmaVolatility(
-        EwmaDecayCalibration(Trailing(length=100, step=20))
-    )
+    vol = FittedEwmaVolatility(EwmaDecayCalibration(Trailing(length=100, step=20)))
     t = 130
 
-    full = vol_model.run(returns)
-    truncated = vol_model.run(returns[: t + 1])
+    full = vol.run(returns)
+    truncated = vol.run(returns[: t + 1])
 
     np.testing.assert_allclose(full.values[: t + 1], truncated.values)
 
@@ -147,13 +143,13 @@ def test_fitted_ewma_volatility_has_no_look_ahead() -> None:
 def test_fitted_ewma_volatility_uses_calibrated_decay() -> None:
     returns = simulated_returns()
     calibration = EwmaDecayCalibration(Trailing(length=100, step=20))
-    vol_model = FittedEwmaVolatility(calibration)
+    vol = FittedEwmaVolatility(calibration)
 
     decay = calibration.run(returns)
 
     np.testing.assert_allclose(
-        vol_model.run(returns).values,
-        vol_model.compute(
+        vol.run(returns).values,
+        vol.compute(
             returns, decay=decay, window=calibration.window, start=calibration.start
         ).values,
     )
@@ -199,12 +195,12 @@ def test_fitted_ewma_volatility_uses_the_calibration_start() -> None:
 
 def test_volatility_filter_divides_returns_by_vols() -> None:
     returns = returns_series(n=50, n_assets=2)
-    vol_model = ewma(0.94)
+    vol = ewma(0.94)
 
-    filtered = VolatilityFilter(vol_model).run(returns)
+    filtered = VolatilityFilter(vol).run(returns)
 
     # The return of date t is divided by the forecast for t, made on t - 1.
-    vols = vol_model.run(returns)
+    vols = vol.run(returns)
     assert np.isnan(filtered.values[0]).all()
     np.testing.assert_allclose(
         filtered.values[1:], returns.values[1:] / vols.values[:-1]
@@ -233,9 +229,9 @@ def test_volatility_filter_run_uses_its_mean_model() -> None:
     returns = returns_series(n=50, n_assets=2)
     mean = np.array([0.001, -0.002])
 
-    filtered = VolatilityFilter(
-        ConstantVolatility(0.01), mean_model=ConstantMean(mean)
-    ).run(returns)
+    filtered = VolatilityFilter(ConstantVolatility(0.01), mean=ConstantMean(mean)).run(
+        returns
+    )
 
     np.testing.assert_allclose(filtered.values[1:], (returns.values[1:] - mean) / 0.01)
 
@@ -266,7 +262,7 @@ def test_fitted_ewma_on_last_window_is_the_last_rolling_value() -> None:
 def test_gaussian_on_a_last_calibration_gives_one_value_at_risk() -> None:
     vol = FittedEwmaVolatility(EwmaDecayCalibration(Last(length=100)))
 
-    var = GaussianModel(cf=0.99, vol_model=vol).run(simulated_returns(n=160))
+    var = GaussianModel(cf=0.99, vol=vol).run(simulated_returns(n=160))
 
     assert np.isnan(var.values[:-1]).all()
     assert not np.isnan(var.values[-1]).any()

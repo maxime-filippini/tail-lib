@@ -120,13 +120,13 @@ with \(\Phi^{-1}\) the standard normal quantile.
 | Setting | Meaning |
 |---|---|
 | `cf` | Confidence level, in (0, 1). |
-| `vol_model` | A [volatility model](#volatility-models). Volatilities must be positive, or `NaN` during a warm-up. |
-| `mean_model` | A [mean model](#mean-models). Defaults to `ZeroMean()`. |
+| `vol` | A [volatility model](#volatility-models). Volatilities must be positive, or `NaN` during a warm-up. |
+| `mean` | A [mean model](#mean-models). Defaults to `ZeroMean()`. |
 
 === "Python"
 
     ```python
-    GaussianModel(cf=0.99, vol_model=EwmaVolatility(ConstantDecay(0.94)))
+    GaussianModel(cf=0.99, vol=EwmaVolatility(ConstantDecay(0.94)))
     ```
 
 === "Spec"
@@ -258,8 +258,8 @@ z_t = \frac{r_t - \mu_{t-1}}{\sigma_{t-1}}
 
 | Setting | Meaning |
 |---|---|
-| `vol_model` | A [volatility model](#volatility-models). |
-| `mean_model` | A [mean model](#mean-models). Defaults to `ZeroMean()`. |
+| `vol` | A [volatility model](#volatility-models). |
+| `mean` | A [mean model](#mean-models). Defaults to `ZeroMean()`. |
 
 It is the `filter` of a filtered historical simulation. The first date is
 `NaN`, as are the dates before the first volatility.
@@ -267,7 +267,7 @@ It is the `filter` of a filtered historical simulation. The first date is
 === "Python"
 
     ```python
-    VolatilityFilter(EwmaVolatility(ConstantDecay(0.94)), mean_model=ConstantMean(0.0002))
+    VolatilityFilter(EwmaVolatility(ConstantDecay(0.94)), mean=ConstantMean(0.0002))
     ```
 
 === "Spec"

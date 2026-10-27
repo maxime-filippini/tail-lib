@@ -22,7 +22,7 @@ _SLOT = re.compile(
 
 def _run() -> Run:
     return Run(
-        {"gauss": GaussianModel(cf=0.99, vol_model=ConstantVolatility(0.01))},
+        {"gauss": GaussianModel(cf=0.99, vol=ConstantVolatility(0.01))},
         {"kupiec": KupiecTest},
     )
 

@@ -399,7 +399,7 @@ def test_a_run_from_nodes_gives_the_numbers_of_its_spec() -> None:
     hs = HistoricalSimulationsModel(cf=0.99, window=Trailing(length=100))
     run = Run(
         {
-            "gauss_99": GaussianModel(cf=0.99, vol_model=VolatilityInput("vol")),
+            "gauss_99": GaussianModel(cf=0.99, vol=VolatilityInput("vol")),
             "hs_99": hs,
             "ext_95": ValueAtRiskInput("var_ext", cf=0.95),
         },
@@ -421,7 +421,7 @@ def test_a_run_from_nodes_gives_the_numbers_of_its_spec() -> None:
 def test_a_run_from_nodes_lists_the_inputs_its_nodes_read() -> None:
     run = Run(
         {
-            "gauss": GaussianModel(cf=0.99, vol_model=VolatilityInput("vol")),
+            "gauss": GaussianModel(cf=0.99, vol=VolatilityInput("vol")),
             "ext": ValueAtRiskInput("var_ext", cf=0.99),
             "hs": HistoricalSimulationsModel(cf=0.99, window=Trailing(length=50)),
         }
@@ -434,8 +434,8 @@ def test_models_reading_one_input_share_its_node() -> None:
     # Built separately, the two inputs are equal, so they are one node (D9).
     run = Run(
         {
-            "gauss_99": GaussianModel(cf=0.99, vol_model=VolatilityInput("vol")),
-            "gauss_95": GaussianModel(cf=0.95, vol_model=VolatilityInput("vol")),
+            "gauss_99": GaussianModel(cf=0.99, vol=VolatilityInput("vol")),
+            "gauss_95": GaussianModel(cf=0.95, vol=VolatilityInput("vol")),
         }
     )
 
@@ -446,20 +446,20 @@ def test_models_reading_one_input_share_its_node() -> None:
 
 def test_two_nodes_reading_one_input_are_an_error() -> None:
     models = {
-        "a": GaussianModel(cf=0.99, vol_model=VolatilityInput("vol")),
+        "a": GaussianModel(cf=0.99, vol=VolatilityInput("vol")),
         "b": ValueAtRiskInput("vol", cf=0.95),
     }
 
     with pytest.raises(
         ValueError,
-        match=r"'vol' is read by two different nodes, at `models\.a\.vol_model` "
+        match=r"'vol' is read by two different nodes, at `models\.a\.vol` "
         r"and `models\.b",
     ):
         Run(models)
 
 
 def test_a_run_from_nodes_checks_inputs_before_computing() -> None:
-    run = Run({"gauss": GaussianModel(cf=0.99, vol_model=VolatilityInput("vol"))})
+    run = Run({"gauss": GaussianModel(cf=0.99, vol=VolatilityInput("vol"))})
 
     with pytest.raises(KeyError, match=r"Missing inputs \['vol'\]"):
         run.run(returns_series(n=100))
@@ -497,9 +497,9 @@ def test_backtests_take_their_settings_through_a_function() -> None:
         (
             GaussianModel(
                 cf=0.99,
-                vol_model=FittedEwmaVolatility(EwmaDecayCalibration(Last(length=100))),
+                vol=FittedEwmaVolatility(EwmaDecayCalibration(Last(length=100))),
             ),
-            "models.today.vol_model.calibration.window",
+            "models.today.vol.calibration.window",
         ),
     ],
 )

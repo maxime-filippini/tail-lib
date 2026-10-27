@@ -82,7 +82,7 @@ def _models() -> dict[str, ValueAtRiskModel]:
     """One VaR model of each type and window, by name."""
     mean = ConstantMean(np.array([1e-4, -2e-4]))
     ewma = EwmaVolatility(ConstantDecay(0.94))
-    vol_filter = VolatilityFilter(ewma, mean_model=mean)
+    vol_filter = VolatilityFilter(ewma, mean=mean)
     calibration = EwmaDecayCalibration(Trailing(length=150, step=50))
     return {
         "hs": HistoricalSimulationsModel(cf=0.99, window=Trailing(length=250)),
@@ -101,13 +101,11 @@ def _models() -> dict[str, ValueAtRiskModel]:
         "fhs_step": FilteredHistoricalSimulationsModel(
             cf=0.99, filter=vol_filter, window=Trailing(length=250, step=5)
         ),
-        "gaussian_ewma": GaussianModel(cf=0.99, vol_model=ewma, mean_model=mean),
+        "gaussian_ewma": GaussianModel(cf=0.99, vol=ewma, mean=mean),
         "gaussian_fitted": GaussianModel(
-            cf=0.99, vol_model=FittedEwmaVolatility(calibration)
+            cf=0.99, vol=FittedEwmaVolatility(calibration)
         ),
-        "gaussian_input_vol": GaussianModel(
-            cf=0.99, vol_model=VolatilityInput("vol_ext")
-        ),
+        "gaussian_input_vol": GaussianModel(cf=0.99, vol=VolatilityInput("vol_ext")),
         "var_input": ValueAtRiskInput("var_ext", cf=0.99),
     }
 
@@ -145,7 +143,7 @@ def _nodes() -> dict[str, Node[TimeSeries]]:
         "vol.fitted_ewma_last": FittedEwmaVolatility(calibration_last),
         "filter.zero_mean": VolatilityFilter(ewma),
         "filter.constant_mean": VolatilityFilter(
-            ewma, mean_model=ConstantMean(np.array([1e-4, -2e-4]))
+            ewma, mean=ConstantMean(np.array([1e-4, -2e-4]))
         ),
         "overshootings.gaussian_ewma": Overshootings(models["gaussian_ewma"]),
     }

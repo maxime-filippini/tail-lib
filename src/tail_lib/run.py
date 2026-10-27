@@ -110,7 +110,7 @@ class GraphNode:
     Attributes:
         node (Node[Any]): The node.
         paths (tuple[str, ...]): Its paths from the run, e.g.
-            `models.gauss.vol_model`, or `backtests.gauss.kupiec.overshootings`
+            `models.gauss.vol`, or `backtests.gauss.kupiec.overshootings`
             for a model's overshootings. A node shared by several readers has
             several (D3).
 
@@ -129,7 +129,7 @@ class GraphEdge:
         source (Node[Any]): The node read, a dependency of `target`.
         target (Node[Any]): The node reading it.
         name (str): The name `target` reads it under, its key in
-            `target.dependencies()`, e.g. `vol_model`.
+            `target.dependencies()`, e.g. `vol`.
 
     """
 
@@ -222,7 +222,7 @@ class Run:
         )
 
         # Every node of each model, with its path from the run, e.g.
-        # `models.gauss.vol_model.calibration`.
+        # `models.gauss.vol.calibration`.
         graphs = {
             name: _graph(f"models.{name}", model) for name, model in models.items()
         }
@@ -465,7 +465,7 @@ def _graph(path: str, node: Node[Any]) -> _Graph:
     Returns:
         _Graph: Each node, with its path: the path of the
             node that reads it, then the name it is read under, e.g.
-            `models.gauss.vol_model`. A node read twice is listed twice.
+            `models.gauss.vol`. A node read twice is listed twice.
 
     """
     graph = [(path, node)]

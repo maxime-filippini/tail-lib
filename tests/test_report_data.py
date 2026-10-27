@@ -35,7 +35,7 @@ def _run() -> Run:
     vol = EwmaVolatility(ConstantDecay(0.94), start=Backcast(window=20))
     return Run(
         {
-            "gauss": GaussianModel(cf=0.99, vol_model=vol),
+            "gauss": GaussianModel(cf=0.99, vol=vol),
             "fhs": FilteredHistoricalSimulationsModel(
                 cf=0.99, filter=VolatilityFilter(vol), window=Trailing(length=100)
             ),
@@ -65,9 +65,9 @@ def test_nodes_are_identified_by_their_first_path() -> None:
     data = _data()
     nodes = {node.id: node for node in data.nodes}
 
-    vol = nodes["models.gauss.vol_model"]
+    vol = nodes["models.gauss.vol"]
     assert vol.class_name == "EwmaVolatility"
-    assert vol.paths[1] == "models.fhs.filter.vol_model"
+    assert vol.paths[1] == "models.fhs.filter.vol"
     assert data.models == {
         "gauss": "models.gauss",
         "fhs": "models.fhs",
@@ -81,7 +81,7 @@ def test_nodes_have_their_kind_and_input() -> None:
     nodes = {node.id: node for node in _data().nodes}
 
     assert nodes["models.gauss"].kind == "model"
-    assert nodes["models.gauss.vol_model"].kind == "preprocessor"
+    assert nodes["models.gauss.vol"].kind == "preprocessor"
     assert nodes["backtests.gauss.kupiec.overshootings"].kind == "overshootings"
     assert nodes["backtests.gauss.kupiec"].kind == "backtest"
     assert nodes["models.ext"].input_name == "var_ext"
@@ -96,10 +96,10 @@ def test_settings_are_written_like_the_specs() -> None:
         "window": {"type": "trailing", "length": 100, "step": 5},
         "interpolation": "linear",
     }
-    assert nodes["models.gauss.vol_model"].settings == {
+    assert nodes["models.gauss.vol"].settings == {
         "start": {"type": "backcast", "window": 20}
     }
-    assert nodes["models.gauss.vol_model.decay"].settings == {"decay_factor": 0.94}
+    assert nodes["models.gauss.vol.decay"].settings == {"value": 0.94}
     assert nodes["backtests.gauss.kupiec"].settings == {"window": None}
 
 
@@ -110,7 +110,7 @@ def test_edges_link_node_ids() -> None:
     assert all(edge.source in ids and edge.target in ids for edge in data.edges)
     assert any(
         (edge.source, edge.target, edge.name)
-        == ("models.gauss.vol_model", "models.gauss", "vol_model")
+        == ("models.gauss.vol", "models.gauss", "vol")
         for edge in data.edges
     )
 
@@ -120,7 +120,7 @@ def test_outputs_hold_every_time_series_node_by_series_then_date() -> None:
 
     time_series_nodes = {node.id for node in data.nodes if node.kind != "backtest"}
     assert set(data.outputs) == time_series_nodes
-    vol = data.outputs["models.gauss.vol_model"]
+    vol = data.outputs["models.gauss.vol"]
     assert len(vol) == _N_SERIES
     assert len(vol[0]) == _N_DATES
     # The backcast's warm-up is NaN, written as None.
@@ -177,7 +177,7 @@ def test_series_are_labelled_by_their_index(
     values: FloatArrayAtLeast1D, labels: list[str]
 ) -> None:
     returns = TimeSeries.from_first_date(FIRST_DATE, values=values)
-    run = Run({"vol": GaussianModel(cf=0.99, vol_model=ConstantVolatility(0.01))})
+    run = Run({"vol": GaussianModel(cf=0.99, vol=ConstantVolatility(0.01))})
 
     data = build_report_data(run, Cache(returns))
 
@@ -191,7 +191,7 @@ def test_the_json_has_null_for_nan_and_reads_back() -> None:
     text = data.model_dump_json()
 
     assert "NaN" not in text
-    assert json.loads(text)["outputs"]["models.gauss.vol_model"][0][0] is None
+    assert json.loads(text)["outputs"]["models.gauss.vol"][0][0] is None
     assert ReportData.model_validate_json(text) == data
 
 
@@ -202,22 +202,18 @@ def test_bounds_starts_and_arrays_are_written_as_json() -> None:
     decay = ConstantDecay(np.array([0.94, 0.97]))
     run = Run(
         {
-            "fitted": GaussianModel(
-                cf=0.99, vol_model=FittedEwmaVolatility(calibration)
-            ),
-            "ewma": GaussianModel(cf=0.99, vol_model=EwmaVolatility(decay)),
+            "fitted": GaussianModel(cf=0.99, vol=FittedEwmaVolatility(calibration)),
+            "ewma": GaussianModel(cf=0.99, vol=EwmaVolatility(decay)),
         }
     )
 
     data = build_report_data(run, Cache(returns_series(n=150, n_assets=2)))
     nodes = {node.id: node for node in data.nodes}
 
-    assert nodes["models.fitted.vol_model.calibration"].settings == {
+    assert nodes["models.fitted.vol.calibration"].settings == {
         "window": {"type": "last", "length": 100},
         "bounds": [0.9, 0.99],
         "start": {"type": "starting_vol", "vol": [0.01, 0.02]},
         "n_iter": 40,
     }
-    assert nodes["models.ewma.vol_model.decay"].settings == {
-        "decay_factor": [0.94, 0.97]
-    }
+    assert nodes["models.ewma.vol.decay"].settings == {"value": [0.94, 0.97]}

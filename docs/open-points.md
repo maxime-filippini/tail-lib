@@ -12,15 +12,15 @@ Working rules, from `CLAUDE.md` and the developer:
 - Commit only when the developer says so. Commits have no co-author trailer.
 
 State as of 2026-10-27: branch `feat/context-api`, from `develop`, not
-pushed.
+pushed. All checks green (ty, ruff, 595 tests).
 
 ## Next up
 
 1. **Context API**, plan agreed with the developer on 2026-10-26, see
    "Context API" under "Design questions". Steps 0 (docs) and 1
    (`tests/test_regression.py`) reviewed. Step 2 (nodes identified by
-   value) done, awaiting review. Then 2b and steps 3 to 6, each reviewed on
-   its own.
+   value) and 2b (field names) done, awaiting review. Then steps 3 to 6,
+   each reviewed on its own.
 2. **Run date range (R21–R23)**, agreed with the developer on 2026-10-25,
    see "Run date range" under "Design questions". Step 1 (docs) done,
    awaiting review. Steps 2 to 5 wait for the context API.
@@ -282,7 +282,7 @@ pass unchanged):
   `graph.py`, type `Floats` in `_typing.py`), one level per axis, so batch
   shapes of any rank keep their shape. `settings()` returns the tuples, and
   the report writes them as lists, as before.
-- `mean_model` defaults to `ZeroMean()` (a field default) instead of
+- The mean defaults to `ZeroMean()` (a field default) instead of
   `None`. Two zero means in one graph are now one node, so the report's
   graph has one box fewer.
 - `KupiecTest` copies `cf_var` from its overshootings into a field it sets
@@ -297,6 +297,19 @@ pass unchanged):
   `Cache` stays until the context replaces it.
 - Not changed: the `Builder` keeps its tables (now redundant, they go in
   step 6), and field names stay `vol_model` and `mean_model` until 2b.
+
+Done in step 2b (2026-10-27), no output changed:
+
+- `vol_model` and `mean_model` are `vol` and `mean`, on `GaussianModel` and
+  `VolatilityFilter`, and in the FHS's dependencies; `ConstantDecay`'s
+  `decay_factor` is `value`. So run and report paths read like spec paths,
+  e.g. `models.gauss.vol.decay`, and the report shows the decay's setting
+  as `value`.
+- `Overshootings.var_model` keeps its name: it has no spec to follow. To
+  rename with the context (step 5) if wanted.
+- `compute` arguments keep their names (`means`, `vols`, `decay`): they
+  become the field names in step 4, where `compute` takes one keyword per
+  input.
 
 **Still open**
 
@@ -556,7 +569,7 @@ Spec agreed with the developer on 2026-10-25.
   dates than pixels: zoom in to read them. `GraphTab` still has its own
   ECharts setup code, which could use `Chart.svelte`.
 - Nodes read through another node are listed in `dependencies()` too, e.g.
-  the FHS lists its filter's `vol_model` and `mean_model`, so the graph has
+  the FHS lists its filter's `vol` and `mean`, so the graph has
   an edge from the volatility to the FHS as well as through the filter.
   The developer chose (2026-10-25) to keep `dependencies()` free of display
   concerns: revisit in the report only if the drawing needs it.

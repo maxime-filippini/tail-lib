@@ -183,8 +183,8 @@ class Builder:
             case GaussianSpec():
                 return GaussianModel(
                     cf=spec.cf,
-                    vol_model=self.volatility(spec.vol),
-                    mean_model=self.mean(spec.mean),
+                    vol=self.volatility(spec.vol),
+                    mean=self.mean(spec.mean),
                 )
             case _:
                 assert_never(spec)
@@ -206,9 +206,7 @@ class Builder:
                 assert_never(spec)
 
     def _build_volatility_filter(self, spec: VolatilityFilterSpec) -> VolatilityFilter:
-        return VolatilityFilter(
-            self.volatility(spec.vol), mean_model=self.mean(spec.mean)
-        )
+        return VolatilityFilter(self.volatility(spec.vol), mean=self.mean(spec.mean))
 
     def _build_mean(self, spec: MeanSpec) -> MeanModel:
         match spec:

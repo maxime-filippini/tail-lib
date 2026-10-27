@@ -96,7 +96,7 @@ reads as constructor arguments, so a model is a small graph:
 ```python
 decay = ConstantDecay(0.94)
 vol = EwmaVolatility(decay)
-model = GaussianModel(cf=0.99, vol_model=vol)
+model = GaussianModel(cf=0.99, vol=vol)
 ```
 
 ```mermaid
@@ -125,9 +125,9 @@ computed once for all the models that read it (D3, D9):
 
 ```python
 models = {
-    "gauss_99": GaussianModel(cf=0.99, vol_model=EwmaVolatility(ConstantDecay(0.94))),
+    "gauss_99": GaussianModel(cf=0.99, vol=EwmaVolatility(ConstantDecay(0.94))),
     # An equal volatility: the same node, computed once
-    "gauss_975": GaussianModel(cf=0.975, vol_model=EwmaVolatility(ConstantDecay(0.94))),
+    "gauss_975": GaussianModel(cf=0.975, vol=EwmaVolatility(ConstantDecay(0.94))),
 }
 ```
 

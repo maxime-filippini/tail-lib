@@ -275,19 +275,19 @@ class VolatilityFilter(Preprocessor):
     volatility, e.g. during an EWMA backcast.
 
     Attributes:
-        vol_model (VolatilityModel): The volatility the returns are divided
+        vol (VolatilityModel): The volatility the returns are divided
             by.
-        mean_model (MeanModel): The mean taken off the returns. Defaults to
+        mean (MeanModel): The mean taken off the returns. Defaults to
             zero.
 
     """
 
-    vol_model: VolatilityModel
-    mean_model: MeanModel = field(default_factory=ZeroMean, kw_only=True)
+    vol: VolatilityModel
+    mean: MeanModel = field(default_factory=ZeroMean, kw_only=True)
 
     def evaluate(self, cache: Cache) -> TimeSeries:  # noqa: D102
-        means = cache.get(self.mean_model)
-        vols = cache.get(self.vol_model)
+        means = cache.get(self.mean)
+        vols = cache.get(self.vol)
         return self.compute(cache.returns, means=means, vols=vols)
 
     def compute(

@@ -20,7 +20,7 @@ export interface Box {
 export interface Arrow {
   source: string;
   target: string;
-  /** The name it is read under, e.g. `vol_model`. */
+  /** The name it is read under, e.g. `vol`. */
   name: string;
 }
 

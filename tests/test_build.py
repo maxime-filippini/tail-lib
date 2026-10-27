@@ -42,7 +42,7 @@ def test_gaussian_spec_builds_the_same_model_as_python() -> None:
     built = Builder().var_model(spec).run(returns)
 
     calibration = EwmaDecayCalibration(Trailing(length=100, step=50))
-    expected = GaussianModel(cf=0.99, vol_model=FittedEwmaVolatility(calibration)).run(
+    expected = GaussianModel(cf=0.99, vol=FittedEwmaVolatility(calibration)).run(
         returns
     )
     np.testing.assert_array_equal(built.values, expected.values)
@@ -85,7 +85,7 @@ def test_filtered_historical_spec_builds_the_same_model_as_python() -> None:
     built = Builder().var_model(spec).run(returns)
 
     vol_filter = VolatilityFilter(
-        EwmaVolatility(ConstantDecay(0.94)), mean_model=ConstantMean(1e-4)
+        EwmaVolatility(ConstantDecay(0.94)), mean=ConstantMean(1e-4)
     )
     expected = FilteredHistoricalSimulationsModel(
         cf=0.99,
@@ -110,8 +110,8 @@ def test_filtered_historical_specs_share_their_filter() -> None:
     assert fhs_100.dependencies()["filter"] is fhs_150.dependencies()["filter"]
     # The filter's volatility is the Gaussian model's too: one node per spec.
     assert (
-        fhs_100.dependencies()["filter"].dependencies()["vol_model"]
-        is gauss_model.dependencies()["vol_model"]
+        fhs_100.dependencies()["filter"].dependencies()["vol"]
+        is gauss_model.dependencies()["vol"]
     )
 
 
@@ -133,7 +133,7 @@ def test_last_windows_in_model_specs_build_as_in_python() -> None:
 
     expected_hs = HistoricalSimulationsModel(cf=0.95, window=Last(length=100))
     calibration = EwmaDecayCalibration(Last(length=100))
-    expected_gauss = GaussianModel(cf=0.99, vol_model=FittedEwmaVolatility(calibration))
+    expected_gauss = GaussianModel(cf=0.99, vol=FittedEwmaVolatility(calibration))
     np.testing.assert_array_equal(built_hs.values, expected_hs.run(returns).values)
     np.testing.assert_array_equal(
         built_gauss.values, expected_gauss.run(returns).values
@@ -195,7 +195,7 @@ def test_list_values_become_one_value_per_series() -> None:
     built = Builder().var_model(spec).run(returns)
 
     expected = GaussianModel(
-        cf=0.99, vol_model=ConstantVolatility(np.array([0.01, 0.02]))
+        cf=0.99, vol=ConstantVolatility(np.array([0.01, 0.02]))
     ).run(returns)
     np.testing.assert_array_equal(built.values, expected.values)
 

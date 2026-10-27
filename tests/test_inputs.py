@@ -34,11 +34,11 @@ def test_volatility_input_feeds_a_model() -> None:
     returns = returns_series(n=50, n_assets=2)
     vols = ConstantVolatility(np.array([0.01, 0.02])).run(returns)
 
-    model = GaussianModel(cf=0.99, vol_model=VolatilityInput("vol"))
+    model = GaussianModel(cf=0.99, vol=VolatilityInput("vol"))
     from_input = model.run(returns, inputs={"vol": vols})
 
     expected = GaussianModel(
-        cf=0.99, vol_model=ConstantVolatility(np.array([0.01, 0.02]))
+        cf=0.99, vol=ConstantVolatility(np.array([0.01, 0.02]))
     ).run(returns)
     np.testing.assert_array_equal(from_input.values, expected.values)
 
@@ -47,7 +47,7 @@ def test_pool_run_passes_inputs_and_ignores_unused_ones() -> None:
     returns = returns_series(n=50)
     vols = ConstantVolatility(0.01).run(returns)
 
-    outputs = Pool({"g": GaussianModel(cf=0.99, vol_model=VolatilityInput("vol"))}).run(
+    outputs = Pool({"g": GaussianModel(cf=0.99, vol=VolatilityInput("vol"))}).run(
         returns, inputs={"vol": vols, "unused": vols}
     )
 

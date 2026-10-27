@@ -44,7 +44,7 @@ def test_dates_without_previous_var_or_return_are_nan() -> None:
 
 def test_overshootings_per_series() -> None:
     returns = returns_series(n=100, n_assets=3)
-    var = GaussianModel(cf=0.95, vol_model=ConstantVolatility(0.01)).run(returns)
+    var = GaussianModel(cf=0.95, vol=ConstantVolatility(0.01)).run(returns)
 
     hits = overshootings(var, returns)
 
@@ -63,7 +63,7 @@ def test_overshootings_reject_var_on_other_dates() -> None:
 
 def test_overshootings_node_flags_the_model_var() -> None:
     returns = returns_series(n=100, n_assets=2)
-    model = GaussianModel(cf=0.95, vol_model=ConstantVolatility(0.01))
+    model = GaussianModel(cf=0.95, vol=ConstantVolatility(0.01))
 
     hits = Overshootings(model).run(returns)
 

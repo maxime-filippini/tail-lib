@@ -28,7 +28,7 @@ models = {
     "fhs_750": FilteredHistoricalSimulationsModel(
         cf=0.99, filter=vol_filter, window=Trailing(length=750)
     ),
-    "gauss": GaussianModel(cf=0.99, vol_model=vol),
+    "gauss": GaussianModel(cf=0.99, vol=vol),
 }
 
 # 2. The run: the models, and the backtests to run on each of them.
@@ -57,7 +57,7 @@ call `run.run(...)` for each series.
 Values are checked as each node is built, e.g. `ConstantDecay(1.5)` raises a
 `ValueError` straight away. A type checker such as `ty` or `mypy` also
 reports a missing argument, or a node in the wrong slot, e.g. a mean model
-given as `vol_model`.
+given as `vol`.
 
 ## Backtests
 
@@ -134,7 +134,7 @@ from tail_lib.models.volatility import VolatilityInput
 run = Run(
     {
         "external": ValueAtRiskInput("var_ext", cf=0.99),
-        "gauss_svc": GaussianModel(cf=0.99, vol_model=VolatilityInput("vol_svc")),
+        "gauss_svc": GaussianModel(cf=0.99, vol=VolatilityInput("vol_svc")),
     },
     backtests={"kupiec": KupiecTest},
 )
@@ -153,7 +153,7 @@ the inputs before computing anything. So these mistakes fail fast:
 | Mistake | Error |
 |---|---|
 | No model | `ValueError` when building the run. |
-| A model with a `Last` window, in a run with backtests | `ValueError` when building the run, with the path to the window, e.g. `models.today.vol_model.calibration.window`. Put such models in their own run, without backtests. |
+| A model with a `Last` window, in a run with backtests | `ValueError` when building the run, with the path to the window, e.g. `models.today.vol.calibration.window`. Put such models in their own run, without backtests. |
 | Two different nodes reading the same input name | `ValueError` when building the run. Models that read the same input share one input node. |
 | A missing input | `KeyError` from `run.run`, before computing, e.g. `Missing inputs ['var_ext']! Inputs given: [].` |
 | An input with other dates or another shape than the returns | `ValueError` when the input is read. |
@@ -210,10 +210,10 @@ included, with the paths it is reached by and the edges between nodes:
 ```python
 for graph_node in run.graph.nodes:
     type(graph_node.node).__name__, graph_node.paths
-    # e.g. ("EwmaVolatility", ("models.gauss.vol_model", "models.fhs_500.filter.vol_model", ...))
+    # e.g. ("EwmaVolatility", ("models.gauss.vol", "models.fhs_500.filter.vol", ...))
 
 for edge in run.graph.edges:
-    edge.source, edge.name, edge.target  # e.g. vol, "vol_model", gauss
+    edge.source, edge.name, edge.target  # e.g. vol, "vol", gauss
 ```
 
 To read the output of any node after a run, compute the run on a cache you

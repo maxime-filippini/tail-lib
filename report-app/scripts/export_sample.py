@@ -40,11 +40,11 @@ if __name__ == "__main__":
 
     vol = EwmaVolatility(ConstantDecay(0.94))
     fitted = FittedEwmaVolatility(EwmaDecayCalibration(Trailing(length=250, step=20)))
-    vol_filter = VolatilityFilter(vol, mean_model=ConstantMean(0.0002))
+    vol_filter = VolatilityFilter(vol, mean=ConstantMean(0.0002))
     run = Run(
         {
-            "gauss": GaussianModel(cf=0.99, vol_model=vol),
-            "gauss_fitted": GaussianModel(cf=0.99, vol_model=fitted),
+            "gauss": GaussianModel(cf=0.99, vol=vol),
+            "gauss_fitted": GaussianModel(cf=0.99, vol=fitted),
             "hs_250": HistoricalSimulationsModel(cf=0.99, window=Trailing(length=250)),
             "fhs_250": FilteredHistoricalSimulationsModel(
                 cf=0.99, filter=vol_filter, window=Trailing(length=250)

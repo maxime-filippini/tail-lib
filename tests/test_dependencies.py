@@ -47,8 +47,8 @@ class _RecordingCache(Cache):
 def _one_node_of_each_type() -> list[Node[Any]]:
     vol = EwmaVolatility(ConstantDecay(0.94))
     calibration = EwmaDecayCalibration(Trailing(length=100))
-    vol_filter = VolatilityFilter(vol, mean_model=ConstantMean(1e-4))
-    gaussian = GaussianModel(cf=0.99, vol_model=vol, mean_model=ConstantMean(1e-4))
+    vol_filter = VolatilityFilter(vol, mean=ConstantMean(1e-4))
+    gaussian = GaussianModel(cf=0.99, vol=vol, mean=ConstantMean(1e-4))
     return [
         ZeroMean(),
         ConstantMean(1e-4),
@@ -125,7 +125,7 @@ def test_settings_and_dependencies_cover_the_constructor_arguments(
 ) -> None:
     # Every constructor argument is either a setting or a dependency. A
     # dependency may also be a node read through another one, e.g. the
-    # `vol_model` of a filtered historical simulation's filter.
+    # `vol` of a filtered historical simulation's filter.
     # A node without its own `__init__` shows `object`'s `*args, **kwargs`.
     parameters = inspect.signature(type(node).__init__).parameters.values()
     arguments = {

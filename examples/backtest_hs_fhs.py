@@ -89,7 +89,7 @@ def main() -> None:  # noqa: D103
         )
         for n in HS_LENGTHS
     }
-    gauss = {"gauss_ewma": GaussianModel(cf=CF, vol_model=vol)}
+    gauss = {"gauss_ewma": GaussianModel(cf=CF, vol=vol)}
     models = hs | fhs | gauss
     print(f"Step 2: {len(models)} models: {', '.join(models)}.")
 

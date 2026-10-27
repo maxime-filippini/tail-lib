@@ -52,7 +52,7 @@ returns = simulator.simulate(1000, first_date=datetime.date(2020, 1, 1), rng=1).
 # 2. Models.
 models = {
     "hs_99": HistoricalSimulationsModel(cf=0.99, window=Trailing(length=250)),
-    "gauss_99": GaussianModel(cf=0.99, vol_model=EwmaVolatility(ConstantDecay(0.94))),
+    "gauss_99": GaussianModel(cf=0.99, vol=EwmaVolatility(ConstantDecay(0.94))),
 }
 
 # 3. A run: every backtest runs on every model.

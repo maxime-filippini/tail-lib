@@ -21,7 +21,7 @@ How tail-lib is organized, and how a call flows from a spec to the numbers
 - **Names** (R20): model, backtest and run input names are Python
   identifiers, checked by `check_name` in `Run`, in the input nodes, and in
   specs (`Name`). So the dotted paths through a run's graph, e.g.
-  `models.gauss.vol_model`, are unambiguous. A model and a backtest can't
+  `models.gauss.vol`, are unambiguous. A model and a backtest can't
   share a name. Display names are `labels` on `Run` and `RunSpec`, checked
   once by `_check_names_and_labels` in `run.py`; `run.labels` fills in
   every name, unlabelled ones as they are.
@@ -79,7 +79,7 @@ can be hashed; `np.asarray` gives the array back.
 - `compute(...)` is pure: it uses only its arguments and the node's own
   constructor settings (see `CLAUDE.md`).
 - `dependencies()` lists the nodes `evaluate` reads: the fields holding
-  nodes, keyed by field, e.g. `{"vol_model": ..., "mean_model": ...}`. It
+  nodes, keyed by field, e.g. `{"vol": ..., "mean": ...}`. It
   is written once, in `Node`. So a graph can be walked without computing
   it: `Run` walks it to find its run inputs and `last` windows. The returns
   and the named run inputs are not nodes, so they are not listed. The FHS
@@ -152,12 +152,12 @@ pydantic. YAML could later be a loader producing dicts.
    name are an error, so none silently reads another's input) and, if there
    are backtests, rejects a model with a `last` window
    anywhere in its graph, giving the path through the graph, e.g.
-   `models.today.vol_model.calibration.window`. Each distinct model node
+   `models.today.vol.calibration.window`. Each distinct model node
    gets one `Overshootings`, shared by all its backtests. Last, it walks
    the whole graph again, from each model, then from each backtest of each
    model, into `run.graph` (a `RunGraph`): each distinct node once, as a
    `GraphNode` with every path it is reached by, e.g.
-   `models.gauss.vol_model` or `backtests.gauss.kupiec.overshootings`, and
+   `models.gauss.vol` or `backtests.gauss.kupiec.overshootings`, and
    one `GraphEdge` per dependency, from the node read to its reader,
    labelled with the dependency's name. The report reads it (R19).
 4. **Check inputs.** `run.run(returns, inputs)` makes a `Cache` and calls
@@ -238,7 +238,7 @@ models = {
         cf=0.99, filter=vol_filter, window=Trailing(length=n)
     )
     for n in (500, 750)
-} | {"gauss": GaussianModel(cf=0.99, vol_model=vol)}
+} | {"gauss": GaussianModel(cf=0.99, vol=vol)}
 run = Run(
     models,
     backtests={
@@ -260,7 +260,7 @@ result = run.run(returns)
   `functools.partial` without checking its arguments.
 - Values are checked when each node is built, e.g. `ConstantDecay(1.5)`
   raises. ty reports a missing argument or a node in the wrong slot, e.g. a
-  mean model given as `vol_model`.
+  mean model given as `vol`.
 - `Run` walks the graph when it is built (step 3 of "From a spec to
   results"), so missing inputs are reported before computing, and backtests
   on a model with a `last` window are rejected, with the path to the window.
@@ -323,7 +323,7 @@ In progress, see "Run report" in `docs/open-points.md`.
 already computed, into a `ReportData`: a pydantic model, the one contract
 with the report page. In it:
 
-- a node is identified by its first path, e.g. `models.gauss.vol_model`;
+- a node is identified by its first path, e.g. `models.gauss.vol`;
   `models` maps each model name to its node id, and each backtest keeps the
   id of its node;
 - each node has its `kind` (preprocessor, model, overshootings, backtest),

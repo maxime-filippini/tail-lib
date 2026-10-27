@@ -33,13 +33,13 @@ class _CountingVolatility(ConstantVolatility):
 class _FilteredReturnsModel(ValueAtRiskModel):
     """Depends on a volatility model both directly and through a filter."""
 
-    def __init__(self, *, cf: float, vol_model: VolatilityModel) -> None:
+    def __init__(self, *, cf: float, vol: VolatilityModel) -> None:
         super().__init__(cf=cf)
-        self._vol_model = vol_model
-        self._filter = VolatilityFilter(vol_model)
+        self._vol_model = vol
+        self._filter = VolatilityFilter(vol)
 
     def dependencies(self) -> Dependencies:
-        return {"filter": self._filter, "vol_model": self._vol_model}
+        return {"filter": self._filter, "vol": self._vol_model}
 
     def evaluate(self, cache: Cache) -> TimeSeries:
         filtered = cache.get(self._filter)
@@ -52,11 +52,11 @@ class _FilteredReturnsModel(ValueAtRiskModel):
 
 def test_run_computes_nested_preprocessors_once() -> None:
     returns = returns_series(n=50)
-    vol_model = _CountingVolatility(0.02)
+    vol = _CountingVolatility(0.02)
 
-    rescaled = _FilteredReturnsModel(cf=0.99, vol_model=vol_model).run(returns)
+    rescaled = _FilteredReturnsModel(cf=0.99, vol=vol).run(returns)
 
-    assert vol_model.n_calls == 1
+    assert vol.n_calls == 1
     np.testing.assert_allclose(rescaled.values[1:], returns.values[1:])
 
 
@@ -82,7 +82,7 @@ def test_run_rejects_cyclic_preprocessors() -> None:
     a.dependency, b.dependency = b, a
 
     with pytest.raises(ValueError, match="depends on itself"):
-        GaussianModel(cf=0.99, vol_model=a).run(returns_series(n=50))
+        GaussianModel(cf=0.99, vol=a).run(returns_series(n=50))
 
 
 def test_pool_computes_shared_preprocessors_once() -> None:
@@ -94,10 +94,10 @@ def test_pool_computes_shared_preprocessors_once() -> None:
             return super().compute(returns)
 
     returns = returns_series()
-    vol_model = CountingVolatility(0.01)
+    vol = CountingVolatility(0.01)
     models = {
-        "gaussian_99": GaussianModel(cf=0.99, vol_model=vol_model),
-        "gaussian_95": GaussianModel(cf=0.95, vol_model=vol_model),
+        "gaussian_99": GaussianModel(cf=0.99, vol=vol),
+        "gaussian_95": GaussianModel(cf=0.95, vol=vol),
         "hs_99": HistoricalSimulationsModel(cf=0.99, window=Trailing(length=100)),
     }
 
@@ -110,16 +110,16 @@ def test_pool_computes_shared_preprocessors_once() -> None:
 
 def test_pool_shares_nested_preprocessors_across_models() -> None:
     returns = returns_series(n=50)
-    vol_model = _CountingVolatility(0.02)
+    vol = _CountingVolatility(0.02)
 
     Pool(
         {
-            "filtered": _FilteredReturnsModel(cf=0.99, vol_model=vol_model),
-            "gaussian": GaussianModel(cf=0.99, vol_model=vol_model),
+            "filtered": _FilteredReturnsModel(cf=0.99, vol=vol),
+            "gaussian": GaussianModel(cf=0.99, vol=vol),
         }
     ).run(returns)
 
-    assert vol_model.n_calls == 1
+    assert vol.n_calls == 1
 
 
 def test_pool_shares_decay_calibration_across_models() -> None:
@@ -137,10 +137,10 @@ def test_pool_shares_decay_calibration_across_models() -> None:
     Pool(
         {
             "gaussian_99": GaussianModel(
-                cf=0.99, vol_model=FittedEwmaVolatility(calibration)
+                cf=0.99, vol=FittedEwmaVolatility(calibration)
             ),
             "gaussian_95": GaussianModel(
-                cf=0.95, vol_model=FittedEwmaVolatility(calibration)
+                cf=0.95, vol=FittedEwmaVolatility(calibration)
             ),
         }
     ).run(returns)
@@ -150,19 +150,19 @@ def test_pool_shares_decay_calibration_across_models() -> None:
 
 def test_pools_on_one_cache_share_nodes() -> None:
     returns = returns_series(n=50)
-    vol_model = _CountingVolatility(0.02)
-    gaussian = GaussianModel(cf=0.99, vol_model=vol_model)
+    vol = _CountingVolatility(0.02)
+    gaussian = GaussianModel(cf=0.99, vol=vol)
     cache = Cache(returns)
 
     first = Pool({"gaussian": gaussian}).evaluate(cache)
-    second = Pool({"vols": vol_model, "gaussian": gaussian}).evaluate(cache)
+    second = Pool({"vols": vol, "gaussian": gaussian}).evaluate(cache)
 
-    assert vol_model.n_calls == 1
+    assert vol.n_calls == 1
     assert second["gaussian"] is first["gaussian"]
 
 
 def test_var_model_output_is_cached() -> None:
     cache = Cache(returns_series(n=50))
-    gaussian = GaussianModel(cf=0.99, vol_model=ConstantVolatility(0.02))
+    gaussian = GaussianModel(cf=0.99, vol=ConstantVolatility(0.02))
 
     assert cache.get(gaussian) is cache.get(gaussian)

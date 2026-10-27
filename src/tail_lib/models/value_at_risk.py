@@ -212,14 +212,14 @@ class FilteredHistoricalSimulationsModel(ValueAtRiskModel):
         """
         return {
             "filter": self.filter,
-            "vol_model": self.filter.vol_model,
-            "mean_model": self.filter.mean_model,
+            "vol": self.filter.vol,
+            "mean": self.filter.mean,
         }
 
     def evaluate(self, cache: Cache) -> TimeSeries:  # noqa: D102
         filtered = cache.get(self.filter)
-        means = cache.get(self.filter.mean_model)
-        vols = cache.get(self.filter.vol_model)
+        means = cache.get(self.filter.mean)
+        vols = cache.get(self.filter.vol)
         return self.compute(filtered=filtered, means=means, vols=vols)
 
     def compute(
@@ -268,19 +268,19 @@ class GaussianModel(ValueAtRiskModel):
 
     Attributes:
         cf (float): The confidence level, in (0, 1).
-        vol_model (VolatilityModel): The volatility, the scale of the
+        vol (VolatilityModel): The volatility, the scale of the
             distribution.
-        mean_model (MeanModel): The mean of the distribution. Defaults to
+        mean (MeanModel): The mean of the distribution. Defaults to
             zero.
 
     """
 
-    vol_model: VolatilityModel
-    mean_model: MeanModel = field(default_factory=ZeroMean)
+    vol: VolatilityModel
+    mean: MeanModel = field(default_factory=ZeroMean)
 
     def evaluate(self, cache: Cache) -> TimeSeries:  # noqa: D102
-        means = cache.get(self.mean_model)
-        vols = cache.get(self.vol_model)
+        means = cache.get(self.mean)
+        vols = cache.get(self.vol)
         return self.compute(means=means, vols=vols)
 
     def compute(self, *, means: TimeSeries, vols: TimeSeries) -> TimeSeries:

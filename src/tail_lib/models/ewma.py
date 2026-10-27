@@ -164,18 +164,18 @@ class ConstantDecay(DecayModel):
     Building it raises `ValueError` if the decay factor is not in [0,1].
 
     Attributes:
-        decay_factor (FloatArray | Floats | float): The decay factor, a single
-            value or an array broadcastable to the batch shape of the
-            returns, e.g. the output of `fit_ewma_decay`. An array is stored
-            as nested tuples, see `frozen_floats`.
+        value (FloatArray | Floats | float): The decay factor, a single value
+            or an array broadcastable to the batch shape of the returns, e.g.
+            the output of `fit_ewma_decay`. An array is stored as nested
+            tuples, see `frozen_floats`.
 
     """
 
-    decay_factor: FloatArray | Floats | float
+    value: FloatArray | Floats | float
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "decay_factor", frozen_floats(self.decay_factor))
-        check_unit_interval("Decay factor", self.decay_factor)
+        object.__setattr__(self, "value", frozen_floats(self.value))
+        check_unit_interval("Decay factor", self.value)
 
     def evaluate(self, cache: Cache) -> TimeSeries:  # noqa: D102
         return self.compute(cache.returns)
@@ -192,9 +192,7 @@ class ConstantDecay(DecayModel):
         """
         return TimeSeries(
             dates=returns.dates,
-            values=np.broadcast_to(
-                np.asarray(self.decay_factor), returns.values.shape
-            ).copy(),
+            values=np.broadcast_to(np.asarray(self.value), returns.values.shape).copy(),
         )
 
 

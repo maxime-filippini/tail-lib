@@ -25,7 +25,7 @@ def test_gaussian_compute_matches_normal_quantile() -> None:
     means = TimeSeries.from_first_date(FIRST_DATE, values=np.array([0.0, 0.001]))
     vols = TimeSeries.from_first_date(FIRST_DATE, values=np.array([0.01, 0.02]))
 
-    var = GaussianModel(cf=0.99, vol_model=ConstantVolatility(0.01)).compute(
+    var = GaussianModel(cf=0.99, vol=ConstantVolatility(0.01)).compute(
         means=means, vols=vols
     )
 
@@ -41,7 +41,7 @@ def test_gaussian_compute_rejects_mismatched_dates() -> None:
     vols = TimeSeries.from_first_date(
         FIRST_DATE + datetime.timedelta(days=1), values=np.ones(3)
     )
-    model = GaussianModel(cf=0.99, vol_model=ConstantVolatility(0.01))
+    model = GaussianModel(cf=0.99, vol=ConstantVolatility(0.01))
 
     with pytest.raises(ValueError, match="dates"):
         model.compute(means=means, vols=vols)
@@ -50,7 +50,7 @@ def test_gaussian_compute_rejects_mismatched_dates() -> None:
 def test_gaussian_compute_rejects_mismatched_shapes() -> None:
     means = TimeSeries.from_first_date(FIRST_DATE, values=np.zeros((3, 2)))
     vols = TimeSeries.from_first_date(FIRST_DATE, values=np.ones(3))
-    model = GaussianModel(cf=0.99, vol_model=ConstantVolatility(0.01))
+    model = GaussianModel(cf=0.99, vol=ConstantVolatility(0.01))
 
     with pytest.raises(ValueError, match="shapes"):
         model.compute(means=means, vols=vols)
@@ -60,7 +60,7 @@ def test_gaussian_compute_rejects_mismatched_shapes() -> None:
 def test_gaussian_compute_rejects_non_positive_vol(vol: float) -> None:
     means = TimeSeries.from_first_date(FIRST_DATE, values=np.zeros(2))
     vols = TimeSeries.from_first_date(FIRST_DATE, values=np.array([0.01, vol]))
-    model = GaussianModel(cf=0.99, vol_model=ConstantVolatility(0.01))
+    model = GaussianModel(cf=0.99, vol=ConstantVolatility(0.01))
 
     with pytest.raises(ValueError, match="Volatility has to be positive"):
         model.compute(means=means, vols=vols)
@@ -69,7 +69,7 @@ def test_gaussian_compute_rejects_non_positive_vol(vol: float) -> None:
 def test_gaussian_compute_keeps_nan_vol() -> None:
     means = TimeSeries.from_first_date(FIRST_DATE, values=np.zeros(2))
     vols = TimeSeries.from_first_date(FIRST_DATE, values=np.array([np.nan, 0.01]))
-    model = GaussianModel(cf=0.99, vol_model=ConstantVolatility(0.01))
+    model = GaussianModel(cf=0.99, vol=ConstantVolatility(0.01))
 
     var = model.compute(means=means, vols=vols)
 
@@ -81,8 +81,8 @@ def test_gaussian_run_uses_mean_and_vol_models() -> None:
     returns = returns_series(n_assets=2)
     model = GaussianModel(
         cf=0.99,
-        mean_model=ConstantMean(np.array([0.001, 0.002])),
-        vol_model=ConstantVolatility(np.array([0.01, 0.02])),
+        mean=ConstantMean(np.array([0.001, 0.002])),
+        vol=ConstantVolatility(np.array([0.01, 0.02])),
     )
 
     var = model.run(returns)
@@ -153,12 +153,12 @@ def _standardized(returns: np.ndarray, vols: np.ndarray) -> np.ndarray:
 
 def test_filtered_historical_matches_formula_after_ewma_warm_up() -> None:
     returns = simulated_returns(n=300)
-    vol_model = EwmaVolatility(ConstantDecay(0.94))
-    vols = vol_model.run(returns).values
+    vol = EwmaVolatility(ConstantDecay(0.94))
+    vols = vol.run(returns).values
     z = _standardized(returns.values, vols)
 
     var = FilteredHistoricalSimulationsModel(
-        cf=0.95, filter=VolatilityFilter(vol_model), window=Trailing(length=50)
+        cf=0.95, filter=VolatilityFilter(vol), window=Trailing(length=50)
     ).run(returns)
 
     # The backcast takes the first 20 returns, so the first standardized
@@ -173,13 +173,13 @@ def test_filtered_historical_matches_formula_after_ewma_warm_up() -> None:
 
 def test_filtered_historical_steps_from_first_standardized_return() -> None:
     returns = simulated_returns(n=300)
-    vol_model = EwmaVolatility(ConstantDecay(0.94))
-    vols = vol_model.run(returns).values
+    vol = EwmaVolatility(ConstantDecay(0.94))
+    vols = vol.run(returns).values
     z = _standardized(returns.values, vols)
 
     var = FilteredHistoricalSimulationsModel(
         cf=0.95,
-        filter=VolatilityFilter(vol_model),
+        filter=VolatilityFilter(vol),
         window=Trailing(length=50, step=7),
     ).run(returns)
 
@@ -199,7 +199,7 @@ def test_filtered_historical_with_constant_mean_and_vol_is_historical() -> None:
         cf=0.9,
         filter=VolatilityFilter(
             ConstantVolatility(np.array([0.01, 0.03])),
-            mean_model=ConstantMean(np.array([0.001, -0.002])),
+            mean=ConstantMean(np.array([0.001, -0.002])),
         ),
         window=Trailing(length=20),
     )

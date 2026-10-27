@@ -169,7 +169,7 @@ def test_kupiec_test_node_on_windows_matches_functions() -> None:
 
 
 def test_kupiec_test_uses_the_model_confidence_level() -> None:
-    model = GaussianModel(cf=0.975, vol_model=ConstantVolatility(0.01))
+    model = GaussianModel(cf=0.975, vol=ConstantVolatility(0.01))
 
     result = KupiecTest(Overshootings(model)).run(returns_series(n=50))
 
@@ -185,7 +185,7 @@ def test_backtests_reuse_var_computed_in_the_same_cache() -> None:
             return super().compute(means=means, vols=vols)
 
     models = {
-        "gaussian": _CountingGaussian(cf=0.99, vol_model=ConstantVolatility(0.01)),
+        "gaussian": _CountingGaussian(cf=0.99, vol=ConstantVolatility(0.01)),
         "hs": HistoricalSimulationsModel(cf=0.99, window=Trailing(length=50)),
     }
     n = 200
@@ -210,7 +210,7 @@ def test_backtests_of_a_model_share_its_overshootings() -> None:
             _CountingOvershootings.n_calls += 1
             return super().compute(returns, var=var)
 
-    model = GaussianModel(cf=0.99, vol_model=ConstantVolatility(0.01))
+    model = GaussianModel(cf=0.99, vol=ConstantVolatility(0.01))
     ovs = _CountingOvershootings(model)
 
     Pool({"a": KupiecTest(ovs), "b": KupiecTest(ovs)}).run(returns_series(n=50))

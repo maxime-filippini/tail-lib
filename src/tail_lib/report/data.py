@@ -9,7 +9,7 @@ it is (R17).
 Conventions in the data:
 
 - A node is identified by its first path in the run's graph, e.g.
-  `models.gauss.vol_model` (see `Run.graph`).
+  `models.gauss.vol` (see `Run.graph`).
 - Series are flattened: the batch axes of the returns become one list of
   series, in C order, each with a label. Every series of values is a list
   over the series, then over the dates (or the windows of a backtest).
@@ -106,7 +106,7 @@ class EdgeData(_Data):
     Attributes:
         source (str): The id of the node read.
         target (str): The id of the node reading it.
-        name (str): The name it is read under, e.g. `vol_model`.
+        name (str): The name it is read under, e.g. `vol`.
 
     """
 

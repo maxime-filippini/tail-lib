@@ -72,8 +72,8 @@ class Node[T](ABC):
     def dependencies(self) -> Dependencies:
         """List the nodes `evaluate` gets from the cache: the fields holding nodes.
 
-        Each is keyed by its field, e.g. `{"vol_model": ..., "mean_model":
-        ...}` for a Gaussian model. The returns and the named run inputs are
+        Each is keyed by its field, e.g. `{"vol": ..., "mean": ...}` for a
+        Gaussian model. The returns and the named run inputs are
         not nodes, so they are not listed.
 
         Returns:
