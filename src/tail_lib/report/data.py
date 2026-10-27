@@ -33,6 +33,7 @@ from pydantic import JsonValue
 
 import tail_lib
 from tail_lib.backtests.overshootings import Overshootings
+from tail_lib.graph import Backtest
 from tail_lib.graph import Preprocessor
 from tail_lib.models.ewma import Backcast
 from tail_lib.models.ewma import DecayFactors
@@ -297,9 +298,11 @@ def _kind(node: Node[Any]) -> NodeKind:
             return "model"
         case Preprocessor() | DecayModel():
             return "preprocessor"
-        case _:
-            # A run's other nodes are its backtests.
+        case Backtest():
             return "backtest"
+        case _:
+            msg = f"{type(node).__name__} isn't a node type a run holds!"
+            raise TypeError(msg)
 
 
 def _setting_json(value: Setting) -> JsonValue:

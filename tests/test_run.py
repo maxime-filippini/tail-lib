@@ -164,10 +164,10 @@ def test_rolling_backtests_of_a_model_share_its_overshootings(
     compute = Overshootings.compute
 
     def counting(
-        self: Overshootings, returns: TimeSeries, *, var: TimeSeries
+        self: Overshootings, returns: TimeSeries, /, *, var_model: TimeSeries
     ) -> TimeSeries:
         calls.append(self)
-        return compute(self, returns, var=var)
+        return compute(self, returns, var_model=var_model)
 
     monkeypatch.setattr(Overshootings, "compute", counting)
     spec = RunSpec.model_validate(
@@ -528,10 +528,10 @@ def test_a_model_under_two_names_is_backtested_once(
     compute = Overshootings.compute
 
     def counting(
-        self: Overshootings, returns: TimeSeries, *, var: TimeSeries
+        self: Overshootings, returns: TimeSeries, /, *, var_model: TimeSeries
     ) -> TimeSeries:
         calls.append(self)
-        return compute(self, returns, var=var)
+        return compute(self, returns, var_model=var_model)
 
     monkeypatch.setattr(Overshootings, "compute", counting)
     hs = HistoricalSimulationsModel(cf=0.99, window=Trailing(length=50))

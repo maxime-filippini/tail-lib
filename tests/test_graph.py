@@ -1,3 +1,6 @@
+from collections.abc import Callable
+from dataclasses import dataclass
+
 import numpy as np
 import pytest
 
@@ -78,6 +81,9 @@ def test_run_rejects_cyclic_preprocessors() -> None:
             if self.dependency is not None:
                 cache.get(self.dependency)
             return cache.returns
+
+        def compute(self, returns: TimeSeries, /) -> TimeSeries:
+            return returns
 
     a, b = _Chained(), _Chained()
     a.dependency, b.dependency = b, a
@@ -163,3 +169,80 @@ def test_var_model_output_is_cached() -> None:
     gaussian = GaussianModel(cf=0.99, vol=ConstantVolatility(0.02))
 
     assert cache.get(gaussian) is cache.get(gaussian)
+
+
+@dataclass(frozen=True)
+class _Scaled(Preprocessor):
+    """Scales its input's output: `compute` must take `vol`, its one input."""
+
+    vol: VolatilityModel
+    factor: float = 2.0
+
+    def compute(self, returns: TimeSeries, /, *, vol: TimeSeries) -> TimeSeries:
+        return TimeSeries(dates=returns.dates, values=self.factor * vol.values)
+
+
+def test_compute_gets_the_output_of_each_input_by_field_name() -> None:
+    returns = returns_series(n=10)
+
+    scaled = _Scaled(ConstantVolatility(0.01)).run(returns)
+
+    np.testing.assert_allclose(scaled.values, 0.02)
+
+
+# Nodes whose `compute` doesn't match their inputs. Their bodies never run.
+
+
+@dataclass(frozen=True)
+class _MisnamedInput(Preprocessor):
+    volatility: VolatilityModel
+
+    def compute(self, returns: TimeSeries, /, *, vol: TimeSeries) -> TimeSeries:  # noqa: ARG002
+        return vol
+
+
+@dataclass(frozen=True)
+class _ExtraKeyword(Preprocessor):
+    vol: VolatilityModel
+
+    def compute(
+        self,
+        returns: TimeSeries,  # noqa: ARG002
+        /,
+        *,
+        vol: TimeSeries,
+        mean: TimeSeries,  # noqa: ARG002
+    ) -> TimeSeries:
+        return vol
+
+
+@dataclass(frozen=True)
+class _AnyKeywords(Preprocessor):
+    vol: VolatilityModel
+
+    def compute(self, returns: TimeSeries, /, **inputs: TimeSeries) -> TimeSeries:  # noqa: ARG002
+        return inputs["vol"]
+
+
+@dataclass(frozen=True)
+class _NoReturns(Preprocessor):
+    vol: VolatilityModel
+
+    def compute(self, *, vol: TimeSeries) -> TimeSeries:
+        return vol
+
+
+@pytest.mark.parametrize(
+    ("node_type", "match"),
+    [
+        (_MisnamedInput, r"Missing: \['volatility'\]. Not input fields: \['vol'\]"),
+        (_ExtraKeyword, r"Missing: \[\]. Not input fields: \['mean'\]"),
+        (_AnyKeywords, "without \\*args or \\*\\*kwargs"),
+        (_NoReturns, "has to take the returns"),
+    ],
+)
+def test_a_compute_not_matching_the_inputs_fails_when_the_node_is_built(
+    node_type: Callable[[VolatilityModel], Preprocessor], match: str
+) -> None:
+    with pytest.raises(TypeError, match=match):
+        node_type(ConstantVolatility(0.01))

@@ -26,7 +26,7 @@ def test_gaussian_compute_matches_normal_quantile() -> None:
     vols = TimeSeries.from_first_date(FIRST_DATE, values=np.array([0.01, 0.02]))
 
     var = GaussianModel(cf=0.99, vol=ConstantVolatility(0.01)).compute(
-        means=means, vols=vols
+        means, vol=vols, mean=means
     )
 
     np.testing.assert_array_equal(var.dates, means.dates)
@@ -44,7 +44,7 @@ def test_gaussian_compute_rejects_mismatched_dates() -> None:
     model = GaussianModel(cf=0.99, vol=ConstantVolatility(0.01))
 
     with pytest.raises(ValueError, match="dates"):
-        model.compute(means=means, vols=vols)
+        model.compute(means, vol=vols, mean=means)
 
 
 def test_gaussian_compute_rejects_mismatched_shapes() -> None:
@@ -53,7 +53,7 @@ def test_gaussian_compute_rejects_mismatched_shapes() -> None:
     model = GaussianModel(cf=0.99, vol=ConstantVolatility(0.01))
 
     with pytest.raises(ValueError, match="shapes"):
-        model.compute(means=means, vols=vols)
+        model.compute(means, vol=vols, mean=means)
 
 
 @pytest.mark.parametrize("vol", [0.0, -0.01])
@@ -63,7 +63,7 @@ def test_gaussian_compute_rejects_non_positive_vol(vol: float) -> None:
     model = GaussianModel(cf=0.99, vol=ConstantVolatility(0.01))
 
     with pytest.raises(ValueError, match="Volatility has to be positive"):
-        model.compute(means=means, vols=vols)
+        model.compute(means, vol=vols, mean=means)
 
 
 def test_gaussian_compute_keeps_nan_vol() -> None:
@@ -71,7 +71,7 @@ def test_gaussian_compute_keeps_nan_vol() -> None:
     vols = TimeSeries.from_first_date(FIRST_DATE, values=np.array([np.nan, 0.01]))
     model = GaussianModel(cf=0.99, vol=ConstantVolatility(0.01))
 
-    var = model.compute(means=means, vols=vols)
+    var = model.compute(means, vol=vols, mean=means)
 
     assert np.isnan(var.values[0])
     np.testing.assert_allclose(var.values[1], 0.01 * stats.norm.ppf(0.01))

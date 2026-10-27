@@ -11,7 +11,6 @@ from tail_lib.graph import Preprocessor
 from tail_lib.time_series import TimeSeries
 
 if TYPE_CHECKING:
-    from tail_lib.graph import Cache
     from tail_lib.models.value_at_risk import ValueAtRiskModel
 
 
@@ -69,18 +68,16 @@ class Overshootings(Preprocessor):
         """The confidence level of the value-at-risk model."""
         return self.var_model.cf
 
-    def evaluate(self, cache: Cache) -> TimeSeries:  # noqa: D102
-        return self.compute(cache.returns, var=cache.get(self.var_model))
-
-    def compute(self, returns: TimeSeries, *, var: TimeSeries) -> TimeSeries:
+    def compute(self, returns: TimeSeries, /, *, var_model: TimeSeries) -> TimeSeries:
         """Flag the overshootings, see `overshootings`.
 
         Args:
             returns (TimeSeries): The returns.
-            var (TimeSeries): The value-at-risk, on the dates of the returns.
+            var_model (TimeSeries): The value-at-risk, the output of the
+                `var_model` node, on the dates of the returns.
 
         Returns:
             TimeSeries: The overshooting flags.
 
         """
-        return overshootings(var, returns)
+        return overshootings(var_model, returns)

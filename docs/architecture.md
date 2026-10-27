@@ -62,22 +62,33 @@ change to the public API, a spec field or a default also updates the guide:
 
 This section, "From a spec to results" and "From Python" describe the code
 as it is. A migration to a context API is under way, step by step: nodes
-identified by value (done), a pure `compute` with no `evaluate`, and a
-`Context` in place of `Run`, `Cache` and `Pool`. See "Context API" in
+identified by value (done), a pure `compute` with no `evaluate` (under way),
+and a `Context` in place of `Run`, `Cache` and `Pool`. See "Context API" in
 `docs/open-points.md`.
 
 Every computation is a `Node[T]`: a preprocessor (a model input such as a
-volatility), a VaR model, or a backtest. Nodes are frozen dataclasses,
+volatility, a `Preprocessor`), a decay model (a `DecayModel`), a VaR model
+(a `ValueAtRiskModel`), or a backtest (a `Backtest`). Nodes are frozen
+dataclasses,
 identified by value (D9): two nodes of the same class with equal fields,
 their input nodes included, are one node, e.g. two `ZeroMean()` built
 separately. The fields are the constructor arguments. Arrays given to a node
 (a value per series) are stored as nested tuples (`frozen_floats`), so they
 can be hashed; `np.asarray` gives the array back.
 
-- `evaluate(cache)` gathers the node's inputs, i.e. other nodes' outputs,
-  with `cache.get(node)`, then calls `compute`.
-- `compute(...)` is pure: it uses only its arguments and the node's own
-  constructor settings (see `CLAUDE.md`).
+- `compute(returns, /, **inputs)` is pure: it uses only its arguments and
+  the node's own settings (see `CLAUDE.md`). After the returns, it takes one
+  keyword-only argument per dependency, named after its field, holding that
+  dependency's output, e.g. `GaussianModel.compute(returns, /, *, vol,
+  mean)`. Building a node checks this signature (D11, `_check_compute`), so
+  a mismatch fails where the node is declared; a node's `__post_init__`
+  calls `super().__post_init__()` for it.
+- `evaluate(cache)` is written once, in `Node`: it gets each dependency's
+  output with `cache.get(node)`, then calls `compute`. Until their step of
+  the migration, the EWMA nodes, the filter, the FHS and the input nodes
+  keep an `evaluate` of their own, and their `compute` isn't checked;
+  `tests/test_dependencies.py` lists them. The input nodes' `compute`
+  refuses to run: their output is read from the run.
 - `dependencies()` lists the nodes `evaluate` reads: the fields holding
   nodes, keyed by field, e.g. `{"vol": ..., "mean": ...}`. It
   is written once, in `Node`. So a graph can be walked without computing
@@ -413,10 +424,11 @@ the other outputs as percentages.
 
 1. Write the node as a frozen dataclass (`@dataclass(frozen=True)`), its
    fields being its constructor arguments, arrays stored with
-   `frozen_floats` in `__post_init__`: `evaluate` gathers inputs from the
-   cache, `compute` is pure, and the docstring states the formula, the
-   timing, the fields (`Attributes:`) and a reference. `dependencies` and
-   `settings` come from the fields. Add one instance to
+   `frozen_floats` in `__post_init__` (which ends with
+   `super().__post_init__()`). Write `compute(self, returns, /, *, ...)`,
+   pure, with one keyword per input field, and no `evaluate`. The
+   docstring states the formula, the timing, the fields (`Attributes:`)
+   and a reference. `dependencies` and `settings` come from the fields. Add one instance to
    `_one_node_of_each_type` in `tests/test_dependencies.py`: the test fails
    until you do.
 2. Add its spec to `specs.py`, with value ranges matching the node's checks,

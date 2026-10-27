@@ -17,10 +17,12 @@ input node reads its own name.
 
 from __future__ import annotations
 
+import inspect
 from abc import ABC
 from abc import abstractmethod
 from dataclasses import dataclass
 from dataclasses import fields
+from functools import cache
 from typing import TYPE_CHECKING
 from typing import Any
 
@@ -46,19 +48,48 @@ class Node[T](ABC):
     class and its fields, which are its constructor arguments (D9). A field
     excluded from comparison (`compare=False`) is not part of it.
 
-    Subclasses implement `evaluate`, which gets the inputs of the node from a
-    `Cache`, then computes its output. The computation itself usually lives in
-    a `compute` method, whose arguments are the inputs.
-
     The fields holding nodes are the node's `dependencies`, so a graph of
     nodes can be walked without computing it. The other constructor
     arguments are its `settings`, so the graph can be described, e.g. in a
     report (R19). Both are read from the fields.
+
+    Subclasses implement `compute`, which is pure (see `CLAUDE.md`): it takes
+    the returns, then one keyword argument per dependency, named after its
+    field, holding that dependency's output, and uses nothing else but the
+    node's own settings. E.g. a Gaussian model, with fields `cf`, `vol` and
+    `mean`, has `compute(self, returns, /, *, vol, mean)`. `evaluate` gets
+    those outputs from a `Cache` and calls `compute`.
+
+    Building a node checks that `compute` takes exactly its dependencies, by
+    name (D11), so a mismatch fails where the model is declared, not
+    mid-run. Subclasses with a `__post_init__` call `super().__post_init__()`
+    for this. Nodes that still gather their inputs in an `evaluate` of their
+    own, while the library moves to the context API, aren't checked.
     """
 
+    def __post_init__(self) -> None:
+        if type(self).evaluate is Node.evaluate:
+            self._check_compute()
+
+    # Each node takes its own inputs, so `compute` has no common signature.
+    # The typing spec reads `*args: Any, **kwargs: Any` like `...`: every
+    # subclass can narrow it, and ty checks direct calls to the subclass's.
+    # Only the call in `evaluate` is unchecked, hence `_check_compute`.
     @abstractmethod
+    def compute(self, *args: Any, **kwargs: Any) -> T:  # noqa: ANN401
+        """Compute the output from the returns and the outputs of the inputs.
+
+        Args:
+            *args (Any): The returns, a `TimeSeries`.
+            **kwargs (Any): The output of each dependency, by field name.
+
+        Returns:
+            T: The output of this node.
+
+        """
+
     def evaluate(self, cache: Cache) -> T:
-        """Get the inputs from the cache, then compute the output.
+        """Get the output of each dependency from the cache, then compute.
 
         Args:
             cache (Cache): Holds the returns, and the outputs of other nodes
@@ -68,6 +99,34 @@ class Node[T](ABC):
             T: The output of this node.
 
         """
+        inputs = {name: cache.get(node) for name, node in self.dependencies().items()}
+        return self.compute(cache.returns, **inputs)
+
+    def _check_compute(self) -> None:
+        """Check that `compute` takes the returns, then exactly the dependencies.
+
+        Raises:
+            TypeError: If `compute` takes `*args` or `**kwargs`, not one
+                positional argument for the returns, or keyword-only
+                arguments other than the dependencies' names.
+
+        """
+        node_type = type(self).__name__
+        signature = _compute_signature(type(self))
+        if signature is None:
+            msg = (
+                f"{node_type}.compute has to take the returns, then its inputs "
+                f"as keyword-only arguments, without *args or **kwargs!"
+            )
+            raise TypeError(msg)
+        inputs = set(self.dependencies())
+        if signature != inputs:
+            msg = (
+                f"{node_type}.compute has to take one keyword-only argument per "
+                f"input field. Missing: {sorted(inputs - signature)}. Not input "
+                f"fields: {sorted(signature - inputs)}."
+            )
+            raise TypeError(msg)
 
     def dependencies(self) -> Dependencies:
         """List the nodes `evaluate` gets from the cache: the fields holding nodes.
@@ -137,6 +196,29 @@ class Node[T](ABC):
         return Cache(returns, inputs).get(self)
 
 
+# Node types are hashable, and their signatures don't change: read each once.
+@cache
+def _compute_signature(node_type: type[Node[Any]]) -> frozenset[str] | None:
+    """Give the keyword-only arguments of a node type's `compute`.
+
+    `None` if `compute` takes `*args` or `**kwargs`, or not exactly one
+    positional argument (after `self`), the returns.
+    """
+    parameters = list(inspect.signature(node_type.compute).parameters.values())[1:]
+    variadic = (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD)
+    positional = (
+        inspect.Parameter.POSITIONAL_ONLY,
+        inspect.Parameter.POSITIONAL_OR_KEYWORD,
+    )
+    if any(p.kind in variadic for p in parameters):
+        return None
+    if sum(p.kind in positional for p in parameters) != 1:
+        return None
+    return frozenset(
+        p.name for p in parameters if p.kind is inspect.Parameter.KEYWORD_ONLY
+    )
+
+
 # The nodes a node reads have different output types, which a mapping can't
 # express one by one: `Any` stands for each node's own output type.
 type Dependencies = Mapping[str, Node[Any]]
@@ -185,6 +267,14 @@ def _nested_tuples(values: list[Any]) -> Floats:
 
 class Preprocessor(Node[TimeSeries]):
     """A node turning the returns into a model input, as a time series."""
+
+
+class Backtest[T](Node[T]):
+    """A node testing a value-at-risk model, e.g. on its overshootings.
+
+    Its output is a test result of type `T`, with one value per window, not a
+    time series.
+    """
 
 
 class Cache:

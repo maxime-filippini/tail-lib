@@ -55,9 +55,30 @@ class VolatilityInput(VolatilityModel):
 
     def __post_init__(self) -> None:
         check_name("Input", self.name)
+        super().__post_init__()
 
-    def evaluate(self, cache: Cache) -> TimeSeries:  # noqa: D102
+    def evaluate(self, cache: Cache) -> TimeSeries:
+        """Read the input from the cache, as given to the run.
+
+        Args:
+            cache (Cache): Holds the returns and the run inputs.
+
+        Returns:
+            TimeSeries: The input, with the dates and shape of the returns.
+
+        """
         return cache.input(self.name)
+
+    # Every `compute` takes the returns first, even when it doesn't use them.
+    def compute(self, returns: TimeSeries, /) -> TimeSeries:  # noqa: ARG002
+        """Refuse to compute: the input is read from the run, see `evaluate`.
+
+        Raises:
+            TypeError: Always.
+
+        """
+        msg = f"Input {self.name!r} is given to the run, not computed!"
+        raise TypeError(msg)
 
 
 @dataclass(frozen=True)
@@ -77,11 +98,9 @@ class ConstantVolatility(VolatilityModel):
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "vol", frozen_floats(self.vol))
+        super().__post_init__()
 
-    def evaluate(self, cache: Cache) -> TimeSeries:  # noqa: D102
-        return self.compute(cache.returns)
-
-    def compute(self, returns: TimeSeries) -> TimeSeries:
+    def compute(self, returns: TimeSeries, /) -> TimeSeries:
         """Repeat the volatility on every date of the returns.
 
         Args:
@@ -155,6 +174,7 @@ class EwmaVolatility(VolatilityModel):
                 f"start!"
             )
             raise ValueError(msg)
+        super().__post_init__()
 
     def evaluate(self, cache: Cache) -> TimeSeries:  # noqa: D102
         decay = cache.get(self.decay)

@@ -70,6 +70,7 @@ class ValueAtRiskModel(Node[TimeSeries]):
 
     def __post_init__(self) -> None:
         check_probability("Confidence level", self.cf)
+        super().__post_init__()
 
 
 @dataclass(frozen=True)
@@ -97,8 +98,28 @@ class ValueAtRiskInput(ValueAtRiskModel):
         super().__post_init__()
         check_name("Input", self.name)
 
-    def evaluate(self, cache: Cache) -> TimeSeries:  # noqa: D102
+    def evaluate(self, cache: Cache) -> TimeSeries:
+        """Read the input from the cache, as given to the run.
+
+        Args:
+            cache (Cache): Holds the returns and the run inputs.
+
+        Returns:
+            TimeSeries: The input, with the dates and shape of the returns.
+
+        """
         return cache.input(self.name)
+
+    # Every `compute` takes the returns first, even when it doesn't use them.
+    def compute(self, returns: TimeSeries, /) -> TimeSeries:  # noqa: ARG002
+        """Refuse to compute: the input is read from the run, see `evaluate`.
+
+        Raises:
+            TypeError: Always.
+
+        """
+        msg = f"Input {self.name!r} is given to the run, not computed!"
+        raise TypeError(msg)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -134,10 +155,7 @@ class HistoricalSimulationsModel(ValueAtRiskModel):
     window: Trailing | Last
     interpolation: InterpolationMethod = "linear"
 
-    def evaluate(self, cache: Cache) -> TimeSeries:  # noqa: D102
-        return self.compute(cache.returns)
-
-    def compute(self, returns: TimeSeries) -> TimeSeries:
+    def compute(self, returns: TimeSeries, /) -> TimeSeries:
         """Compute the value-at-risk on each window.
 
         Args:
@@ -278,29 +296,30 @@ class GaussianModel(ValueAtRiskModel):
     vol: VolatilityModel
     mean: MeanModel = field(default_factory=ZeroMean)
 
-    def evaluate(self, cache: Cache) -> TimeSeries:  # noqa: D102
-        means = cache.get(self.mean)
-        vols = cache.get(self.vol)
-        return self.compute(means=means, vols=vols)
-
-    def compute(self, *, means: TimeSeries, vols: TimeSeries) -> TimeSeries:
+    def compute(
+        self, returns: TimeSeries, /, *, vol: TimeSeries, mean: TimeSeries
+    ) -> TimeSeries:
         """Compute the value-at-risk on each date.
 
         Args:
-            means (TimeSeries): The means of the returns.
-            vols (TimeSeries): The volatilities of the returns, with the same
-                dates and shape as `means`.
+            returns (TimeSeries): The returns. Only their dates and shape are
+                used, to check the inputs.
+            vol (TimeSeries): The volatilities of the returns, the output of
+                the `vol` node.
+            mean (TimeSeries): The means of the returns, the output of the
+                `mean` node.
 
         Returns:
-            TimeSeries: The value-at-risk, on the dates of `means` and `vols`.
+            TimeSeries: The value-at-risk, on the dates of the returns.
 
         Raises:
-            ValueError: If the means and volatilities don't match, or if a
-                volatility is zero or negative.
+            ValueError: If the means or volatilities don't match the returns,
+                or if a volatility is zero or negative.
 
         """
-        means.check_aligned(vols)
-        check_positive("Volatility", vols.values)
+        returns.check_aligned(vol)
+        returns.check_aligned(mean)
+        check_positive("Volatility", vol.values)
 
-        values = means.values + vols.values * Gaussian().quantile(1 - self.cf)
-        return TimeSeries(dates=means.dates, values=values)
+        values = mean.values + vol.values * Gaussian().quantile(1 - self.cf)
+        return TimeSeries(dates=returns.dates, values=values)

@@ -41,6 +41,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable
     from collections.abc import Mapping
 
+    from tail_lib.graph import Backtest
     from tail_lib.graph import Node
     from tail_lib.models.value_at_risk import ValueAtRiskModel
     from tail_lib.time_series import TimeSeries
@@ -154,7 +155,7 @@ class RunGraph:
     edges: tuple[GraphEdge, ...]
 
 
-type BacktestFunction = Callable[[Overshootings], Node[BacktestResult]]
+type BacktestFunction = Callable[[Overshootings], Backtest[BacktestResult]]
 """Makes a backtest node from a model's overshootings, e.g. `KupiecTest` itself."""
 
 
@@ -234,7 +235,7 @@ class Run:
         self._models = Pool(dict(models))
         # One set of backtest nodes per distinct model node, on its
         # overshootings.
-        tests: dict[ValueAtRiskModel, dict[str, Node[BacktestResult]]] = {}
+        tests: dict[ValueAtRiskModel, dict[str, Backtest[BacktestResult]]] = {}
         for model in models.values():
             if model not in tests:
                 ovs = Overshootings(model)

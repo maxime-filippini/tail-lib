@@ -17,9 +17,10 @@ pushed. All checks green (ty, ruff, 595 tests).
 ## Next up
 
 1. **Context API**, plan agreed with the developer on 2026-10-26, see
-   "Context API" under "Design questions". Steps 0 to 2b committed. Step 3
-   (`DecayFactors`, one `EwmaVolatility`) done, awaiting review. Then steps
-   4 to 6, each reviewed on its own.
+   "Context API" under "Design questions". Steps 0 to 3 committed. Step 4a
+   (pure `compute` for means, constant volatility, HS, Gaussian,
+   overshootings, Kupiec) done, awaiting review. Then 4b to 4d and steps 5
+   and 6, each reviewed on its own.
 2. **Run date range (R21–R23)**, agreed with the developer on 2026-10-25,
    see "Run date range" under "Design questions". Step 1 (docs) done,
    awaiting review. Steps 2 to 5 wait for the context API.
@@ -127,13 +128,11 @@ developer:
 
 ## Small open points
 
-- A `Backtest` base class for backtest nodes, which `KupiecTest` (and later
-  tests) inherit from, as VaR models inherit from `ValueAtRiskModel`
-  (developer's request, 2026-10-25). Backtests could then be identified by
-  type: today the report's `_kind` labels as a backtest any node that is
-  neither a VaR model nor a preprocessor (`report/data.py`). Planned in
-  step 4a of "Context API": the run also uses it to skip the time series
-  shape check (R24).
+- The `Backtest` base class (developer's request, 2026-10-25) is built
+  (step 4a of "Context API"): `KupiecTest` inherits from it, and the
+  report's `_kind` names backtests by type, and raises on a node of no
+  known kind. Left: the run using it to skip the time series shape check
+  (R24), in step 5.
 - Specs from HTTP (R17) are untrusted. To discuss: limits on what one spec
   can ask for (number of models, window lengths), and whether the service
   needs spec errors in a structured form (pydantic's `errors()` gives each
@@ -339,6 +338,29 @@ now computed by `EwmaVolatility` on a calibration):
 - Paths through a calibrated EWMA go through `decay`, e.g.
   `models.today.vol.decay.window`. The report labels decay nodes as
   preprocessors and charts their `values`.
+
+Done in step 4a (2026-10-27), no output changed:
+
+- `Node.evaluate` is written once: it gets each dependency's output from
+  the cache and calls `compute(returns, **outputs)`, by field name.
+  `compute` is abstract on `Node`, typed `(*args: Any, **kwargs: Any)` so
+  each node narrows it, as in the sketch. The means, `ConstantVolatility`,
+  HS, Gaussian, `Overshootings` and `KupiecTest` dropped their own
+  `evaluate`.
+- Building a node on the generic `evaluate` checks its `compute` (D11):
+  one positional argument, the returns, then exactly one keyword-only
+  argument per dependency; no `*args` or `**kwargs`. Nodes still on their
+  own `evaluate` are skipped. `tests/test_dependencies.py` lists those
+  (`_OWN_EVALUATE`), and checks every `__post_init__` reaches
+  `Node.__post_init__`, where the check runs.
+- `compute` keywords are the field names: the Gaussian's `compute` takes
+  `vol` and `mean` (were `vols` and `means`), `Overshootings`' takes
+  `var_model` (was `var`), so the VaR series is read as `var_model`, a
+  bit odd; renaming the field (e.g. to `model`) is a one-line change to
+  decide. Kupiec takes the returns, unused, like every `compute`.
+- The input nodes' `compute` raises `TypeError`: they keep reading the
+  run's inputs in `evaluate` until 4d.
+- `Backtest[T]` (in `graph.py`) is the base class of backtest nodes.
 
 **Still open**
 

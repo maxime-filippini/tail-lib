@@ -70,7 +70,7 @@ if TYPE_CHECKING:
 
     from tail_lib._typing import FloatArray
     from tail_lib.backtests.overshootings import Overshootings
-    from tail_lib.graph import Node
+    from tail_lib.graph import Backtest
 
 # A union, like the specs, once there is a second backtest.
 type BacktestResult = KupiecResult
@@ -93,7 +93,7 @@ class Builder:
         self._calibrations: dict[EwmaDecayCalibrationSpec, EwmaDecayCalibration] = {}
         self._filters: dict[VolatilityFilterSpec, VolatilityFilter] = {}
         self._backtests: dict[
-            tuple[BacktestSpec, Overshootings], Node[BacktestResult]
+            tuple[BacktestSpec, Overshootings], Backtest[BacktestResult]
         ] = {}
         self._inputs: dict[str, ValueAtRiskInputSpec | VolatilityInputSpec] = {}
 
@@ -142,7 +142,7 @@ class Builder:
 
     def backtest(
         self, spec: BacktestSpec, overshootings: Overshootings
-    ) -> Node[BacktestResult]:
+    ) -> Backtest[BacktestResult]:
         """Get a backtest on a model's overshootings, building it on first request.
 
         Identical backtest specs on the same overshootings node give one node,
@@ -154,7 +154,7 @@ class Builder:
                 tests, shared by all the backtests of the model.
 
         Returns:
-            Node[BacktestResult]: The backtest.
+            Backtest[BacktestResult]: The backtest.
 
         """
         return _get_or_build(
@@ -234,7 +234,7 @@ def _get_or_build[S, N](built: dict[S, N], spec: S, build: Callable[[S], N]) -> 
 
 def _build_backtest(
     spec: BacktestSpec, overshootings: Overshootings
-) -> Node[BacktestResult]:
+) -> Backtest[BacktestResult]:
     match spec:
         case KupiecSpec():
             window = None if spec.window is None else _window(spec.window)

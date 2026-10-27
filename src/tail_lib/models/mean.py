@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from tail_lib.graph import Cache
 from tail_lib.graph import Preprocessor
 from tail_lib.graph import frozen_floats
 from tail_lib.time_series import TimeSeries
@@ -32,10 +31,7 @@ class ZeroMean(MeanModel):
     The mean on date `t` is `0`, for every series. It uses no returns.
     """
 
-    def evaluate(self, cache: Cache) -> TimeSeries:  # noqa: D102
-        return self.compute(cache.returns)
-
-    def compute(self, returns: TimeSeries) -> TimeSeries:
+    def compute(self, returns: TimeSeries, /) -> TimeSeries:
         """Build the zero means on the dates of the returns.
 
         Args:
@@ -69,11 +65,9 @@ class ConstantMean(MeanModel):
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "mean", frozen_floats(self.mean))
+        super().__post_init__()
 
-    def evaluate(self, cache: Cache) -> TimeSeries:  # noqa: D102
-        return self.compute(cache.returns)
-
-    def compute(self, returns: TimeSeries) -> TimeSeries:
+    def compute(self, returns: TimeSeries, /) -> TimeSeries:
         """Repeat the mean on every date of the returns.
 
         Args:

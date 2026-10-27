@@ -11,7 +11,7 @@ from scipy import special
 from scipy import stats
 
 from tail_lib._checks import check_probability
-from tail_lib.graph import Node
+from tail_lib.graph import Backtest
 from tail_lib.windows import Windows
 
 if TYPE_CHECKING:
@@ -19,7 +19,6 @@ if TYPE_CHECKING:
     from tail_lib._typing import FloatArray
     from tail_lib._typing import IntArray
     from tail_lib.backtests.overshootings import Overshootings
-    from tail_lib.graph import Cache
     from tail_lib.time_series import TimeSeries
     from tail_lib.windows import Last
     from tail_lib.windows import Trailing
@@ -138,7 +137,7 @@ def kupiec_pof(
 
 
 @dataclass(frozen=True)
-class KupiecTest(Node[KupiecResult]):
+class KupiecTest(Backtest[KupiecResult]):
     """Kupiec's proportion-of-failures test of a value-at-risk model, as a node.
 
     Gets the model's overshootings from the cache, then tests them with
@@ -165,15 +164,22 @@ class KupiecTest(Node[KupiecResult]):
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "cf_var", self.overshootings.cf_var)
+        super().__post_init__()
 
-    def evaluate(self, cache: Cache) -> KupiecResult:  # noqa: D102
-        return self.compute(cache.get(self.overshootings))
-
-    def compute(self, overshootings: TimeSeries) -> KupiecResult:
+    # Every `compute` takes the returns first, even when it doesn't use them.
+    def compute(
+        self,
+        returns: TimeSeries,  # noqa: ARG002
+        /,
+        *,
+        overshootings: TimeSeries,
+    ) -> KupiecResult:
         """Run the test on overshooting flags, see `kupiec_pof`.
 
         Args:
-            overshootings (TimeSeries): The overshooting flags of the model.
+            returns (TimeSeries): The returns, unused: the flags hold them.
+            overshootings (TimeSeries): The overshooting flags of the model,
+                the output of the `overshootings` node.
 
         Returns:
             KupiecResult: The test outcome on each window, see `kupiec_pof`.

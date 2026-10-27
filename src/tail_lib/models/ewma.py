@@ -219,6 +219,7 @@ class ConstantDecay(DecayModel):
     def __post_init__(self) -> None:
         object.__setattr__(self, "value", frozen_floats(self.value))
         check_unit_interval("Decay factor", self.value)
+        super().__post_init__()
 
     def evaluate(self, cache: Cache) -> DecayFactors:  # noqa: D102
         return self.compute(cache.returns)

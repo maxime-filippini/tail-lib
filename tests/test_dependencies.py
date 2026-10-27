@@ -1,3 +1,4 @@
+import dataclasses
 import inspect
 from collections.abc import Iterator
 from collections.abc import Mapping
@@ -139,3 +140,49 @@ def test_settings_and_dependencies_cover_the_constructor_arguments(
     assert settings <= arguments
     assert not settings & dependencies
     assert arguments <= settings | dependencies
+
+
+# Nodes still gathering their inputs in their own `evaluate`, until their
+# step of the context API migration (see `docs/open-points.md`).
+_OWN_EVALUATE = {
+    "ConstantDecay",
+    "EwmaDecayCalibration",
+    "EwmaVolatility",
+    "VolatilityFilter",
+    "FilteredHistoricalSimulationsModel",
+    "VolatilityInput",
+    "ValueAtRiskInput",
+}
+
+
+def test_only_the_nodes_not_yet_moved_have_their_own_evaluate() -> None:
+    own = {
+        type(node).__name__
+        for node in _one_node_of_each_type()
+        if type(node).evaluate is not Node.evaluate
+    }
+
+    assert own == _OWN_EVALUATE
+
+
+@pytest.mark.parametrize(
+    "node", _one_node_of_each_type(), ids=lambda node: type(node).__name__
+)
+def test_building_a_node_checks_its_compute(
+    node: Node[Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Every `__post_init__` has to reach `Node.__post_init__`, which checks
+    # `compute` against the inputs (D11) for the nodes on the generic
+    # `evaluate`.
+    checked: list[Node[Any]] = []
+    check = Node._check_compute  # noqa: SLF001
+
+    def recording(self: Node[Any]) -> None:
+        checked.append(self)
+        check(self)
+
+    monkeypatch.setattr(Node, "_check_compute", recording)
+    copy = dataclasses.replace(node)
+
+    uses_generic_evaluate = type(node).__name__ not in _OWN_EVALUATE
+    assert checked == ([copy] if uses_generic_evaluate else [])
