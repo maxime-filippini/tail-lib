@@ -473,6 +473,8 @@ class Context:
             backtests=backtests,
             outputs=MappingProxyType(outputs),
             named=MappingProxyType(dict(self._named)),
+            lower=None if selection is None else returns.dates[selection.start],
+            upper=None if selection is None else returns.dates[selection.stop - 1],
         )
 
     def _backtest_nodes(self) -> dict[str, dict[str, Backtest[BacktestResult]]]:
@@ -514,6 +516,12 @@ class Results:
         outputs (Mapping[Node[Any], Any]): The output of every node computed.
         named (Mapping[str, Node[Any]]): The nodes named in the context, by
             name: the nodes built in its block with a `name`.
+        lower (np.datetime64 | None): The first selected forecast observation,
+            after resolving the execution's inclusive bounds against the
+            trimmed history. `None` for a run without bounds.
+        upper (np.datetime64 | None): The last selected forecast observation.
+            `None` for a run without bounds. These bounds belong to this
+            execution; the context stores neither.
 
     """
 
@@ -523,6 +531,8 @@ class Results:
     # Nodes have different output types: `Any` stands for each.
     outputs: Mapping[Node[Any], Any]
     named: Mapping[str, Node[Any]]
+    lower: np.datetime64 | None = None
+    upper: np.datetime64 | None = None
 
     @overload
     def __getitem__[T](self, key: Node[T]) -> T: ...

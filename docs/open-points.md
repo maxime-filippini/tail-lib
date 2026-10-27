@@ -13,7 +13,7 @@ Working rules, from `CLAUDE.md` and the developer:
 
 State as of 2026-10-27: branch `feat/context-api`, from `develop`, not
 pushed. ty and ruff (excluding the untracked `examples/t.ipynb`) pass, as
-do all 706 tests. The notebook still imports the removed `Run` and has an
+do all 709 tests. The notebook still imports the removed `Run` and has an
 existing import-order lint error; it is left untouched.
 
 ## Next up
@@ -29,9 +29,10 @@ existing import-order lint error; it is left untouched.
    simplified on 2026-10-27: compute from the common trimmed history,
    then select the range. No per-node spans or `Context.plan`. See "Run
    date range" under "Design questions". Common-history trimming (R21)
-   is committed as `4060bd6`. Per-execution bounds and backtests on the
-   selected range are complete. Next: report
-   range metadata and display.
+   is committed as `4060bd6`; per-execution bounds and backtests on the
+   selected range as `c03d376`. Report range metadata and display are
+   complete. The simplified date range plan is built; remaining design
+   questions are listed below it.
 3. **Run report (R19)**, every step built; spec agreed on 2026-10-25, see "Run report" under
    "Design questions". Step 1 (nodes describe their settings) done. Then,
    each reviewed on its own: names as identifiers (R20, done), labels on
@@ -749,7 +750,7 @@ span-planning step is superseded by the simpler full-history design:
    data and the context are unchanged. Inputs' own warm-ups do not move
    the start; missing observations inside the remaining history are left
    in place. `Results.returns` and every node output use the trimmed grid.
-3. Per-execution lower and upper bounds, complete.
+3. Per-execution lower and upper bounds, committed as `c03d376`.
    `Context.run(..., lower=..., upper=...)` accepts inclusive
    Python dates or NumPy datetimes. Omitted bounds use the trimmed history
    endpoints; bounds between observations select the dates inside them.
@@ -769,10 +770,17 @@ span-planning step is superseded by the simpler full-history design:
    for only the selected flags, so whole-sample and last-window tests end
    at the upper date and rolling windows count from the first selected
    flag. A single-date range with backtests fails before computing.
-5. The report shows the selected range and available history. Still to
-   build: explicit range metadata on results and in the report contract.
-   Current report charts read the masked VaR but its header still shows
-   the full available history.
+5. Report range metadata and display, complete:
+   `Results.lower` and `.upper` store the effective first and last selected
+   observation dates, after resolving bounds against the trimmed history.
+   Both are `None` for unbounded runs; they belong to results, never the
+   context. `ReportData.metadata.lower` and `.upper` write these as ISO dates
+   or `null`, without recomputing or inferring a range from model NaNs.
+   Older report data defaults both fields to `null`. The header shows
+   "Forecast range" separately from "Available history", and "Full history"
+   for runs without bounds. The development sample now has bounds inside
+   its history. The page is rebuilt; saved bounded and older reports were
+   checked in the browser, including a narrow header layout.
 
 **Rejected**
 

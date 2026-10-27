@@ -126,6 +126,8 @@ def test_bounds_between_observations_select_only_dates_inside_them() -> None:
     np.testing.assert_array_equal(
         np.isfinite(result["gauss"].values), [False, True, False]
     )
+    assert result.lower == returns.dates[1]
+    assert result.upper == returns.dates[1]
 
 
 @pytest.mark.parametrize(
@@ -334,3 +336,19 @@ def test_a_context_from_specs_accepts_different_bounds_on_each_execution() -> No
     np.testing.assert_array_equal(early["hs"].values[30:41], late["hs"].values[30:41])
     assert np.isnan(early["hs"].values[41:]).all()
     assert np.isnan(late["hs"].values[:30]).all()
+
+
+def test_effective_bounds_belong_to_the_results_of_each_execution() -> None:
+    returns = returns_series(n=80)
+    ctx = _constant_context()
+
+    lower_only = ctx.run(returns, lower=returns.dates[20])
+    upper_only = ctx.run(returns, upper=returns.dates[40])
+    unbounded = ctx.run(returns)
+
+    assert lower_only.lower == returns.dates[20]
+    assert lower_only.upper == returns.dates[-1]
+    assert upper_only.lower == returns.dates[0]
+    assert upper_only.upper == returns.dates[40]
+    assert unbounded.lower is None
+    assert unbounded.upper is None

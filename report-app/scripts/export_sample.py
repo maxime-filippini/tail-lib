@@ -62,7 +62,12 @@ if __name__ == "__main__":
 
     data = build_report_data(
         ctx,
-        ctx.run(returns, {"var_ext": var_ext}),
+        ctx.run(
+            returns,
+            {"var_ext": var_ext},
+            lower=returns.dates[300],
+            upper=returns.dates[900],
+        ),
         title="Sample report",
         series_labels=["Equity", "Rates"],
     )

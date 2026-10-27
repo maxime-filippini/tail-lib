@@ -76,7 +76,9 @@ def test_a_report_takes_run_inputs_and_series_labels() -> None:
     assert report.data.outputs["models.var_ext"][0][0] == pytest.approx(-0.02)
 
 
-def test_a_report_reads_the_results_without_computing() -> None:
+def test_a_report_reads_the_results_and_bounds_without_computing(
+    tmp_path: Path,
+) -> None:
     n_calls = 0
 
     class _Counting(ConstantVolatility):
@@ -87,11 +89,18 @@ def test_a_report_reads_the_results_without_computing() -> None:
 
     with Context() as ctx:
         GaussianModel(cf=0.99, vol=_Counting(0.01), name="gauss")
-    results = ctx.run(returns_series(n=100))
+    returns = returns_series(n=100)
+    results = ctx.run(returns, lower=returns.dates[20], upper=returns.dates[60])
 
-    Report(ctx, results)
+    report = Report(ctx, results)
+    path = tmp_path / "bounded.html"
+    report.save(path)
 
     assert n_calls == 1
+    saved = _saved_data(path)
+    assert saved.metadata.lower == str(returns.dates[20])
+    assert saved.metadata.upper == str(returns.dates[60])
+    assert saved == report.data
 
 
 def test_a_report_rejects_results_of_another_context() -> None:

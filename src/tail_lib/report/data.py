@@ -76,12 +76,19 @@ class Metadata(_Data):
         title (str): The title of the report.
         created (datetime.datetime): When the report data was built.
         version (str): The version of tail-lib that built it.
+        lower (str | None): The first selected forecast observation, as an
+            ISO date. `None` for runs without bounds.
+        upper (str | None): The last selected forecast observation, as an
+            ISO date. `dates` in `ReportData` still holds all available
+            history, including the warm-up before `lower`.
 
     """
 
     title: str
     created: datetime.datetime
     version: str
+    lower: str | None = None
+    upper: str | None = None
 
 
 class NodeData(_Data):
@@ -163,7 +170,8 @@ class ReportData(_Data):
     """Everything a run report shows, as one JSON document.
 
     Attributes:
-        metadata (Metadata): The title, creation time and version.
+        metadata (Metadata): The title, creation time, version and selected
+            forecast bounds.
         dates (list[str]): The dates of the returns.
         series (list[str]): The label of each series.
         returns (Values): The returns.
@@ -294,6 +302,16 @@ def build_report_data(
             title=title,
             created=datetime.datetime.now(tz=datetime.UTC),
             version=tail_lib.__version__,
+            lower=(
+                str(np.datetime_as_string(results.lower, unit="D"))
+                if results.lower is not None
+                else None
+            ),
+            upper=(
+                str(np.datetime_as_string(results.upper, unit="D"))
+                if results.upper is not None
+                else None
+            ),
         ),
         dates=_dates(returns.dates),
         series=_series_labels(batch_shape, series_labels),

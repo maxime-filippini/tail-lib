@@ -162,6 +162,10 @@ VaRs. Every output keeps the dates and shape of `results.returns` (R24).
 VaR values outside the selected range are `NaN`; historical preprocessors
 remain available through `results[node]`. Reading a model through
 `results.models`, its name or its node gives the same masked series.
+`results.lower` and `results.upper` hold the first and last selected
+observation dates, after resolving the bounds against the history. For
+example, a Saturday lower bound can resolve to Monday. Both are `None`
+for runs without bounds.
 
 Before computing, the context checks the built-in models' warm-ups against
 the first selected forecast date. A model that needs more history fails
@@ -343,6 +347,13 @@ report = Report(ctx, results, title="Daily VaR", series_labels=["SPX", "SX5E"])
 report.save("report.html")
 report.data  # the ReportData shown, e.g. report.data.model_dump_json()
 ```
+
+The report header shows the selected **Forecast range** separately from
+the **Available history** in `results.returns`. With no execution bounds,
+it labels the forecast range **Full history**; individual models may still
+have warm-up `NaN`s. Bounds are saved as ISO dates in
+`report.data.metadata.lower` and `.upper`, so the report reads the dates
+from that execution without computing anything again.
 
 ## Runs built in Python vs from specs
 

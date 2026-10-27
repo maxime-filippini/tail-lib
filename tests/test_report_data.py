@@ -225,3 +225,39 @@ def test_bounds_starts_and_arrays_are_written_as_json() -> None:
         "n_iter": 40,
     }
     assert nodes["models.ewma.vol.decay"].settings == {"value": [0.94, 0.97]}
+
+
+def test_report_bounds_are_separate_from_the_available_trimmed_history() -> None:
+    returns = returns_series(n=100, n_assets=2)
+    returns.values[:5, 1] = np.nan
+    with Context() as ctx:
+        vol = ConstantVolatility(0.01)
+        GaussianModel(cf=0.99, vol=vol, name="gauss")
+        Kupiec(name="whole")
+    results = ctx.run(returns, lower=returns.dates[20], upper=returns.dates[60])
+
+    data = build_report_data(ctx, results)
+
+    assert data.metadata.lower == str(returns.dates[20])
+    assert data.metadata.upper == str(returns.dates[60])
+    assert data.dates == [str(date) for date in returns.dates[5:]]
+    assert data.outputs["models.gauss"][0][:15] == [None] * 15
+    assert data.outputs["models.gauss"][0][56:] == [None] * 39
+    assert data.outputs["models.gauss.vol"][0][0] == pytest.approx(0.01)
+    assert data.backtests["gauss"]["whole"].result.end_dates == [data.metadata.upper]
+    assert ReportData.model_validate_json(data.model_dump_json()) == data
+
+
+def test_unbounded_and_older_report_data_have_no_selected_bounds() -> None:
+    data = _data()
+    assert data.metadata.lower is None
+    assert data.metadata.upper is None
+    older = json.loads(data.model_dump_json())
+    del older["metadata"]["lower"]
+    del older["metadata"]["upper"]
+
+    restored = ReportData.model_validate(older)
+
+    assert restored.metadata.lower is None
+    assert restored.metadata.upper is None
+    assert restored.dates == data.dates

@@ -222,15 +222,18 @@ results["gauss"], results[vol], results.backtests["gauss"]["kupiec"]
   (`named`), `models` (name to VaR) and `backtests` (model, then test, to
   result). Its `returns` are the common trimmed history; every time series
   output has those dates and shape (R24). `results[node]` or
-  `results["name"]` reads one output.
+  `results["name"]` reads one output. `lower` and `upper` hold the effective
+  first and last selected forecast observation dates, resolved from the
+  execution bounds. Both are `None` for a run without bounds; they are
+  stored on the results, never on the reusable context.
 
 The date range design was simplified on 2026-10-27 (R23): nodes compute
 from that common history, then the range selects the results. Calibration
 steps stay anchored to the history, so changing only the output range
 does not move refits. There is no per-node span planning or separate
 `plan` call. Common-history trimming, per-execution bounds and range
-selection are built. The report still needs to distinguish the selected
-range from available history, tracked in `open-points.md`.
+selection are built. The report distinguishes the selected forecast range
+from the available history using the bounds stored on the results.
 
 The node tests use `tests.helpers.run_node(node, returns, inputs)`, which
 binds a node to its own context and reads its output from `Results`. An
@@ -452,6 +455,11 @@ of another context. In it:
   series of values is a list over the series, then the dates (or windows);
 - `outputs` holds every time-series node's output, by node id; backtests
   results are by model, then backtest name;
+- `metadata.lower` and `metadata.upper` are the effective forecast bounds
+  from `Results`, as ISO dates; both are `null` for unbounded runs. The
+  fields default to `null` when reading older report JSON. `dates` still
+  holds the whole trimmed history, and no bounds are inferred from NaNs
+  in a model's output;
 - `NaN` is written `null`, dates as ISO strings.
 
 `Report(context, results, title=..., series_labels=...)` calls
@@ -475,6 +483,12 @@ committed), so the page and the Python side check against one contract
 in a saved report, or the sample data (`npm run sample`) in development.
 CI type checks and rebuilds the page, and fails if it differs from the
 committed one, so the page always matches the app's source.
+
+The header labels the forecast range separately from available history.
+Without bounds it shows "Full history" rather than inventing a common
+forecast start from models with different warm-ups. These labels use the
+stored metadata, so reporting never recomputes a model. The development
+sample uses a bounded run with history before and after its selected range.
 
 The graph tab (`src/tabs/GraphTab.svelte`) draws every node once with
 ECharts (`src/charts.ts` registers only the parts used). The positions come
