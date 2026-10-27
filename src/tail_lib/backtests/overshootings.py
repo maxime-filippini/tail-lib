@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -11,8 +12,6 @@ from tail_lib.time_series import TimeSeries
 
 if TYPE_CHECKING:
     from tail_lib.graph import Cache
-    from tail_lib.graph import Dependencies
-    from tail_lib.graph import Settings
     from tail_lib.models.value_at_risk import ValueAtRiskModel
 
 
@@ -49,36 +48,29 @@ def overshootings(var: TimeSeries, returns: TimeSeries) -> TimeSeries:
     return TimeSeries(dates=returns.dates, values=values)
 
 
+@dataclass(frozen=True)
 class Overshootings(Preprocessor):
     """The overshootings of a value-at-risk model, as a node.
 
     Computes the model's value-at-risk, then flags its overshootings with
-    `overshootings`. Backtests take this node rather than the model: pass one
-    instance to several backtests of a model to flag its overshootings once.
+    `overshootings`. Backtests take this node rather than the model. The
+    overshootings of equal models are one node (D9), so the backtests of a
+    model flag its overshootings once.
+
+    Attributes:
+        var_model (ValueAtRiskModel): The model whose forecasts are tested.
+
     """
 
-    def __init__(self, var_model: ValueAtRiskModel) -> None:
-        """Build the overshootings node of a model.
-
-        Args:
-            var_model (ValueAtRiskModel): The model whose forecasts are tested.
-
-        """
-        self._var_model = var_model
+    var_model: ValueAtRiskModel
 
     @property
     def cf_var(self) -> float:
         """The confidence level of the value-at-risk model."""
-        return self._var_model.cf
-
-    def dependencies(self) -> Dependencies:  # noqa: D102
-        return {"var_model": self._var_model}
-
-    def settings(self) -> Settings:  # noqa: D102
-        return {}
+        return self.var_model.cf
 
     def evaluate(self, cache: Cache) -> TimeSeries:  # noqa: D102
-        return self.compute(cache.returns, var=cache.get(self._var_model))
+        return self.compute(cache.returns, var=cache.get(self.var_model))
 
     def compute(self, returns: TimeSeries, *, var: TimeSeries) -> TimeSeries:
         """Flag the overshootings, see `overshootings`.

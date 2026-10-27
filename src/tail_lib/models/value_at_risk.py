@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+from dataclasses import field
 from typing import TYPE_CHECKING
 from typing import Literal
 from typing import assert_never
@@ -27,7 +29,6 @@ if TYPE_CHECKING:
     )
 
     from tail_lib.graph import Dependencies
-    from tail_lib.graph import Settings
     from tail_lib.models.volatility import VolatilityFilter
     from tail_lib.models.volatility import VolatilityModel
 
@@ -49,6 +50,7 @@ def _interp_to_numpy_quantile_method(
             assert_never(interp)
 
 
+@dataclass(frozen=True)
 class ValueAtRiskModel(Node[TimeSeries]):
     """Base class for value-at-risk models.
 
@@ -56,20 +58,21 @@ class ValueAtRiskModel(Node[TimeSeries]):
     date. Subclasses implement `evaluate`, which gets the inputs of the model
     from a `Cache`, then computes the value-at-risk. The computation itself
     usually lives in a `compute` method, whose arguments are the inputs.
+
+    Building one raises `ValueError` if the confidence level isn't in (0, 1).
+
+    Attributes:
+        cf (float): The confidence level of the value-at-risk, keyword-only.
+
     """
 
-    _cf: float
+    cf: float = field(kw_only=True)
 
-    def __init__(self, cf: float) -> None:
-        check_probability("Confidence level", cf)
-        self._cf = cf
-
-    @property
-    def cf(self) -> float:
-        """The confidence level of the value-at-risk."""
-        return self._cf
+    def __post_init__(self) -> None:
+        check_probability("Confidence level", self.cf)
 
 
+@dataclass(frozen=True)
 class ValueAtRiskInput(ValueAtRiskModel):
     """Value-at-risk forecasts passed in at run time, under a name (R13).
 
@@ -77,42 +80,28 @@ class ValueAtRiskInput(ValueAtRiskModel):
     value-at-risk model's, it should be the forecast for date `t + 1`, using
     data up to and including `t`, at confidence level `cf`: the library cannot
     check this. Backtests read `cf` from here.
+
+    Building it raises `ValueError` if the name isn't a Python identifier, or
+    the confidence level isn't in (0, 1).
+
+    Attributes:
+        name (str): The name of the input, as passed to `run`: a Python
+            identifier.
+        cf (float): The confidence level the forecasts were computed at.
+
     """
 
-    _name: str
+    name: str
 
-    def __init__(self, name: str, *, cf: float) -> None:
-        """Build the model.
-
-        Args:
-            name (str): The name of the input, as passed to `run`: a Python
-                identifier.
-            cf (float): The confidence level the forecasts were computed at.
-
-        Raises:
-            ValueError: If the name isn't a Python identifier, or the
-                confidence level isn't in (0, 1).
-
-        """
-        super().__init__(cf=cf)
-        check_name("Input", name)
-        self._name = name
-
-    @property
-    def name(self) -> str:
-        """The name of the input."""
-        return self._name
-
-    def dependencies(self) -> Dependencies:  # noqa: D102
-        return {}
-
-    def settings(self) -> Settings:  # noqa: D102
-        return {"name": self._name, "cf": self._cf}
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        check_name("Input", self.name)
 
     def evaluate(self, cache: Cache) -> TimeSeries:  # noqa: D102
-        return cache.input(self._name)
+        return cache.input(self.name)
 
 
+@dataclass(frozen=True, kw_only=True)
 class HistoricalSimulationsModel(ValueAtRiskModel):
     """Value-at-risk as an empirical quantile of the returns in a trailing window.
 
@@ -133,36 +122,17 @@ class HistoricalSimulationsModel(ValueAtRiskModel):
 
     Reference: Jorion, *Value at Risk: The New Benchmark for Managing Financial
     Risk*, 3rd edition, McGraw-Hill, 2007.
+
+    Attributes:
+        cf (float): The confidence level, in (0, 1).
+        window (Trailing | Last): The windows the quantiles are taken on.
+        interpolation (InterpolationMethod): How the quantile interpolates
+            between order statistics.
+
     """
 
-    _window: Trailing | Last
-    _interpolation: InterpolationMethod
-
-    def __init__(
-        self,
-        *,
-        cf: float,
-        window: Trailing | Last,
-        interpolation: InterpolationMethod = "linear",
-    ) -> None:
-        super().__init__(cf=cf)
-        self._window = window
-        self._interpolation = interpolation
-
-    @property
-    def window(self) -> Trailing | Last:
-        """The windows the quantiles are taken on."""
-        return self._window
-
-    def dependencies(self) -> Dependencies:  # noqa: D102
-        return {}
-
-    def settings(self) -> Settings:  # noqa: D102
-        return {
-            "cf": self._cf,
-            "window": self._window,
-            "interpolation": self._interpolation,
-        }
+    window: Trailing | Last
+    interpolation: InterpolationMethod = "linear"
 
     def evaluate(self, cache: Cache) -> TimeSeries:  # noqa: D102
         return self.compute(cache.returns)
@@ -177,12 +147,13 @@ class HistoricalSimulationsModel(ValueAtRiskModel):
             TimeSeries: The value-at-risk, on the dates of the returns.
 
         """
-        method = _interp_to_numpy_quantile_method(self._interpolation)
-        return Windows(returns, self._window).apply(
-            lambda w: np.quantile(w, q=1 - self._cf, method=method, axis=0)
+        method = _interp_to_numpy_quantile_method(self.interpolation)
+        return Windows(returns, self.window).apply(
+            lambda w: np.quantile(w, q=1 - self.cf, method=method, axis=0)
         )
 
 
+@dataclass(frozen=True, kw_only=True)
 class FilteredHistoricalSimulationsModel(ValueAtRiskModel):
     """Historical simulation on returns standardized by their mean and volatility.
 
@@ -214,59 +185,41 @@ class FilteredHistoricalSimulationsModel(ValueAtRiskModel):
     historical simulation method for value-at-risk", Journal of Risk, 1998;
     Barone-Adesi, Giannopoulos and Vosper, "VaR without correlations for
     portfolios of derivative securities", Journal of Futures Markets, 1999.
+
+    Attributes:
+        cf (float): The confidence level, in (0, 1).
+        filter (VolatilityFilter): Standardizes the returns. Its mean and
+            volatility also rescale the quantile.
+        window (Trailing | Last): The windows of standardized returns.
+        interpolation (InterpolationMethod): How the quantile interpolates
+            between order statistics.
+
     """
 
-    _filter: VolatilityFilter
-    _window: Trailing | Last
-    _interpolation: InterpolationMethod
+    filter: VolatilityFilter
+    window: Trailing | Last
+    interpolation: InterpolationMethod = "linear"
 
-    def __init__(
-        self,
-        *,
-        cf: float,
-        filter: VolatilityFilter,  # noqa: A002 - the method's own term.
-        window: Trailing | Last,
-        interpolation: InterpolationMethod = "linear",
-    ) -> None:
-        """Build the model.
+    def dependencies(self) -> Dependencies:
+        """List the filter, and the mean and volatility read through it.
 
-        Args:
-            cf (float): The confidence level, in (0, 1).
-            filter (VolatilityFilter): Standardizes the returns. Its mean and
-                volatility also rescale the quantile.
-            window (Trailing | Last): The windows of standardized returns.
-            interpolation (InterpolationMethod): How the quantile interpolates
-                between order statistics.
+        `evaluate` reads the filter's mean and volatility from the cache too,
+        to rescale the quantile, so they are listed with the filter.
+
+        Returns:
+            Dependencies: The nodes this node reads, by name.
 
         """
-        super().__init__(cf=cf)
-        self._filter = filter
-        self._window = window
-        self._interpolation = interpolation
-
-    @property
-    def window(self) -> Trailing | Last:
-        """The windows the quantiles are taken on."""
-        return self._window
-
-    def dependencies(self) -> Dependencies:  # noqa: D102
         return {
-            "filter": self._filter,
-            "vol_model": self._filter.vol_model,
-            "mean_model": self._filter.mean_model,
-        }
-
-    def settings(self) -> Settings:  # noqa: D102
-        return {
-            "cf": self._cf,
-            "window": self._window,
-            "interpolation": self._interpolation,
+            "filter": self.filter,
+            "vol_model": self.filter.vol_model,
+            "mean_model": self.filter.mean_model,
         }
 
     def evaluate(self, cache: Cache) -> TimeSeries:  # noqa: D102
-        filtered = cache.get(self._filter)
-        means = cache.get(self._filter.mean_model)
-        vols = cache.get(self._filter.vol_model)
+        filtered = cache.get(self.filter)
+        means = cache.get(self.filter.mean_model)
+        vols = cache.get(self.filter.vol_model)
         return self.compute(filtered=filtered, means=means, vols=vols)
 
     def compute(
@@ -288,14 +241,15 @@ class FilteredHistoricalSimulationsModel(ValueAtRiskModel):
         filtered.check_aligned(means)
         filtered.check_aligned(vols)
 
-        windows = Windows(filtered, self._window, skip_leading_nan=True)
-        method = _interp_to_numpy_quantile_method(self._interpolation)
-        quantiles = np.quantile(windows.values, q=1 - self._cf, method=method, axis=0)
+        windows = Windows(filtered, self.window, skip_leading_nan=True)
+        method = _interp_to_numpy_quantile_method(self.interpolation)
+        quantiles = np.quantile(windows.values, q=1 - self.cf, method=method, axis=0)
         # Each window is rescaled with the mean and volatility of its last date.
         ends = windows.end_indices
         return windows.to_series(means.values[ends] + vols.values[ends] * quantiles)
 
 
+@dataclass(frozen=True, kw_only=True)
 class GaussianModel(ValueAtRiskModel):
     """Value-at-risk of normally distributed returns.
 
@@ -311,31 +265,22 @@ class GaussianModel(ValueAtRiskModel):
 
     It is the forecast for the return of date `t + 1`, using data up to and
     including `t`, like its inputs.
+
+    Attributes:
+        cf (float): The confidence level, in (0, 1).
+        vol_model (VolatilityModel): The volatility, the scale of the
+            distribution.
+        mean_model (MeanModel): The mean of the distribution. Defaults to
+            zero.
+
     """
 
-    _mean_model: MeanModel
-    _vol_model: VolatilityModel
-
-    def __init__(
-        self,
-        *,
-        cf: float,
-        vol_model: VolatilityModel,
-        mean_model: MeanModel | None = None,
-    ) -> None:
-        super().__init__(cf=cf)
-        self._vol_model = vol_model
-        self._mean_model = ZeroMean() if mean_model is None else mean_model
-
-    def dependencies(self) -> Dependencies:  # noqa: D102
-        return {"vol_model": self._vol_model, "mean_model": self._mean_model}
-
-    def settings(self) -> Settings:  # noqa: D102
-        return {"cf": self._cf}
+    vol_model: VolatilityModel
+    mean_model: MeanModel = field(default_factory=ZeroMean)
 
     def evaluate(self, cache: Cache) -> TimeSeries:  # noqa: D102
-        means = cache.get(self._mean_model)
-        vols = cache.get(self._vol_model)
+        means = cache.get(self.mean_model)
+        vols = cache.get(self.vol_model)
         return self.compute(means=means, vols=vols)
 
     def compute(self, *, means: TimeSeries, vols: TimeSeries) -> TimeSeries:
@@ -357,5 +302,5 @@ class GaussianModel(ValueAtRiskModel):
         means.check_aligned(vols)
         check_positive("Volatility", vols.values)
 
-        values = means.values + vols.values * Gaussian().quantile(1 - self._cf)
+        values = means.values + vols.values * Gaussian().quantile(1 - self.cf)
         return TimeSeries(dates=means.dates, values=values)

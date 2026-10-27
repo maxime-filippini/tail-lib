@@ -41,9 +41,6 @@ class _FilteredReturnsModel(ValueAtRiskModel):
     def dependencies(self) -> Dependencies:
         return {"filter": self._filter, "vol_model": self._vol_model}
 
-    def settings(self) -> Settings:
-        return {"cf": self._cf}
-
     def evaluate(self, cache: Cache) -> TimeSeries:
         filtered = cache.get(self._filter)
         vols = cache.get(self._vol_model)
@@ -64,6 +61,8 @@ def test_run_computes_nested_preprocessors_once() -> None:
 
 
 def test_run_rejects_cyclic_preprocessors() -> None:
+    # Frozen nodes can't be built into a cycle: this one sets a plain
+    # attribute after it is built, which a subclass that isn't a dataclass can.
     class _Chained(VolatilityModel):
         def __init__(self) -> None:
             self.dependency: Preprocessor | None = None

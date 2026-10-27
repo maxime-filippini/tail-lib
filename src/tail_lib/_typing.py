@@ -20,3 +20,6 @@ type FloatArray = ArrayAnyShape[np.dtype[NpFloat]]
 type FloatArrayAtLeast1D = ArrayAtLeast1D[np.dtype[NpFloat]]
 type DateArray1D = Array1D[np.dtype[np.datetime64]]
 type IntArray = ArrayAnyShape[np.dtype[np.int64]]
+
+# Nested tuples, so values can be hashed: the form nodes store arrays in.
+type Floats = tuple[float | Floats, ...]

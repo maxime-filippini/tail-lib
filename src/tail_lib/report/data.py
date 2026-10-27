@@ -297,7 +297,7 @@ def _kind(node: Node[Any]) -> NodeKind:
             return "backtest"
 
 
-def _setting_json(value: Setting) -> JsonValue:  # noqa: PLR0911 - a case per kind.
+def _setting_json(value: Setting) -> JsonValue:
     """Write a setting as JSON, in the form the specs use."""
     match value:
         case Trailing(length=length, step=step):
@@ -309,8 +309,7 @@ def _setting_json(value: Setting) -> JsonValue:  # noqa: PLR0911 - a case per ki
         case StartingVol(vol=vol):
             return {"type": "starting_vol", "vol": _array_json(vol)}
         case tuple():
-            return list(value)
-        case np.ndarray():
+            # Bounds, or an array of values per series as nested tuples.
             return _array_json(value)
         case None | str() | float() | int():
             return value

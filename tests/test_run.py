@@ -431,28 +431,24 @@ def test_a_run_from_nodes_lists_the_inputs_its_nodes_read() -> None:
 
 
 def test_models_reading_one_input_share_its_node() -> None:
-    vol = VolatilityInput("vol")
+    # Built separately, the two inputs are equal, so they are one node (D9).
     run = Run(
         {
-            "gauss_99": GaussianModel(cf=0.99, vol_model=vol),
-            "gauss_95": GaussianModel(cf=0.95, vol_model=vol),
+            "gauss_99": GaussianModel(cf=0.99, vol_model=VolatilityInput("vol")),
+            "gauss_95": GaussianModel(cf=0.95, vol_model=VolatilityInput("vol")),
         }
     )
 
     assert run.input_names == {"vol"}
+    nodes = [graph_node.node for graph_node in run.graph.nodes]
+    assert nodes.count(VolatilityInput("vol")) == 1
 
 
-@pytest.mark.parametrize(
-    "other",
-    [
-        GaussianModel(cf=0.95, vol_model=VolatilityInput("vol")),
-        ValueAtRiskInput("vol", cf=0.95),
-    ],
-)
-def test_two_nodes_reading_one_input_are_an_error(
-    other: GaussianModel | ValueAtRiskInput,
-) -> None:
-    models = {"a": GaussianModel(cf=0.99, vol_model=VolatilityInput("vol")), "b": other}
+def test_two_nodes_reading_one_input_are_an_error() -> None:
+    models = {
+        "a": GaussianModel(cf=0.99, vol_model=VolatilityInput("vol")),
+        "b": ValueAtRiskInput("vol", cf=0.95),
+    }
 
     with pytest.raises(
         ValueError,

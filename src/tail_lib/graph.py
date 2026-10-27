@@ -5,6 +5,11 @@ input such as a volatility), a value-at-risk model, or a backtest. A node gets
 its inputs, the outputs of other nodes, from a `Cache`, which computes each
 node at most once.
 
+Nodes are frozen dataclasses, identified by value: two nodes of the same class
+with equal constructor arguments, their input nodes included, are one node
+(D9). A node's fields holding nodes are its dependencies, the others its
+settings.
+
 Data from outside a run, e.g. value-at-risk forecasts computed earlier, enters
 it as named inputs (R13): the caller passes them to the cache by name, and an
 input node reads its own name.
@@ -14,8 +19,12 @@ from __future__ import annotations
 
 from abc import ABC
 from abc import abstractmethod
+from dataclasses import dataclass
+from dataclasses import fields
 from typing import TYPE_CHECKING
 from typing import Any
+
+import numpy as np
 
 from tail_lib.time_series import TimeSeries
 
@@ -23,22 +32,28 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
 
     from tail_lib._typing import FloatArray
+    from tail_lib._typing import Floats
     from tail_lib.models.ewma import EwmaStart
     from tail_lib.windows import Last
     from tail_lib.windows import Trailing
 
 
+@dataclass(frozen=True)
 class Node[T](ABC):
     """A computation on a returns time series, with an output of type `T`.
+
+    Subclasses are frozen dataclasses, so a node is identified by value: its
+    class and its fields, which are its constructor arguments (D9). A field
+    excluded from comparison (`compare=False`) is not part of it.
 
     Subclasses implement `evaluate`, which gets the inputs of the node from a
     `Cache`, then computes its output. The computation itself usually lives in
     a `compute` method, whose arguments are the inputs.
 
-    Subclasses also implement `dependencies`, which lists the nodes `evaluate`
-    reads, so a graph of nodes can be walked without computing it, and
-    `settings`, which lists the node's other constructor arguments, so the
-    graph can be described, e.g. in a report (R19).
+    The fields holding nodes are the node's `dependencies`, so a graph of
+    nodes can be walked without computing it. The other constructor
+    arguments are its `settings`, so the graph can be described, e.g. in a
+    report (R19). Both are read from the fields.
     """
 
     @abstractmethod
@@ -54,35 +69,54 @@ class Node[T](ABC):
 
         """
 
-    @abstractmethod
     def dependencies(self) -> Dependencies:
-        """List the nodes `evaluate` gets from the cache.
+        """List the nodes `evaluate` gets from the cache: the fields holding nodes.
 
-        Each is keyed by the constructor argument it comes from, e.g.
-        `{"vol_model": ..., "mean_model": ...}` for a Gaussian model. A node
-        read through another one is keyed by its name there, e.g. the
-        `vol_model` of the filter a filtered historical simulation takes. The
-        returns and the named run inputs are not nodes, so they are not listed.
+        Each is keyed by its field, e.g. `{"vol_model": ..., "mean_model":
+        ...}` for a Gaussian model. The returns and the named run inputs are
+        not nodes, so they are not listed.
 
         Returns:
             Dependencies: The nodes this node reads, by name.
 
         """
+        return {
+            name: value
+            for name, value in self._constructor_arguments().items()
+            if isinstance(value, Node)
+        }
 
-    @abstractmethod
     def settings(self) -> Settings:
         """List the constructor arguments that are not nodes.
 
-        Each is keyed by its constructor argument, with the value the node
-        uses, defaults included, e.g. `{"cf": 0.99, "window": Trailing(250),
-        "interpolation": "linear"}` for a historical simulation. Arguments
-        that are nodes are in `dependencies` instead, so together they cover
-        every constructor argument.
+        Each is keyed by its field, with the value the node uses, defaults
+        included, e.g. `{"cf": 0.99, "window": Trailing(250), "interpolation":
+        "linear"}` for a historical simulation. Arrays are stored as nested
+        tuples, see `frozen_floats`. Arguments that are nodes are in
+        `dependencies` instead, so together they cover every constructor
+        argument.
 
         Returns:
             Settings: The settings of this node, by name.
 
         """
+        return {
+            name: value
+            for name, value in self._constructor_arguments().items()
+            if not isinstance(value, Node)
+        }
+
+    # The fields hold settings and nodes of every type: `Any` stands for each.
+    def _constructor_arguments(self) -> dict[str, Any]:
+        """Give the fields set by the constructor, by name, with their values.
+
+        Fields the node derives itself (`init=False`) are left out.
+        """
+        return {
+            field.name: getattr(self, field.name)
+            for field in fields(self)
+            if field.init
+        }
 
     def run(
         self,
@@ -108,19 +142,45 @@ class Node[T](ABC):
 type Dependencies = Mapping[str, Node[Any]]
 """The nodes a node reads, by name, see `Node.dependencies`."""
 
-type Setting = (
-    float | str | tuple[float, float] | Trailing | Last | EwmaStart | FloatArray | None
-)
+type Setting = float | str | Floats | Trailing | Last | EwmaStart | None
 """A constructor argument of a node that is not a node, see `Node.settings`.
 
 The kinds of settings the library's nodes take: numbers (a confidence level, a
-number of iterations), names, bounds, windows, EWMA starts, and arrays (a
-value per series). `None` is an unset option, e.g. a backtest on the whole
-sample.
+number of iterations), names, windows, EWMA starts, and tuples (bounds, or an
+array of values per series, see `frozen_floats`). `None` is an unset option,
+e.g. a backtest on the whole sample.
 """
 
 type Settings = Mapping[str, Setting]
 """The settings of a node, by name, see `Node.settings`."""
+
+
+def frozen_floats(values: FloatArray | Floats | float) -> Floats | float:
+    """Store values given to a node in a form that can be hashed.
+
+    Arrays can't be hashed, so a node identified by value (D9) stores them as
+    nested tuples, one level per axis, which compare equal when the values
+    are. A single value stays a float. `np.asarray` gives the array back.
+
+    Args:
+        values (FloatArray | Floats | float): A single value, or an array.
+
+    Returns:
+        Floats | float: The float, or the values as nested tuples.
+
+    """
+    array = np.asarray(values, dtype=np.float64)
+    if array.ndim == 0:
+        return float(array)
+    return _nested_tuples(array.tolist())
+
+
+# `tolist` gives nested lists of floats, which NumPy's stubs type as `Any`.
+def _nested_tuples(values: list[Any]) -> Floats:
+    return tuple(
+        _nested_tuples(value) if isinstance(value, list) else float(value)
+        for value in values
+    )
 
 
 class Preprocessor(Node[TimeSeries]):
@@ -131,7 +191,7 @@ class Cache:
     """Outputs of nodes on one returns time series.
 
     Each node is computed at most once per cache. Nodes are identified by
-    instance: share one instance between nodes to share its computation.
+    value (D9), so equal nodes, even built separately, share one computation.
 
     The cache also holds the named inputs of the run. Inputs no node reads are
     ignored.

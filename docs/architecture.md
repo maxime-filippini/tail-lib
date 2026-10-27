@@ -61,35 +61,42 @@ change to the public API, a spec field or a default also updates the guide:
 ## The node graph (`graph.py`)
 
 This section, "From a spec to results" and "From Python" describe the code
-as it is. A migration to a context API is planned, step by step: nodes
-identified by value, a pure `compute` with no `evaluate`, and a `Context`
-in place of `Run`, `Cache` and `Pool`. See "Context API" in
+as it is. A migration to a context API is under way, step by step: nodes
+identified by value (done), a pure `compute` with no `evaluate`, and a
+`Context` in place of `Run`, `Cache` and `Pool`. See "Context API" in
 `docs/open-points.md`.
 
 Every computation is a `Node[T]`: a preprocessor (a model input such as a
-volatility), a VaR model, or a backtest.
+volatility), a VaR model, or a backtest. Nodes are frozen dataclasses,
+identified by value (D9): two nodes of the same class with equal fields,
+their input nodes included, are one node, e.g. two `ZeroMean()` built
+separately. The fields are the constructor arguments. Arrays given to a node
+(a value per series) are stored as nested tuples (`frozen_floats`), so they
+can be hashed; `np.asarray` gives the array back.
 
 - `evaluate(cache)` gathers the node's inputs, i.e. other nodes' outputs,
   with `cache.get(node)`, then calls `compute`.
 - `compute(...)` is pure: it uses only its arguments and the node's own
   constructor settings (see `CLAUDE.md`).
-- `dependencies()` lists the nodes `evaluate` reads, keyed by the
-  constructor argument each comes from, e.g. `{"vol_model": ...,
-  "mean_model": ...}`. So a graph can be walked without computing it: `Run`
-  walks it to find its run inputs and `last` windows. The
-  returns and the named run inputs are not nodes, so they are not listed.
-  `tests/test_dependencies.py` checks, for one node of each library type,
-  that it matches what `evaluate` asks the cache for.
-- `settings()` lists the node's other constructor arguments, the ones that
-  are not nodes, with the values the node uses, defaults included, e.g.
-  `{"cf": 0.99, "window": Trailing(250), "interpolation": "linear"}`. The
-  values stay Python objects (windows, EWMA starts, arrays), typed by the
+- `dependencies()` lists the nodes `evaluate` reads: the fields holding
+  nodes, keyed by field, e.g. `{"vol_model": ..., "mean_model": ...}`. It
+  is written once, in `Node`. So a graph can be walked without computing
+  it: `Run` walks it to find its run inputs and `last` windows. The returns
+  and the named run inputs are not nodes, so they are not listed. The FHS
+  is the one override: its `evaluate` also reads its filter's mean and
+  volatility, so it lists them too. `tests/test_dependencies.py` checks,
+  for one node of each library type, that it matches what `evaluate` asks
+  the cache for.
+- `settings()` lists the node's other fields, with the values the node
+  uses, defaults included, e.g. `{"cf": 0.99, "window": Trailing(250),
+  "interpolation": "linear"}`. It is also written once, in `Node`. The
+  values stay Python objects (windows, EWMA starts, tuples), typed by the
   `Setting` union; turning them into JSON is the report's job (R19). With
-  `dependencies()`, it covers every constructor argument:
-  `tests/test_dependencies.py` checks this for one node of each library
-  type.
+  `dependencies()`, it covers every constructor argument. A field the node
+  sets itself (`init=False`), e.g. the `cf_var` a Kupiec test copies from
+  its overshootings, is neither.
 - `Cache(returns, inputs)` belongs to one returns series. It computes each
-  node at most once, identified by instance, and detects cycles. It also
+  node at most once, identified by value, and detects cycles. It also
   holds the named run inputs (R13): `cache.input(name)` checks the input is
   aligned with the returns, and raises `KeyError` if it is missing.
 - `Pool(nodes)` computes named nodes on one cache. Pools evaluated on the
@@ -102,13 +109,16 @@ of such an input is a node, e.g. `ConstantDecay` next to
 `EwmaDecayCalibration`. Settings always set by hand (`cf`, windows, fit
 bounds) are constructor arguments.
 
-Sharing in Python is explicit: pass one instance to several nodes. For
-example, backtests take an `Overshootings` node, not a model, so all the
-backtests of a model can share one:
+Sharing follows from value identity: equal nodes are computed once, however
+they were built. For example, backtests take an `Overshootings` node, not a
+model, so all the backtests of a model share one:
 
 ```python
-ovs = Overshootings(model)
-Pool({"kupiec": KupiecTest(ovs)}).run(returns)
+backtests = {
+    "kupiec": KupiecTest(Overshootings(model)),
+    "kupiec_250": KupiecTest(Overshootings(model), window=Trailing(length=250)),
+}
+Pool(backtests).run(returns)  # the overshootings of `model` are computed once
 ```
 
 ## From a spec to results
@@ -239,9 +249,10 @@ run = Run(
 result = run.run(returns)
 ```
 
-- Sharing is by instance (D3): `vol` and `vol_filter` above are computed
-  once, for all the models that read them. From specs, the `Builder` gives
-  identical specs one node, to the same effect.
+- Sharing is by value (D3, D9): `vol` and `vol_filter` above are computed
+  once, for all the models that read them, and would be even if each model
+  built its own `EwmaVolatility(ConstantDecay(0.94))`. From specs, the
+  `Builder` also gives identical specs one node.
 - Each backtest is a function from a model's `Overshootings` to the test
   node: the class itself (`KupiecTest`) for its defaults, or a lambda for
   its settings. Every backtest runs on every model (R4), and the backtests
@@ -399,10 +410,12 @@ the other outputs as percentages.
 
 ## Adding a node type
 
-1. Write the node: `evaluate` gathers inputs from the cache, `compute` is
-   pure, `dependencies` lists the nodes `evaluate` reads, `settings` lists
-   its other constructor arguments, and the docstring
-   states the formula, the timing and a reference. Add one instance to
+1. Write the node as a frozen dataclass (`@dataclass(frozen=True)`), its
+   fields being its constructor arguments, arrays stored with
+   `frozen_floats` in `__post_init__`: `evaluate` gathers inputs from the
+   cache, `compute` is pure, and the docstring states the formula, the
+   timing, the fields (`Attributes:`) and a reference. `dependencies` and
+   `settings` come from the fields. Add one instance to
    `_one_node_of_each_type` in `tests/test_dependencies.py`: the test fails
    until you do.
 2. Add its spec to `specs.py`, with value ranges matching the node's checks,

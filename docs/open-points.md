@@ -11,15 +11,16 @@ Working rules, from `CLAUDE.md` and the developer:
   `docs/architecture.md`, e.g. every backtest runs on every model (R4).
 - Commit only when the developer says so. Commits have no co-author trailer.
 
-State as of 2026-10-26: branch `feat/context-api`, from `develop`, not
+State as of 2026-10-27: branch `feat/context-api`, from `develop`, not
 pushed.
 
 ## Next up
 
 1. **Context API**, plan agreed with the developer on 2026-10-26, see
-   "Context API" under "Design questions". Step 0 (docs) reviewed. Step 1
-   (`tests/test_regression.py`) done, awaiting review. Then steps 2 to 6,
-   each reviewed on its own.
+   "Context API" under "Design questions". Steps 0 (docs) and 1
+   (`tests/test_regression.py`) reviewed. Step 2 (nodes identified by
+   value) done, awaiting review. Then 2b and steps 3 to 6, each reviewed on
+   its own.
 2. **Run date range (R21–R23)**, agreed with the developer on 2026-10-25,
    see "Run date range" under "Design questions". Step 1 (docs) done,
    awaiting review. Steps 2 to 5 wait for the context API.
@@ -267,6 +268,35 @@ Gaussian volatility check and `Gaussian().quantile`; the new
 6. A context from a spec (R9, R9a, R17), `Context.from_spec`.
 7. Then the run date range, from its step 2 (trimming the returns, R21, is
    its step 3).
+
+Done in step 2 (2026-10-27), with no output changed (the regression pins
+pass unchanged):
+
+- `Node` and every library node are frozen dataclasses. `dependencies()`
+  and `settings()` are written once in `Node`, from the fields set by the
+  constructor; the per-node overrides went, except the FHS's, which also
+  lists its filter's mean and volatility, read by its `evaluate`, until
+  step 4c.
+- Arrays given to `ConstantMean`, `ConstantVolatility`, `ConstantDecay` and
+  `StartingVol` are stored as nested tuples (`frozen_floats` in
+  `graph.py`, type `Floats` in `_typing.py`), one level per axis, so batch
+  shapes of any rank keep their shape. `settings()` returns the tuples, and
+  the report writes them as lists, as before.
+- `mean_model` defaults to `ZeroMean()` (a field default) instead of
+  `None`. Two zero means in one graph are now one node, so the report's
+  graph has one box fewer.
+- `KupiecTest` copies `cf_var` from its overshootings into a field it sets
+  itself (`init=False`, not compared), so `compute` reads its own settings
+  only. It is not a setting.
+- Run inputs: equal input nodes are one node, so two `VolatilityInput("vol")`
+  built separately are no longer an error. Two different nodes on one name
+  (a volatility and a VaR input) still are.
+- A subclass of a node that isn't itself a dataclass can still set new
+  attributes, e.g. the counters in the tests. The cycle test builds its
+  cycle that way: frozen nodes can't form one otherwise. The cycle check in
+  `Cache` stays until the context replaces it.
+- Not changed: the `Builder` keeps its tables (now redundant, they go in
+  step 6), and field names stay `vol_model` and `mean_model` until 2b.
 
 **Still open**
 

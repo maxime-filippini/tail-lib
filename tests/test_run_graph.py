@@ -51,9 +51,15 @@ def test_the_graph_lists_each_node_once_with_all_its_paths() -> None:
     paths = _paths(run.graph)
 
     # Each distinct node once: 2 models, the filter, the shared volatility,
-    # 2 zero means, then per model one overshootings node and one backtest.
-    n_distinct = 2 + 1 + 1 + 2 + 2 * 2
+    # one zero mean (the Gaussian's and the filter's are equal, so one node,
+    # D9), then per model one overshootings node and one backtest.
+    n_distinct = 2 + 1 + 1 + 1 + 2 * 2
     assert len(run.graph.nodes) == len(paths) == n_distinct
+    assert paths[ZeroMean()][:3] == (
+        "models.gauss.mean_model",
+        "models.fhs.filter.mean_model",
+        "models.fhs.mean_model",
+    )
     assert paths[vol] == (
         "models.gauss.vol_model",
         "models.fhs.filter.vol_model",
@@ -102,6 +108,18 @@ def test_the_edges_go_from_each_dependency_to_its_reader() -> None:
     assert len(run.graph.edges) == len(edges) == n_dependencies
     nodes = {n.node for n in run.graph.nodes}
     assert all(e.source in nodes and e.target in nodes for e in edges)
+
+
+def test_equal_models_built_separately_are_one_node() -> None:
+    def gauss() -> GaussianModel:
+        return GaussianModel(cf=0.99, vol_model=ConstantVolatility(0.01))
+
+    run = Run({"a": gauss(), "b": gauss()}, {"kupiec": KupiecTest})
+
+    assert _paths(run.graph)[gauss()][:2] == ("models.a", "models.b")
+    # The model, its volatility and mean, its overshootings and its test.
+    n_distinct = 5
+    assert len(run.graph.nodes) == n_distinct
 
 
 def test_a_model_under_two_names_is_one_node_with_two_paths() -> None:

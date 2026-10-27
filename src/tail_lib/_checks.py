@@ -8,6 +8,7 @@ import numpy as np
 
 if TYPE_CHECKING:
     from tail_lib._typing import FloatArray
+    from tail_lib._typing import Floats
 
 
 def check_probability(name: str, value: float) -> None:
@@ -48,12 +49,13 @@ def check_name(kind: str, name: str) -> None:
         raise ValueError(msg)
 
 
-def check_unit_interval(name: str, value: FloatArray | float) -> None:
+def check_unit_interval(name: str, value: FloatArray | Floats | float) -> None:
     """Check that a value, e.g. a decay factor, is in [0,1], every element of it.
 
     Args:
         name (str): What the value is, for the message, e.g. "Decay factor".
-        value (FloatArray | float): The value, a single value or an array.
+        value (FloatArray | Floats | float): The value, a single value or an
+            array, as an array or nested tuples.
 
     Raises:
         ValueError: If an element isn't in [0,1].
@@ -65,13 +67,14 @@ def check_unit_interval(name: str, value: FloatArray | float) -> None:
         raise ValueError(msg)
 
 
-def check_positive(name: str, value: FloatArray | float) -> None:
+def check_positive(name: str, value: FloatArray | Floats | float) -> None:
     """Check that a value, e.g. a volatility, is positive, every element of it.
 
     Args:
         name (str): What the value is, for the message, e.g. "Starting
             volatility".
-        value (FloatArray | float): The value, a single value or an array.
+        value (FloatArray | Floats | float): The value, a single value or an
+            array, as an array or nested tuples.
 
     Raises:
         ValueError: If an element isn't positive.

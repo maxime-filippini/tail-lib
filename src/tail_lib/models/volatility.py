@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+from dataclasses import field
 from typing import TYPE_CHECKING
 from typing import assert_never
 
@@ -11,6 +13,7 @@ from numpy.lib.stride_tricks import sliding_window_view
 from tail_lib._checks import check_name
 from tail_lib.graph import Cache
 from tail_lib.graph import Preprocessor
+from tail_lib.graph import frozen_floats
 from tail_lib.models.ewma import DEFAULT_EWMA_START
 from tail_lib.models.ewma import ConstantDecay
 from tail_lib.models.ewma import EwmaDecayCalibration
@@ -25,8 +28,7 @@ from tail_lib.windows import Windows
 
 if TYPE_CHECKING:
     from tail_lib._typing import FloatArray
-    from tail_lib.graph import Dependencies
-    from tail_lib.graph import Settings
+    from tail_lib._typing import Floats
 
 
 class VolatilityModel(Preprocessor):
@@ -37,64 +39,48 @@ class VolatilityModel(Preprocessor):
     """
 
 
+@dataclass(frozen=True)
 class VolatilityInput(VolatilityModel):
     """Volatilities passed in at run time, under a name (R13).
 
     The volatility on date `t` is the input's value on date `t`. Like every
     volatility model's, it should be the forecast for date `t + 1`, using data
     up to and including `t`: the library cannot check this.
+
+    Building it raises `ValueError` if the name isn't a Python identifier.
+
+    Attributes:
+        name (str): The name of the input, as passed to `run`: a Python
+            identifier.
+
     """
 
-    def __init__(self, name: str) -> None:
-        """Build the model.
+    name: str
 
-        Args:
-            name (str): The name of the input, as passed to `run`: a Python
-                identifier.
-
-        Raises:
-            ValueError: If the name isn't a Python identifier.
-
-        """
-        check_name("Input", name)
-        self._name = name
-
-    @property
-    def name(self) -> str:
-        """The name of the input."""
-        return self._name
-
-    def dependencies(self) -> Dependencies:  # noqa: D102
-        return {}
-
-    def settings(self) -> Settings:  # noqa: D102
-        return {"name": self._name}
+    def __post_init__(self) -> None:
+        check_name("Input", self.name)
 
     def evaluate(self, cache: Cache) -> TimeSeries:  # noqa: D102
-        return cache.input(self._name)
+        return cache.input(self.name)
 
 
+@dataclass(frozen=True)
 class ConstantVolatility(VolatilityModel):
     """The same volatility on every date.
 
     The volatility on date `t` is `vol`, for every `t`. It uses no returns.
+
+    Attributes:
+        vol (FloatArray | Floats | float): The volatility, a single value or
+            an array broadcastable to the batch shape of the returns. An
+            array is stored as nested tuples, see `frozen_floats`.
+
     """
 
-    def __init__(self, vol: FloatArray | float) -> None:
-        """Build the model.
+    vol: FloatArray | Floats | float
 
-        Args:
-            vol (FloatArray | float): The volatility, a single value or an
-                array broadcastable to the batch shape of the returns.
-
-        """
-        self._vol = np.asarray(vol)
-
-    def dependencies(self) -> Dependencies:  # noqa: D102
-        return {}
-
-    def settings(self) -> Settings:  # noqa: D102
-        return {"vol": self._vol}
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "vol", frozen_floats(self.vol))
 
     def evaluate(self, cache: Cache) -> TimeSeries:  # noqa: D102
         return self.compute(cache.returns)
@@ -112,10 +98,11 @@ class ConstantVolatility(VolatilityModel):
         """
         return TimeSeries(
             dates=returns.dates,
-            values=np.broadcast_to(self._vol, returns.values.shape).copy(),
+            values=np.broadcast_to(np.asarray(self.vol), returns.values.shape).copy(),
         )
 
 
+@dataclass(frozen=True)
 class EwmaVolatility(VolatilityModel):
     """Exponentially weighted moving average (EWMA) volatility, with a fixed decay.
 
@@ -131,32 +118,18 @@ class EwmaVolatility(VolatilityModel):
     Dates before it are `NaN`.
 
     For a decay recalibrated along the returns, see `FittedEwmaVolatility`.
+
+    Attributes:
+        decay (ConstantDecay): The decay factor.
+        start (EwmaStart): How the recursion gets its first variance.
+
     """
 
-    def __init__(
-        self,
-        decay: ConstantDecay,
-        *,
-        start: EwmaStart = DEFAULT_EWMA_START,
-    ) -> None:
-        """Build the model.
-
-        Args:
-            decay (ConstantDecay): The decay factor.
-            start (EwmaStart): How the recursion gets its first variance.
-
-        """
-        self._decay = decay
-        self._start = start
-
-    def dependencies(self) -> Dependencies:  # noqa: D102
-        return {"decay": self._decay}
-
-    def settings(self) -> Settings:  # noqa: D102
-        return {"start": self._start}
+    decay: ConstantDecay
+    start: EwmaStart = field(default=DEFAULT_EWMA_START, kw_only=True)
 
     def evaluate(self, cache: Cache) -> TimeSeries:  # noqa: D102
-        decay = cache.get(self._decay)
+        decay = cache.get(self.decay)
         return self.compute(cache.returns, decay=decay)
 
     def compute(self, returns: TimeSeries, *, decay: TimeSeries) -> TimeSeries:
@@ -176,10 +149,11 @@ class EwmaVolatility(VolatilityModel):
 
         """
         returns.check_aligned(decay)
-        var = ewma_variance(returns.values, decay.values, self._start)
+        var = ewma_variance(returns.values, decay.values, self.start)
         return TimeSeries(dates=returns.dates, values=np.sqrt(var))
 
 
+@dataclass(frozen=True)
 class FittedEwmaVolatility(VolatilityModel):
     """EWMA volatility, re-filtered with each calibration of the decay factor.
 
@@ -201,31 +175,22 @@ class FittedEwmaVolatility(VolatilityModel):
     to and including `t`. It is `NaN` before the last date of the first
     training window. With a `Last` training window, there is one
     calibration, so one volatility, on the last date.
+
+    Attributes:
+        calibration (EwmaDecayCalibration): The calibration of the decay
+            factor. Its training windows and start are used to re-filter.
+
     """
 
-    def __init__(self, calibration: EwmaDecayCalibration) -> None:
-        """Build the model.
-
-        Args:
-            calibration (EwmaDecayCalibration): The calibration of the decay
-                factor. Its training windows and start are used to re-filter.
-
-        """
-        self._calibration = calibration
-
-    def dependencies(self) -> Dependencies:  # noqa: D102
-        return {"calibration": self._calibration}
-
-    def settings(self) -> Settings:  # noqa: D102
-        return {}
+    calibration: EwmaDecayCalibration
 
     def evaluate(self, cache: Cache) -> TimeSeries:  # noqa: D102
-        decay = cache.get(self._calibration)
+        decay = cache.get(self.calibration)
         return self.compute(
             cache.returns,
             decay=decay,
-            window=self._calibration.window,
-            start=self._calibration.start,
+            window=self.calibration.window,
+            start=self.calibration.start,
         )
 
     def compute(
@@ -296,6 +261,7 @@ class FittedEwmaVolatility(VolatilityModel):
         return TimeSeries(dates=returns.dates, values=vols)
 
 
+@dataclass(frozen=True)
 class VolatilityFilter(Preprocessor):
     """Returns standardized by the mean and volatility forecast for their date.
 
@@ -307,45 +273,21 @@ class VolatilityFilter(Preprocessor):
     The mean is zero by default, so the returns are only divided by their
     volatility. The first date is `NaN`, as are the dates before the first
     volatility, e.g. during an EWMA backcast.
+
+    Attributes:
+        vol_model (VolatilityModel): The volatility the returns are divided
+            by.
+        mean_model (MeanModel): The mean taken off the returns. Defaults to
+            zero.
+
     """
 
-    _vol_model: VolatilityModel
-    _mean_model: MeanModel
-
-    def __init__(
-        self, vol_model: VolatilityModel, *, mean_model: MeanModel | None = None
-    ) -> None:
-        """Build the filter.
-
-        Args:
-            vol_model (VolatilityModel): The volatility the returns are
-                divided by.
-            mean_model (MeanModel | None): The mean taken off the returns.
-                Defaults to zero.
-
-        """
-        self._vol_model = vol_model
-        self._mean_model = ZeroMean() if mean_model is None else mean_model
-
-    @property
-    def vol_model(self) -> VolatilityModel:
-        """The volatility the returns are divided by."""
-        return self._vol_model
-
-    @property
-    def mean_model(self) -> MeanModel:
-        """The mean taken off the returns."""
-        return self._mean_model
-
-    def dependencies(self) -> Dependencies:  # noqa: D102
-        return {"vol_model": self._vol_model, "mean_model": self._mean_model}
-
-    def settings(self) -> Settings:  # noqa: D102
-        return {}
+    vol_model: VolatilityModel
+    mean_model: MeanModel = field(default_factory=ZeroMean, kw_only=True)
 
     def evaluate(self, cache: Cache) -> TimeSeries:  # noqa: D102
-        means = cache.get(self._mean_model)
-        vols = cache.get(self._vol_model)
+        means = cache.get(self.mean_model)
+        vols = cache.get(self.vol_model)
         return self.compute(cache.returns, means=means, vols=vols)
 
     def compute(

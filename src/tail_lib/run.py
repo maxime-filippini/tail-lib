@@ -172,8 +172,9 @@ class Run:
     The run walks the graph of its models once, when built, through
     `Node.dependencies`, to find the inputs it reads (R13), and to reject
     backtests on a model with a `last` window, which gives one forecast, for
-    a date after the data. Each input name belongs to one node: models that
-    read the same input share that node. The whole graph, backtests
+    a date after the data. Each input name belongs to one node: equal input
+    nodes are one node (D9), but two different ones, e.g. a volatility input
+    and a value-at-risk input, can't share a name. The whole graph, backtests
     included, is in `graph`.
     """
 
@@ -422,8 +423,9 @@ def _check_no_last_window(graphs: Mapping[str, _Graph], backtests: list[str]) ->
 def _input_names(graphs: Mapping[str, _Graph]) -> frozenset[str]:
     """Find the run inputs the models read, each name belonging to one node.
 
-    Models that read the same input share its node, so no node silently reads
-    another one's input.
+    Equal input nodes are one node (D9). Two different nodes can't read one
+    name, so no node silently reads another one's input, e.g. volatilities
+    read as a value-at-risk.
 
     Args:
         graphs (Mapping[str, _Graph]): The graph of each model, by name.
@@ -442,10 +444,10 @@ def _input_names(graphs: Mapping[str, _Graph]) -> frozenset[str]:
             if input_name is None:
                 continue
             first_path, first_node = input_nodes.setdefault(input_name, (path, node))
-            if first_node is not node:
+            if first_node != node:
                 msg = (
                     f"Run input {input_name!r} is read by two different nodes, "
-                    f"at `{first_path}` and `{path}`: share one node per input "
+                    f"at `{first_path}` and `{path}`: give each input its own "
                     f"name!"
                 )
                 raise ValueError(msg)
@@ -485,7 +487,7 @@ def _run_graph(roots: list[tuple[str, Node[Any]]]) -> RunGraph:
             dependencies.
 
     """
-    # Nodes are identified by instance, as in the cache, and dicts keep the
+    # Nodes are identified by value, as in the cache (D9), and dicts keep the
     # order they are first reached in.
     paths: dict[Node[Any], list[str]] = {}
     for root_path, root in roots:

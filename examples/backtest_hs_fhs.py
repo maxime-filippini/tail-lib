@@ -10,8 +10,8 @@ Models, all at 99%:
 Each model is backtested with Kupiec's test on rolling 250-day windows.
 
 The models are nodes, built in Python and given to a `Run` (R17). Nodes
-shared by several models are one instance, computed once (D3): the EWMA
-volatility, and the filter of both FHS models.
+shared by several models are computed once (D3, D9): the EWMA volatility,
+and the filter of both FHS models.
 
 Run with `uv run python examples/backtest_hs_fhs.py`.
 """
@@ -75,8 +75,8 @@ def main() -> None:  # noqa: D103
     )
 
     # Step 2: the models, as nodes. The EWMA volatility (with its 20-day
-    # backcast) is one instance, read by the filter and the Gaussian model;
-    # the filter is one instance, read by both FHS models.
+    # backcast) is read by the filter and the Gaussian model; the filter is
+    # read by both FHS models. Each is one node, computed once.
     vol = EwmaVolatility(ConstantDecay(DECAY))
     vol_filter = VolatilityFilter(vol)
     hs = {

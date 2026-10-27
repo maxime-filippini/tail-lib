@@ -2,18 +2,19 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import numpy as np
 
 from tail_lib.graph import Cache
 from tail_lib.graph import Preprocessor
+from tail_lib.graph import frozen_floats
 from tail_lib.time_series import TimeSeries
 
 if TYPE_CHECKING:
     from tail_lib._typing import FloatArray
-    from tail_lib.graph import Dependencies
-    from tail_lib.graph import Settings
+    from tail_lib._typing import Floats
 
 
 class MeanModel(Preprocessor):
@@ -24,17 +25,12 @@ class MeanModel(Preprocessor):
     """
 
 
+@dataclass(frozen=True)
 class ZeroMean(MeanModel):
     """A mean of zero on every date.
 
     The mean on date `t` is `0`, for every series. It uses no returns.
     """
-
-    def dependencies(self) -> Dependencies:  # noqa: D102
-        return {}
-
-    def settings(self) -> Settings:  # noqa: D102
-        return {}
 
     def evaluate(self, cache: Cache) -> TimeSeries:  # noqa: D102
         return self.compute(cache.returns)
@@ -56,27 +52,23 @@ class ZeroMean(MeanModel):
         )
 
 
+@dataclass(frozen=True)
 class ConstantMean(MeanModel):
     """The same mean on every date.
 
     The mean on date `t` is `mean`, for every `t`. It uses no returns.
+
+    Attributes:
+        mean (FloatArray | Floats | float): The mean, a single value or an
+            array broadcastable to the batch shape of the returns. An array
+            is stored as nested tuples, see `frozen_floats`.
+
     """
 
-    def __init__(self, mean: FloatArray | float) -> None:
-        """Build the model.
+    mean: FloatArray | Floats | float
 
-        Args:
-            mean (FloatArray | float): The mean, a single value or an array
-                broadcastable to the batch shape of the returns.
-
-        """
-        self._mean = np.asarray(mean)
-
-    def dependencies(self) -> Dependencies:  # noqa: D102
-        return {}
-
-    def settings(self) -> Settings:  # noqa: D102
-        return {"mean": self._mean}
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "mean", frozen_floats(self.mean))
 
     def evaluate(self, cache: Cache) -> TimeSeries:  # noqa: D102
         return self.compute(cache.returns)
@@ -94,5 +86,5 @@ class ConstantMean(MeanModel):
         """
         return TimeSeries(
             dates=returns.dates,
-            values=np.broadcast_to(self._mean, returns.values.shape).copy(),
+            values=np.broadcast_to(np.asarray(self.mean), returns.values.shape).copy(),
         )

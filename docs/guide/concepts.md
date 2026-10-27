@@ -119,20 +119,21 @@ Two rules decide what is a node and what is a plain setting:
 
 ### Sharing work
 
-A node is computed at most once per run. Pass **one instance** to several
-models to compute it once for all of them (D3):
+A node is computed at most once per run. Nodes are identified by value: two
+nodes of the same class with the same arguments are one node, so it is
+computed once for all the models that read it (D3, D9):
 
 ```python
-vol = EwmaVolatility(ConstantDecay(0.94))
 models = {
-    "gauss_99": GaussianModel(cf=0.99, vol_model=vol),
-    "gauss_975": GaussianModel(cf=0.975, vol_model=vol),  # same `vol`: computed once
+    "gauss_99": GaussianModel(cf=0.99, vol_model=EwmaVolatility(ConstantDecay(0.94))),
+    # An equal volatility: the same node, computed once
+    "gauss_975": GaussianModel(cf=0.975, vol_model=EwmaVolatility(ConstantDecay(0.94))),
 }
 ```
 
-Two separate `EwmaVolatility(ConstantDecay(0.94))` objects are computed
-twice. From [specs](specs.md), sharing is automatic: identical specs give one
-node.
+Nodes can't be changed once built (they are frozen dataclasses), so sharing
+one is always safe. From [specs](specs.md), it works the same way: identical
+specs give one node.
 
 ## Windows
 

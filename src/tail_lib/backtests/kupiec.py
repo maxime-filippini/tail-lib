@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from dataclasses import field
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -19,8 +20,6 @@ if TYPE_CHECKING:
     from tail_lib._typing import IntArray
     from tail_lib.backtests.overshootings import Overshootings
     from tail_lib.graph import Cache
-    from tail_lib.graph import Dependencies
-    from tail_lib.graph import Settings
     from tail_lib.time_series import TimeSeries
     from tail_lib.windows import Last
     from tail_lib.windows import Trailing
@@ -138,40 +137,37 @@ def kupiec_pof(
     )
 
 
+@dataclass(frozen=True)
 class KupiecTest(Node[KupiecResult]):
     """Kupiec's proportion-of-failures test of a value-at-risk model, as a node.
 
     Gets the model's overshootings from the cache, then tests them with
     `kupiec_pof` at the model's confidence level, on the whole sample, on
     trailing windows or on the last dates.
+
+    Attributes:
+        overshootings (Overshootings): The overshootings of the model to
+            test. Their confidence level `cf_var` sets the overshooting rate
+            expected under the model.
+        window (Trailing | Last | None): The windows to test on, see
+            `kupiec_pof`. `None`, the default, tests the whole sample.
+        cf_var (float): The model's confidence level, read from
+            `overshootings` when the test is built, not a constructor
+            argument.
+
     """
 
-    def __init__(
-        self, overshootings: Overshootings, *, window: Trailing | Last | None = None
-    ) -> None:
-        """Build the test of a model.
+    overshootings: Overshootings
+    window: Trailing | Last | None = field(default=None, kw_only=True)
+    # Kept on the test, so `compute` reads its own settings only. It follows
+    # from `overshootings`, so it isn't part of the test's identity.
+    cf_var: float = field(init=False, compare=False, repr=False)
 
-        Args:
-            overshootings (Overshootings): The overshootings of the model to
-                test. Their confidence level `cf_var` sets the overshooting
-                rate expected under the model.
-            window (Trailing | Last | None): The windows to test on, see
-                `kupiec_pof`.
-                `None`, the default, tests the whole sample.
-
-        """
-        self._overshootings = overshootings
-        self._cf_var = overshootings.cf_var
-        self._window = window
-
-    def dependencies(self) -> Dependencies:  # noqa: D102
-        return {"overshootings": self._overshootings}
-
-    def settings(self) -> Settings:  # noqa: D102
-        return {"window": self._window}
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "cf_var", self.overshootings.cf_var)
 
     def evaluate(self, cache: Cache) -> KupiecResult:  # noqa: D102
-        return self.compute(cache.get(self._overshootings))
+        return self.compute(cache.get(self.overshootings))
 
     def compute(self, overshootings: TimeSeries) -> KupiecResult:
         """Run the test on overshooting flags, see `kupiec_pof`.
@@ -183,4 +179,4 @@ class KupiecTest(Node[KupiecResult]):
             KupiecResult: The test outcome on each window, see `kupiec_pof`.
 
         """
-        return kupiec_pof(overshootings, cf_var=self._cf_var, window=self._window)
+        return kupiec_pof(overshootings, cf_var=self.cf_var, window=self.window)
