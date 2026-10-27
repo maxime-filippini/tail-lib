@@ -45,9 +45,9 @@ How tail-lib is organized, and how a call flows from a spec to the numbers
 | `distributions.py` | `Distribution`, the base class of distributions with zero mean and unit variance, and `Gaussian`, `StudentT`. Each draws values (`draw`) and gives its quantiles (`quantile`): the simulator draws its shocks from them, and `GaussianModel` reads the Gaussian quantile. |
 | `simulation.py` | `Simulator` and its processes `ArProcess`, `EwmaProcess`, `GarchProcess`; the output `Simulation` (R18). |
 | `specs.py` | Pydantic specs mirroring each node, with value ranges (R9, R9b). |
-| `build.py` | `Builder`: specs to nodes, one node per distinct spec (R9a, D3). |
+| `build.py` | Plain functions from specs to nodes (R9a), shared by value (D9). The legacy `Builder` stays until step 5c-3. |
 | `run.py` | `RunSpec`, `Run` (from nodes, or from a spec with `Run.from_spec`), `BacktestFunction`, `RunResult`: models and backtests in one run. |
-| `context.py` | `Context`, `Results`: models declared in a `with` block, their backtests, and their results (D10). Next to `Run` until step 5c of the migration. |
+| `context.py` | `Context`, `Results`: models declared in a `with` block or built by `Context.from_spec`, their backtests, and their results (D10). Next to `Run` until step 5c-3 of the migration. |
 
 ## User documentation
 
@@ -152,7 +152,8 @@ Pool(backtests).run(returns)  # the overshootings of `model` are computed once
 
 The context API's replacement for `Run`, built next to it (step 5a of the
 migration). The report, the guide, the example, the regression test and the
-node tests use it; `Run` stays until specs build contexts (step 6):
+node tests use it. `Context.from_spec` also builds one from a spec; `Run`
+stays until step 5c-3 removes the old API:
 
 ```python
 with Context(backtests={"kupiec": KupiecTest}, labels={"gauss": "Gaussian"}) as ctx:
@@ -219,37 +220,32 @@ pydantic. YAML could later be a loader producing dicts.
    non-empty list (one value per series). `spec.model_dump_json()` writes a
    spec back, with every default spelled out (e.g. `"step": 1`,
    `"window": null`), and parses back to an equal spec.
-2. **Build.** `Run.from_spec(spec)` uses a `Builder`, which turns each spec
-   into its node with a plain `match`, one typed method per role
-   (`var_model`, `volatility`, `mean`, `constant_decay`, `calibration`,
-   `volatility_filter`, `backtest`). It keeps a table from spec to node, and frozen specs compare
-   by value, so identical specs, even written separately, give one node
-   (D3). The builder also rejects an input name declared twice differently.
-   It then makes a `Run` of the model nodes, with one backtest function per
-   backtest spec: from a model's `Overshootings` to the test node
-   (`Builder.backtest`).
-3. **Walk the graph.** `Run(models, backtests)` walks each model's
-   `dependencies()` once. It collects `run.input_names` from the input
-   nodes, each name belonging to one node (two different nodes reading one
-   name are an error, so none silently reads another's input) and, if there
-   are backtests, rejects a model with a `last` window
-   anywhere in its graph, giving the path through the graph, e.g.
-   `models.today.vol.decay.window`. Each distinct model node
-   gets one `Overshootings`, shared by all its backtests. Last, it walks
-   the whole graph again, from each model, then from each backtest of each
-   model, into `run.graph` (a `RunGraph`): each distinct node once, as a
-   `GraphNode` with every path it is reached by, e.g.
-   `models.gauss.vol` or `backtests.gauss.kupiec.overshootings`, and
-   one `GraphEdge` per dependency, from the node read to its reader,
-   labelled with the dependency's name. The report reads it (R19).
-4. **Check inputs.** `run.run(returns, inputs)` makes a `Cache` and calls
-   `run.evaluate(cache)`, which checks that every input in
-   `run.input_names` is in `cache.input_names` before computing anything
-   (R13). Inputs no node reads are ignored.
-5. **Compute.** On that one `Cache`: the models' pool, then each model's
-   pool of backtests. Every node of `run.graph` is then in the cache, so a
-   caller holding the cache, e.g. the report, reads any of them for free. The result is a `RunResult`: `models[name]` is the VaR series,
-   `backtests[model][backtest]` is the backtest result.
+2. **Build.** `Context.from_spec(spec)` first rejects an input declared
+   twice differently (`build._check_input_specs`), then opens a context
+   with the spec's labels and backtest functions. Plain typed functions in
+   `build.py` turn each spec into its node with a `match`, recursively
+   building its inputs. Model keys become node names. A VaR input has one
+   name, so its model key must match its input name; a mismatch is a
+   `ValueError` naming `models.<key>`. Equal nodes share computation by
+   value (D9): there are no tables of built nodes in this path. Each
+   backtest function binds its own spec with `partial(_build_backtest,
+   backtest_spec)`, and later takes a model's `Overshootings`.
+3. **Walk the graph.** Before returning, `Context.from_spec` closes the
+   block and calls `ctx.graph()` to check the names, labels, inputs and
+   `last` windows. Each model gets one `Overshootings`, shared by its
+   backtests. The `RunGraph` lists every distinct node with all its paths,
+   and one edge per dependency (see "Contexts"). Construction computes
+   nothing, and restores any surrounding context, even on error (D10).
+4. **Check inputs.** `ctx.run(returns, inputs)` checks every input named
+   by the graph is given before computing anything (R13). Inputs no node
+   reads are ignored.
+5. **Compute.** The context computes every node once, inputs first (see
+   "Contexts"). The `Results` holds every output, read by node or name,
+   with `models[name]` for the VaR and `backtests[model][test]` for each
+   backtest result. A report reads these results without computing again.
+
+The legacy `Run.from_spec` still uses `Builder` and its sharing tables;
+they are removed together in step 5c-3.
 
 Example:
 
@@ -268,7 +264,7 @@ Example:
                                   "decay": {"type": "constant",
                                             "value": 0.94}}},
                "window": {"type": "trailing", "length": 500}},
-    "ext_99": {"type": "input", "name": "var_ext", "cf": 0.99}
+    "var_ext": {"type": "input", "name": "var_ext", "cf": 0.99}
   },
   "backtests": {
     "kupiec": {"type": "kupiec"},
@@ -281,9 +277,9 @@ Example:
 ```
 
 ```python
-run = Run.from_spec(RunSpec.model_validate_json(text))
-result = run.run(returns, inputs={"var_ext": precomputed_var})
-result.backtests["hs_99"]["kupiec"].p_value[0]
+ctx = Context.from_spec(RunSpec.model_validate_json(text))
+results = ctx.run(returns, inputs={"var_ext": precomputed_var})
+results.backtests["hs_99"]["kupiec"].p_value[0]
 ```
 
 A backtest result has one value per window and series: its arrays have the
@@ -300,8 +296,8 @@ date, e.g. today's VaR without computing every window. It can't be
 backtested: that value is the forecast for a date after the data. So
 `RunSpec` rejects a run with backtests and such a model, giving the path to
 the window, e.g. `models.today.vol.decay.window` (`find_last_window`
-in `specs.py`). `Run` checks the same on its nodes, for runs built in
-Python.
+in `specs.py`). `Context.graph` checks the same on its nodes, for runs built
+in Python.
 
 Every backtest runs on every model (R4). Backtests are named, so two
 versions of one test can sit side by side.
@@ -310,8 +306,8 @@ versions of one test can sit side by side.
 
 Notebooks and scripts (R17) build nodes inside a `Context` (see
 "Contexts"). A service receiving JSON over HTTP parses a `RunSpec` and
-calls `Run.from_spec`, which builds the nodes with a `Builder`, then makes
-a `Run`, until `Context.from_spec` replaces it (step 6 of the migration).
+calls `Context.from_spec`, which builds the nodes inside a context with
+plain functions from the specs, then checks its graph before returning.
 
 ```python
 with Context(
@@ -332,8 +328,8 @@ results = ctx.run(returns)
 
 - Sharing is by value (D3, D9): `vol` and `vol_filter` above are computed
   once, for all the models that read them, and would be even if each model
-  built its own `EwmaVolatility(ConstantDecay(0.94))`. From specs, the
-  `Builder` also gives identical specs one node.
+  built its own `EwmaVolatility(ConstantDecay(0.94))`. Nodes built from
+  specs share by the same value identity.
 - Each backtest is a function from a model's `Overshootings` to the test
   node: the class itself (`KupiecTest`) for its defaults, or a lambda for
   its settings. Every backtest runs on every model (R4), and the backtests
@@ -350,9 +346,9 @@ results = ctx.run(returns)
   JSON.
 
 Specs can be built in Python too, but only as data: a validated
-description of a run, turned into nodes by `Run.from_spec`, e.g. to record
-what ran with `spec.model_dump_json()`. They hold no logic of their own;
-the computation is in the nodes. The class picks the spec, so the `type`
+description of a run, turned into nodes by `Context.from_spec`, e.g. to
+record what ran with `spec.model_dump_json()`. They hold no logic of their
+own; the computation is in the nodes. The class picks the spec, so the `type`
 tags can be left out, and a list of values (one per series) is a tuple.
 Values are checked when each spec is built, so an error's path starts at
 that spec, e.g. `value.list.1` for `ConstantDecaySpec(value=(0.94, 1.5))`.

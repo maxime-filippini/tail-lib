@@ -256,5 +256,5 @@ report.data  # the ReportData shown, e.g. report.data.model_dump_json()
 
 A context built from nodes has no spec, so it can't be written back as JSON.
 To record exactly what ran, write the models as a [spec](specs.md) instead.
-Specs still run through the older `Run.from_spec` until contexts can be
-built from them.
+`Context.from_spec(spec)` builds the same kind of context from that data,
+with the model keys as names, ready for `ctx.run(returns, inputs)`.

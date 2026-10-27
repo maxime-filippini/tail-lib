@@ -1,4 +1,4 @@
-"""Contexts: the nodes declared in a `with` block, computed on any returns.
+"""Contexts: nodes declared in Python or built from specs, run on any returns.
 
 A `Context` will replace `Run` (step 5 of the context API migration, see
 `docs/open-points.md`). Nodes built inside `with Context() as ctx:` bind to
@@ -6,6 +6,9 @@ it (D10). Its value-at-risk models are named, and every backtest given to the
 context runs on every one of them (R4). `ctx.graph()` walks the graph without
 computing; `ctx.run(returns, inputs)` computes every node once, and returns
 `Results`.
+
+`Context.from_spec(spec)` builds the same kind of context from a `RunSpec`,
+with the spec's model keys as node names (R9, R17).
 
     with Context(backtests={"kupiec": KupiecTest}) as ctx:
         vol = EwmaVolatility(ConstantDecay(0.94))
@@ -21,6 +24,7 @@ computing; `ctx.run(returns, inputs)` computes every node once, and returns
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import partial
 from types import MappingProxyType
 from typing import TYPE_CHECKING
 from typing import Any
@@ -29,6 +33,9 @@ from typing import overload
 
 from tail_lib._checks import check_name
 from tail_lib.backtests.overshootings import Overshootings
+from tail_lib.build import _build_backtest
+from tail_lib.build import _build_var_model
+from tail_lib.build import _check_input_specs
 from tail_lib.graph import Backtest
 from tail_lib.graph import Node
 from tail_lib.graph import RunInput
@@ -52,6 +59,7 @@ if TYPE_CHECKING:
     from tail_lib.build import BacktestResult
     from tail_lib.run import BacktestFunction
     from tail_lib.run import RunGraph
+    from tail_lib.run import RunSpec
 
 
 class Context:
@@ -110,6 +118,39 @@ class Context:
         # One token per open `with` block on this context, to restore the
         # context outside it on exit. A list, so blocks can nest.
         self._tokens: list[Token[Context | None]] = []
+
+    @classmethod
+    def from_spec(cls, spec: RunSpec) -> Self:
+        """Build a context from a spec, e.g. received as JSON (R9, R17).
+
+        The spec's model keys name the models. For a VaR input, the key
+        has to match its input name, since the node has one name (R13).
+        Plain functions build each node and its inputs inside the context;
+        equal nodes share computation by value (D9). Every backtest in the
+        spec runs on every model (R4).
+
+        Args:
+            spec (RunSpec): The validated run spec.
+
+        Returns:
+            Self: A context ready to run on returns and named inputs.
+
+        Raises:
+            ValueError: If an input is declared twice, differently, a VaR
+                input's model key differs from its input name, or the
+                nodes violate the context's name or window rules.
+
+        """
+        _check_input_specs(spec.models.values())
+        backtests: dict[str, BacktestFunction] = {
+            name: partial(_build_backtest, backtest)
+            for name, backtest in spec.backtests.items()
+        }
+        with cls(backtests=backtests, labels=spec.labels) as ctx:
+            for name, model in spec.models.items():
+                _build_var_model(model, name=name)
+        ctx.graph()
+        return ctx
 
     def __enter__(self) -> Self:
         """Make this context the one nodes bind to, until the block ends."""

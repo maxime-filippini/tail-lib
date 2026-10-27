@@ -76,10 +76,11 @@ The same run, written as a JSON spec:
 ```
 
 ```python
-from tail_lib.run import Run, RunSpec
+from tail_lib.context import Context
+from tail_lib.run import RunSpec
 
-run = Run.from_spec(RunSpec.model_validate_json(text))
-result = run.run(returns)
+ctx = Context.from_spec(RunSpec.model_validate_json(text))
+results = ctx.run(returns)
 ```
 
 ## Where to go next

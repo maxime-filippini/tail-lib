@@ -13,18 +13,17 @@ Working rules, from `CLAUDE.md` and the developer:
 
 State as of 2026-10-27: branch `feat/context-api`, from `develop`, not
 pushed. ty and ruff (excluding the untracked `examples/t.ipynb`) pass, as
-do all 658 tests. The notebook has an existing import-order lint error.
+do all 674 tests. The notebook has an existing import-order lint error.
 
 ## Next up
 
 1. **Context API**, plan agreed with the developer on 2026-10-26, see
-   "Context API" under "Design questions". Steps 0 to 5c-1 committed, with
+   "Context API" under "Design questions". Steps 0 to 5c-2 committed, with
    the `var` rename. The rest,
    reordered by the developer on 2026-10-27 so specs run at every commit:
-   5c-2 (node and shared-computation tests on contexts) done, awaiting
-   review; then step 6 (`Context.from_spec`), and 5c-3 (`Run`, `RunResult`,
-   `Cache`, `Pool`, `node.run` and the `Builder` removed), each reviewed on
-   its own.
+   step 6 (`Context.from_spec`) done, awaiting review; then 5c-3 (`Run`,
+   `RunResult`, `Cache`, `Pool`, `node.run` and the `Builder` removed), each
+   reviewed on its own.
 2. **Run date range (R21–R23)**, agreed with the developer on 2026-10-25,
    see "Run date range" under "Design questions". Step 1 (docs) done,
    awaiting review. Steps 2 to 5 wait for the context API.
@@ -569,6 +568,33 @@ Done in step 5c-2 (2026-10-27), no output changed:
 - Validation: ty, ruff excluding the untracked notebook, and all 658
   tests pass. The strict docs build still fails on the existing README
   link in `reviews/2026-10-25-risk-manager-review.md`.
+
+Done in step 6 (2026-10-27), no pinned output changed:
+
+- `Context.from_spec(spec)` builds a context from a `RunSpec` (R9, R9a,
+  R17), with the spec's labels and one backtest function per backtest spec
+  (R4). Plain `match` functions in `build.py` build the models inside the
+  context, with model keys as node names. Value identity shares equal
+  nodes (D9), without using the `Builder` or its tables.
+- Input declarations are checked before building: a name declared twice
+  differently is still an error (R13). A VaR input's model key must match
+  its input name, as decided for step 5; a mismatch raises `ValueError`
+  with the model's path. `RunSpec` keeps its existing `last`-window check
+  and error paths (R9b).
+- The context's graph is checked before returning, without computing.
+  Building from a spec restores any surrounding context, on success and
+  on error (D10).
+- `tests/test_context_specs.py` checks each model family against Python
+  nodes, batch values, both EWMA starts, calibrated decays, trailing and
+  `Last` windows, input names, labels, shared computation and each
+  backtest's settings. A context can run again on different returns.
+- The spec guide, the home page and `architecture.md` now show
+  `Context.from_spec`. Input model keys in their examples match their
+  input names. `RunSpec` still lives in `tail_lib.run`; its name is
+  unchanged. `Run`, `Builder` and their tests stay until step 5c-3.
+- Validation: ty, ruff excluding the untracked notebook, and all 674
+  tests pass. All five Python blocks on the home page and spec guide run.
+  The strict docs build still reports only the existing README link.
 
 **Still open**
 

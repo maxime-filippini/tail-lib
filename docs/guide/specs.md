@@ -2,24 +2,26 @@
 
 A spec describes a run as data: JSON, or Python dicts (R9). It is the way in
 for a service that receives runs over HTTP (R17), and the form to keep a
-record of what ran. A spec holds no logic: `Run.from_spec` turns it into the
-same nodes you would build [in Python](python-runs.md).
+record of what ran. A spec holds no logic: `Context.from_spec` turns it into
+the same nodes you would build [in Python](python-runs.md).
 
 ## The steps
 
 ```python
-from tail_lib.run import Run, RunSpec
+from tail_lib.context import Context
+from tail_lib.run import RunSpec
 
 spec = RunSpec.model_validate_json(text)  # or RunSpec.model_validate(a_dict)
-run = Run.from_spec(spec)
-result = run.run(returns, inputs={"var_ext": var_ext})
+ctx = Context.from_spec(spec)
+results = ctx.run(returns, inputs={"var_ext": var_ext})
 ```
 
 1. **Parse.** [`RunSpec`][tail_lib.run.RunSpec] checks every field name, type
    and value range. An error gives the path to the faulty value (R9b).
-2. **Build.** `Run.from_spec` builds one node per distinct spec, so identical
-   parts of separate models are computed once (D3).
-3. **Run.** As for any run: see [results](python-runs.md#results).
+2. **Build.** `Context.from_spec` builds the nodes inside a context. Equal
+   nodes share computation by value, so identical parts of separate models
+   are computed once (D9).
+3. **Run.** As for any context: see [results](python-runs.md#results).
 
 ## A run spec
 
@@ -38,7 +40,7 @@ result = run.run(returns, inputs={"var_ext": var_ext})
                                   "decay": {"type": "constant",
                                             "value": 0.94}}},
                "window": {"type": "trailing", "length": 500}},
-    "ext_99": {"type": "input", "name": "var_ext", "cf": 0.99}
+    "var_ext": {"type": "input", "name": "var_ext", "cf": 0.99}
   },
   "backtests": {
     "kupiec": {"type": "kupiec"},
@@ -62,11 +64,13 @@ result = run.run(returns, inputs={"var_ext": var_ext})
 
 Model, backtest and input names are Python identifiers: letters, digits and
 underscores, not starting with a digit, e.g. `gauss_99` but not `gauss 99`
-or `kupiec-250`. A model and a backtest can't share a name.
+or `kupiec-250`. A node and a backtest can't share a name, nor can two
+different nodes.
 
 Run inputs aren't listed separately: they are the `input` specs inside the
-models, here `var_ext`. Pass them to `run.run` by name; `run.input_names`
-lists them.
+models, here `var_ext`. Pass them to `ctx.run` by name. A VaR input's model
+key must match its input name, since its node has one name. Missing inputs
+are reported before computing any node.
 
 ## How specs are written
 
@@ -198,7 +202,7 @@ models.g
 `error.errors()` gives each error as a dict, with its path (`loc`) and
 message (`msg`), e.g. to send back from a service.
 
-Two more rules are checked on the whole run:
+Three more rules are checked on the whole run:
 
 - **No backtests on a `last` model.** A model with a `last` window, or
   reading a node that has one, gives one value, on the last date: there is
@@ -212,16 +216,20 @@ Two more rules are checked on the whole run:
     Put such models in their own run, without backtests. A `last` window on a
     *backtest* is fine: it tests the last dates only.
 
-- **One spec per input name.** `Run.from_spec` raises a `ValueError` if two
-  input specs share a name but differ, e.g. in their `cf`.
+- **One spec per input name.** `Context.from_spec` raises a `ValueError` if
+  two input specs share a name but differ, e.g. in their `cf`.
+
+- **One name for a VaR input.** `Context.from_spec` raises a `ValueError`
+  naming the model's path if an input model's key differs from its `name`.
+  Use `"var_ext": {"type": "input", "name": "var_ext", "cf": 0.99}`.
 
 ## Sharing
 
-Specs are frozen and compare by value. `Run.from_spec` builds one node per
-distinct spec, so identical parts of separately written models are computed
-once (D3). In the example above, writing the same `filter` in two
-`filtered_historical` models on 500 and 750 dates gives one filter, computed
-once.
+Specs are frozen and compare by value. `Context.from_spec` builds equal
+nodes for identical parts of separately written models, and the context
+computes each once (D9). In the example above, writing the same `filter` in
+two `filtered_historical` models on 500 and 750 dates gives one filter,
+computed once.
 
 ## Writing a spec back
 
@@ -236,8 +244,8 @@ RunSpec.model_validate_json(spec.model_dump_json()) == spec  # True
 ## Specs in Python
 
 Spec classes can also be built in Python, as data: a checked description of a
-run, to turn into nodes with `Run.from_spec`, or to save. The class picks the
-spec, so `type` tags can be left out, and a list of values is a tuple.
+run, to turn into nodes with `Context.from_spec`, or to save. The class picks
+the spec, so `type` tags can be left out, and a list of values is a tuple.
 
 ```python
 from tail_lib.run import RunSpec
