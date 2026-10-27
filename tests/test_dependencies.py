@@ -11,6 +11,7 @@ from tail_lib.backtests.kupiec import KupiecTest
 from tail_lib.backtests.overshootings import Overshootings
 from tail_lib.graph import Cache
 from tail_lib.graph import Node
+from tail_lib.graph import RunInput
 from tail_lib.models.ewma import ConstantDecay
 from tail_lib.models.ewma import EwmaDecayCalibration
 from tail_lib.models.mean import ConstantMean
@@ -70,10 +71,16 @@ def _one_node_of_each_type() -> list[Node[Any]]:
     ]
 
 
+# Base classes that aren't abstract, but aren't node types a run holds either.
+_BASE_CLASSES = {RunInput}
+
+
 def _library_node_types(cls: type[Node[Any]] = Node) -> Iterator[type[Node[Any]]]:
     for subclass in cls.__subclasses__():
-        if subclass.__module__.startswith("tail_lib.") and not inspect.isabstract(
-            subclass
+        if (
+            subclass.__module__.startswith("tail_lib.")
+            and not inspect.isabstract(subclass)
+            and subclass not in _BASE_CLASSES
         ):
             yield subclass
         yield from _library_node_types(subclass)
@@ -88,22 +95,22 @@ def test_every_node_type_is_checked() -> None:
 @pytest.mark.parametrize(
     "node", _one_node_of_each_type(), ids=lambda node: type(node).__name__
 )
-def test_dependencies_are_the_nodes_evaluate_reads(node: Node[Any]) -> None:
+def test_dependencies_are_the_nodes_the_cache_reads(node: Node[Any]) -> None:
     returns = simulated_returns(n=300)
     run_input = TimeSeries(
         dates=returns.dates, values=np.full(returns.values.shape, -0.02)
     )
     cache = _RecordingCache(returns, inputs={"vol": run_input, "var": run_input})
-    # Compute the dependencies first, so that only the nodes `evaluate` itself
-    # asks for are recorded. An undeclared node would also record its own.
+    # Compute the dependencies first, so that only the node and the nodes it
+    # reads are recorded. An undeclared node would also record its own.
     dependencies = list(node.dependencies().values())
     for dependency in dependencies:
         cache.get(dependency)
     cache.requested.clear()
 
-    node.evaluate(cache)
+    cache.get(node)
 
-    assert set(cache.requested) == set(dependencies)
+    assert set(cache.requested) == {node, *dependencies}
 
 
 @pytest.mark.parametrize(
@@ -140,22 +147,14 @@ def test_settings_and_dependencies_cover_the_constructor_arguments(
     assert settings | dependencies == arguments
 
 
-# Nodes still gathering their inputs in their own `evaluate`, until their
-# step of the context API migration (see `docs/open-points.md`).
-_OWN_EVALUATE = {
-    "VolatilityInput",
-    "ValueAtRiskInput",
-}
-
-
-def test_only_the_nodes_not_yet_moved_have_their_own_evaluate() -> None:
+def test_no_library_node_has_its_own_evaluate() -> None:
     own = {
         type(node).__name__
         for node in _one_node_of_each_type()
         if type(node).evaluate is not Node.evaluate
     }
 
-    assert own == _OWN_EVALUATE
+    assert own == set()
 
 
 @pytest.mark.parametrize(
@@ -165,8 +164,7 @@ def test_building_a_node_checks_its_compute(
     node: Node[Any], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # Every `__post_init__` has to reach `Node.__post_init__`, which checks
-    # `compute` against the inputs (D11) for the nodes on the generic
-    # `evaluate`.
+    # `compute` against the inputs (D11).
     checked: list[Node[Any]] = []
     check = Node._check_compute  # noqa: SLF001
 
@@ -177,5 +175,4 @@ def test_building_a_node_checks_its_compute(
     monkeypatch.setattr(Node, "_check_compute", recording)
     copy = dataclasses.replace(node)
 
-    uses_generic_evaluate = type(node).__name__ not in _OWN_EVALUATE
-    assert checked == ([copy] if uses_generic_evaluate else [])
+    assert checked == [copy]

@@ -10,12 +10,11 @@ from typing import assert_never
 
 import numpy as np
 
-from tail_lib._checks import check_name
 from tail_lib._checks import check_positive
 from tail_lib._checks import check_probability
 from tail_lib.distributions import Gaussian
-from tail_lib.graph import Cache
 from tail_lib.graph import Node
+from tail_lib.graph import RunInput
 from tail_lib.models.mean import MeanModel
 from tail_lib.models.mean import ZeroMean
 from tail_lib.time_series import TimeSeries
@@ -73,13 +72,14 @@ class ValueAtRiskModel(Node[TimeSeries]):
 
 
 @dataclass(frozen=True)
-class ValueAtRiskInput(ValueAtRiskModel):
+class ValueAtRiskInput(ValueAtRiskModel, RunInput):
     """Value-at-risk forecasts passed in at run time, under a name (R13).
 
     The value-at-risk on date `t` is the input's value on date `t`. Like every
     value-at-risk model's, it should be the forecast for date `t + 1`, using
     data up to and including `t`, at confidence level `cf`: the library cannot
-    check this. Backtests read `cf` from here.
+    check this. Backtests read `cf` from here. The cache reads it from the run
+    inputs, see `RunInput`.
 
     Building it raises `ValueError` if the name isn't a Python identifier, or
     the confidence level isn't in (0, 1).
@@ -90,35 +90,6 @@ class ValueAtRiskInput(ValueAtRiskModel):
         cf (float): The confidence level the forecasts were computed at.
 
     """
-
-    name: str
-
-    def __post_init__(self) -> None:
-        super().__post_init__()
-        check_name("Input", self.name)
-
-    def evaluate(self, cache: Cache) -> TimeSeries:
-        """Read the input from the cache, as given to the run.
-
-        Args:
-            cache (Cache): Holds the returns and the run inputs.
-
-        Returns:
-            TimeSeries: The input, with the dates and shape of the returns.
-
-        """
-        return cache.input(self.name)
-
-    # Every `compute` takes the returns first, even when it doesn't use them.
-    def compute(self, returns: TimeSeries, /) -> TimeSeries:  # noqa: ARG002
-        """Refuse to compute: the input is read from the run, see `evaluate`.
-
-        Raises:
-            TypeError: Always.
-
-        """
-        msg = f"Input {self.name!r} is given to the run, not computed!"
-        raise TypeError(msg)
 
 
 @dataclass(frozen=True, kw_only=True)

@@ -24,11 +24,10 @@ from tail_lib.build import BacktestResult
 from tail_lib.build import Builder
 from tail_lib.graph import Cache
 from tail_lib.graph import Pool
+from tail_lib.graph import RunInput
 from tail_lib.models.ewma import EwmaDecayCalibration
 from tail_lib.models.value_at_risk import FilteredHistoricalSimulationsModel
 from tail_lib.models.value_at_risk import HistoricalSimulationsModel
-from tail_lib.models.value_at_risk import ValueAtRiskInput
-from tail_lib.models.volatility import VolatilityInput
 from tail_lib.specs import BacktestSpec
 from tail_lib.specs import Label
 from tail_lib.specs import Name
@@ -508,11 +507,7 @@ def _run_graph(roots: list[tuple[str, Node[Any]]]) -> RunGraph:
 
 def _input_name(node: Node[Any]) -> str | None:
     """Give the name of the run input a node reads, if it is an input node."""
-    match node:
-        case ValueAtRiskInput() | VolatilityInput():
-            return node.name
-        case _:
-            return None
+    return node.name if isinstance(node, RunInput) else None
 
 
 def _window(node: Node[Any]) -> Trailing | Last | None:

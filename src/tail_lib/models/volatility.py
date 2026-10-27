@@ -8,10 +8,9 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from tail_lib._checks import check_name
-from tail_lib.graph import Cache
 from tail_lib.graph import Node
 from tail_lib.graph import Preprocessor
+from tail_lib.graph import RunInput
 from tail_lib.graph import frozen_floats
 from tail_lib.models.ewma import DEFAULT_EWMA_START
 from tail_lib.models.ewma import DecayFactors
@@ -37,12 +36,13 @@ class VolatilityModel(Preprocessor):
 
 
 @dataclass(frozen=True)
-class VolatilityInput(VolatilityModel):
+class VolatilityInput(VolatilityModel, RunInput):
     """Volatilities passed in at run time, under a name (R13).
 
     The volatility on date `t` is the input's value on date `t`. Like every
     volatility model's, it should be the forecast for date `t + 1`, using data
-    up to and including `t`: the library cannot check this.
+    up to and including `t`: the library cannot check this. The cache reads
+    it from the run inputs, see `RunInput`.
 
     Building it raises `ValueError` if the name isn't a Python identifier.
 
@@ -51,35 +51,6 @@ class VolatilityInput(VolatilityModel):
             identifier.
 
     """
-
-    name: str
-
-    def __post_init__(self) -> None:
-        check_name("Input", self.name)
-        super().__post_init__()
-
-    def evaluate(self, cache: Cache) -> TimeSeries:
-        """Read the input from the cache, as given to the run.
-
-        Args:
-            cache (Cache): Holds the returns and the run inputs.
-
-        Returns:
-            TimeSeries: The input, with the dates and shape of the returns.
-
-        """
-        return cache.input(self.name)
-
-    # Every `compute` takes the returns first, even when it doesn't use them.
-    def compute(self, returns: TimeSeries, /) -> TimeSeries:  # noqa: ARG002
-        """Refuse to compute: the input is read from the run, see `evaluate`.
-
-        Raises:
-            TypeError: Always.
-
-        """
-        msg = f"Input {self.name!r} is given to the run, not computed!"
-        raise TypeError(msg)
 
 
 @dataclass(frozen=True)

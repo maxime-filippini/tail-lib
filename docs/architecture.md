@@ -19,7 +19,7 @@ How tail-lib is organized, and how a call flows from a spec to the numbers
   every decay factor), and called by each class that takes the value. Specs
   check value ranges too, for errors with a path (R9b).
 - **Names** (R20): model, backtest and run input names are Python
-  identifiers, checked by `check_name` in `Run`, in the input nodes, and in
+  identifiers, checked by `check_name` in `Run`, in `RunInput`, and in
   specs (`Name`). So the dotted paths through a run's graph, e.g.
   `models.gauss.vol`, are unambiguous. A model and a backtest can't
   share a name. Display names are `labels` on `Run` and `RunSpec`, checked
@@ -32,7 +32,7 @@ How tail-lib is organized, and how a call flows from a spec to the numbers
 |---|---|
 | `time_series.py`, `calendar.py` | `TimeSeries`, and the calendar behind its date helpers (R8a). |
 | `windows.py` | `Trailing` and `Last` window specs, and `Windows`: the windows over a series, `apply` and `to_series` (D5). With `skip_leading_nan=True`, the windows start on the first date where every series has a value (R16). |
-| `graph.py` | `Node`, `Preprocessor`, `Cache`, `Pool`: the computation graph. |
+| `graph.py` | `Node`, `Preprocessor`, `Backtest`, `RunInput`, `Cache`, `Pool`: the computation graph. |
 | `models/mean.py` | `MeanModel`, `ZeroMean`, `ConstantMean`. |
 | `models/ewma.py` | EWMA start specs (`Backcast`, `StartingVol`), the recursion (`ewma_update`, `ewma_variance`), decay nodes (`ConstantDecay`, `EwmaDecayCalibration`), which output `DecayFactors` (the decay on each date, its refit dates and the first date of each fit), and the decay fit. |
 | `models/garch.py` | The GARCH(1, 1) recursion (`garch_update`), shared by the simulator and a future GARCH volatility model. |
@@ -85,11 +85,13 @@ can be hashed; `np.asarray` gives the array back.
   mean)`. Building a node checks this signature (D11, `_check_compute`), so
   a mismatch fails where the node is declared; a node's `__post_init__`
   calls `super().__post_init__()` for it.
-- `evaluate(cache)` is written once, in `Node`: it gets each dependency's
-  output with `cache.get(node)`, then calls `compute`. Until their step of
-  the migration, the input nodes keep an `evaluate` of their own, and
-  their `compute` isn't checked; `tests/test_dependencies.py` lists them.
-  Their `compute` refuses to run: their output is read from the run.
+- `evaluate(cache)` is written once, in `Node`, and no library node
+  overrides it: it gets each dependency's output with `cache.get(node)`,
+  then calls `compute`.
+- Run inputs (R13) are `RunInput` nodes, `VolatilityInput` and
+  `ValueAtRiskInput`, each with a `name`, checked to be a Python
+  identifier. The cache never computes them: their output is the run input
+  of their name. Their `compute` refuses to run.
 - `dependencies()` lists the nodes `evaluate` reads: the fields holding
   nodes, keyed by field, e.g. `{"vol": ..., "mean": ...}`. It
   is written once, in `Node`. So a graph can be walked without computing
@@ -111,6 +113,8 @@ can be hashed; `np.asarray` gives the array back.
   node at most once, identified by value, and detects cycles. It also
   holds the named run inputs (R13): `cache.input(name)` checks the input is
   aligned with the returns, and raises `KeyError` if it is missing.
+  `cache.get` gives a `RunInput` node `cache.input(node.name)`, and calls
+  `evaluate` for every other node.
 - `Pool(nodes)` computes named nodes on one cache. Pools evaluated on the
   same cache share their common nodes.
 - `node.run(returns, inputs)` and `pool.run(returns, inputs)` do the same with

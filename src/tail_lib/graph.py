@@ -11,8 +11,9 @@ with equal constructor arguments, their input nodes included, are one node
 settings.
 
 Data from outside a run, e.g. value-at-risk forecasts computed earlier, enters
-it as named inputs (R13): the caller passes them to the cache by name, and an
-input node reads its own name.
+it as named inputs (R13): the caller passes them to the cache by name, and the
+cache gives each input node (a `RunInput`) the input of its name as its
+output, without computing it.
 """
 
 from __future__ import annotations
@@ -28,6 +29,7 @@ from typing import Any
 
 import numpy as np
 
+from tail_lib._checks import check_name
 from tail_lib.time_series import TimeSeries
 
 if TYPE_CHECKING:
@@ -63,8 +65,7 @@ class Node[T](ABC):
     Building a node checks that `compute` takes exactly its dependencies, by
     name (D11), so a mismatch fails where the model is declared, not
     mid-run. Subclasses with a `__post_init__` call `super().__post_init__()`
-    for this. Nodes that still gather their inputs in an `evaluate` of their
-    own, while the library moves to the context API, aren't checked.
+    for this. Run inputs (`RunInput`) are read from the run, never computed.
     """
 
     def __post_init__(self) -> None:
@@ -277,6 +278,40 @@ class Backtest[T](Node[T]):
     """
 
 
+@dataclass(frozen=True)
+class RunInput(Node[TimeSeries]):
+    """A node whose output is given to the run, by name, not computed (R13).
+
+    E.g. volatilities or value-at-risk forecasts computed outside the library.
+    The cache gives it the run input of its name as its output, see
+    `Cache.input`, and never calls its `compute`.
+
+    Building one raises `ValueError` if the name isn't a Python identifier.
+
+    Attributes:
+        name (str): The name of the input, as passed to the run: a Python
+            identifier.
+
+    """
+
+    name: str
+
+    def __post_init__(self) -> None:
+        check_name("Input", self.name)
+        super().__post_init__()
+
+    # Every `compute` takes the returns first, even when it doesn't use them.
+    def compute(self, returns: TimeSeries, /) -> TimeSeries:  # noqa: ARG002
+        """Refuse to compute: the output is the run input, see `Cache.get`.
+
+        Raises:
+            TypeError: Always.
+
+        """
+        msg = f"Input {self.name!r} is given to the run, not computed!"
+        raise TypeError(msg)
+
+
 class Cache:
     """Outputs of nodes on one returns time series.
 
@@ -352,10 +387,17 @@ class Cache:
             T: The output of the node.
 
         Raises:
-            ValueError: If the node needs its own output as an input.
+            KeyError: If the node is a run input that wasn't given.
+            ValueError: If the node needs its own output as an input, or is
+                a run input that does not match the returns.
 
         """
         if node in self._outputs:
+            return self._outputs[node]
+
+        # A run input's output is the input of its name, never computed (R13).
+        if isinstance(node, RunInput):
+            self._outputs[node] = self.input(node.name)
             return self._outputs[node]
 
         if node in self._pending:

@@ -17,9 +17,11 @@ pushed. All checks green (ty, ruff, 624 tests).
 ## Next up
 
 1. **Context API**, plan agreed with the developer on 2026-10-26, see
-   "Context API" under "Design questions". Steps 0 to 4b committed, with the
-   `var` rename. Step 4c (pure `compute` for the filter and FHS) done,
-   awaiting review. Then 4d and steps 5 and 6, each reviewed on its own.
+   "Context API" under "Design questions". Steps 0 to 4c committed, with the
+   `var` rename. Step 4d (`RunInput`, the input nodes on the generic
+   `evaluate`) done, awaiting review. Then the generic `evaluate` goes, and
+   the `CLAUDE.md` rules on `evaluate` and the `Cache` are reworded with the
+   developer; then steps 5 and 6, each reviewed on its own.
 2. **Run date range (R21–R23)**, agreed with the developer on 2026-10-25,
    see "Run date range" under "Design questions". Step 1 (docs) done,
    awaiting review. Steps 2 to 5 wait for the context API.
@@ -403,6 +405,25 @@ Done in step 4c (2026-10-27), no output changed:
   it a preprocessor. The page itself is unchanged.
 - The regression test pins a filter's `standardized` returns, under the
   same keys.
+
+Done in step 4d (2026-10-27), no output changed:
+
+- `RunInput` (in `graph.py`), chosen by the developer over the run seeding
+  the cache with each input node's output (its graph walk is in `run.py`,
+  which `node.run` and `Pool.run` don't use), and over waiting for the
+  context. It is a frozen dataclass with the `name` field, which it checks
+  is an identifier, and a `compute` that raises `TypeError`.
+  `VolatilityInput` and `ValueAtRiskInput` inherit it, next to their
+  model base class; their constructors are unchanged.
+- `Cache.get` gives a `RunInput` node `cache.input(node.name)`, aligned
+  with the returns, and never calls its `compute`. The input nodes'
+  `evaluate` went, so no library node has its own `evaluate`, and building
+  any node checks its `compute` (D11).
+- `run._input_name` is an `isinstance` check on `RunInput` instead of a
+  `match` on the two classes, so the report's `input_name` follows.
+- Left for the next change: the generic `evaluate` goes (the cache calls
+  `compute` itself), and with it the `type(self).evaluate is Node.evaluate`
+  condition before the D11 check, which only test nodes still need.
 
 **Still open**
 
