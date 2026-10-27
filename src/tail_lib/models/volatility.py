@@ -36,7 +36,7 @@ class VolatilityModel(Preprocessor):
 
 
 @dataclass(frozen=True)
-class VolatilityInput(VolatilityModel, RunInput):
+class VolatilityInput(RunInput, VolatilityModel):
     """Volatilities passed in at run time, under a name (R13).
 
     The volatility on date `t` is the input's value on date `t`. Like every

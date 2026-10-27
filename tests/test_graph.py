@@ -13,11 +13,13 @@ from tail_lib.models.ewma import DecayFactors
 from tail_lib.models.ewma import EwmaDecayCalibration
 from tail_lib.models.value_at_risk import GaussianModel
 from tail_lib.models.value_at_risk import HistoricalSimulationsModel
+from tail_lib.models.value_at_risk import ValueAtRiskInput
 from tail_lib.models.value_at_risk import ValueAtRiskModel
 from tail_lib.models.volatility import ConstantVolatility
 from tail_lib.models.volatility import EwmaVolatility
 from tail_lib.models.volatility import FilteredReturns
 from tail_lib.models.volatility import VolatilityFilter
+from tail_lib.models.volatility import VolatilityInput
 from tail_lib.models.volatility import VolatilityModel
 from tail_lib.time_series import TimeSeries
 from tail_lib.windows import Trailing
@@ -252,3 +254,42 @@ def test_a_compute_not_matching_the_inputs_fails_when_the_node_is_built(
 ) -> None:
     with pytest.raises(TypeError, match=match):
         node_type(ConstantVolatility(0.01))
+
+
+def test_a_name_is_not_part_of_a_nodes_identity() -> None:
+    named = GaussianModel(cf=0.99, vol=ConstantVolatility(0.01), name="gauss")
+    renamed = GaussianModel(cf=0.99, vol=ConstantVolatility(0.01), name="other")
+    unnamed = GaussianModel(cf=0.99, vol=ConstantVolatility(0.01))
+
+    assert named == renamed == unnamed
+    assert hash(named) == hash(renamed) == hash(unnamed)
+    assert named.name == "gauss"
+    assert unnamed.name is None
+    assert "name" not in named.settings()
+    assert "gauss" not in repr(named)
+
+
+def test_equal_nodes_with_different_names_are_computed_once() -> None:
+    vol = _CountingVolatility(0.02)
+
+    Pool(
+        {
+            "a": GaussianModel(cf=0.99, vol=vol, name="a"),
+            "b": GaussianModel(cf=0.99, vol=vol, name="b"),
+        }
+    ).run(returns_series(n=50))
+
+    assert vol.n_calls == 1
+
+
+@pytest.mark.parametrize("name", ["gauss-99", "1gauss", "gauss 99", ""])
+def test_a_node_name_has_to_be_an_identifier(name: str) -> None:
+    with pytest.raises(ValueError, match="identifier"):
+        ConstantVolatility(0.01, name=name)
+
+
+def test_a_run_inputs_name_is_part_of_its_identity() -> None:
+    assert VolatilityInput("a") == VolatilityInput("a")
+    assert VolatilityInput("a") != VolatilityInput("b")
+    assert ValueAtRiskInput("a", cf=0.99).name == "a"
+    assert VolatilityInput("a").settings() == {"name": "a"}

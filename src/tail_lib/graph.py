@@ -22,6 +22,7 @@ import inspect
 from abc import ABC
 from abc import abstractmethod
 from dataclasses import dataclass
+from dataclasses import field
 from dataclasses import fields
 from functools import cache
 from typing import TYPE_CHECKING
@@ -48,12 +49,19 @@ class Node[T](ABC):
 
     Subclasses are frozen dataclasses, so a node is identified by value: its
     class and its fields, which are its constructor arguments (D9). A field
-    excluded from comparison (`compare=False`) is not part of it.
+    excluded from comparison (`compare=False`) is not part of it, e.g. the
+    node's `name`.
 
     The fields holding nodes are the node's `dependencies`, so a graph of
     nodes can be walked without computing it. The other constructor
-    arguments are its `settings`, so the graph can be described, e.g. in a
-    report (R19). Both are read from the fields.
+    arguments that are part of its identity are its `settings`, so the graph
+    can be described, e.g. in a report (R19). Both are read from the fields.
+
+    Any node can be given a `name`, a Python identifier (R20), to be found
+    by it, e.g. a value-at-risk model in a context. The name is not part of
+    the node's identity: two equal nodes with different names are one node,
+    computed once. A run input's name is the input it reads, and is part of
+    its identity, see `RunInput`.
 
     Subclasses implement `compute`, which is pure (see `CLAUDE.md`): it takes
     the returns, then one keyword argument per dependency, named after its
@@ -66,9 +74,18 @@ class Node[T](ABC):
     name (D11), so a mismatch fails where the model is declared, not
     mid-run. Subclasses with a `__post_init__` call `super().__post_init__()`
     for this. Run inputs (`RunInput`) are read from the run, never computed.
+
+    Attributes:
+        name (str | None): The node's name, keyword-only. `None` by default.
+
     """
 
+    # Not part of the identity, nor of the repr, which shows the identity.
+    name: str | None = field(default=None, kw_only=True, compare=False, repr=False)
+
     def __post_init__(self) -> None:
+        if self.name is not None:
+            check_name("Node", self.name)
         self._check_compute()
 
     # Each node takes its own inputs, so `compute` has no common signature.
@@ -139,7 +156,7 @@ class Node[T](ABC):
         "linear"}` for a historical simulation. Arrays are stored as nested
         tuples, see `frozen_floats`. Arguments that are nodes are in
         `dependencies` instead, so together they cover every constructor
-        argument.
+        argument that is part of the node's identity: not its `name`.
 
         Returns:
             Settings: The settings of this node, by name.
@@ -155,12 +172,13 @@ class Node[T](ABC):
     def _constructor_arguments(self) -> dict[str, Any]:
         """Give the fields set by the constructor, by name, with their values.
 
-        Fields the node derives itself (`init=False`) are left out.
+        Fields the node derives itself (`init=False`), and fields that aren't
+        part of its identity (`compare=False`), e.g. its `name`, are left out.
         """
         return {
-            field.name: getattr(self, field.name)
-            for field in fields(self)
-            if field.init
+            node_field.name: getattr(self, node_field.name)
+            for node_field in fields(self)
+            if node_field.init and node_field.compare
         }
 
     def run(
@@ -271,6 +289,12 @@ class RunInput(Node[TimeSeries]):
     The cache gives it the run input of its name as its output, see
     `Cache.input`, and never calls its `compute`.
 
+    Its name is both the node's name and the input it reads, e.g.
+    `ValueAtRiskInput("var_ext", cf=0.99)` is the model `var_ext`, reading
+    the run input `var_ext`. Unlike other nodes' names, it is part of the
+    node's identity, and a setting: inputs of different names are different
+    nodes.
+
     Building one raises `ValueError` if the name isn't a Python identifier.
 
     Attributes:
@@ -279,7 +303,11 @@ class RunInput(Node[TimeSeries]):
 
     """
 
-    name: str
+    # Replaces `Node.name`: required, positional, and part of the identity.
+    # `field()` keeps it required: a bare annotation would inherit the
+    # `None` default `Node` sets on the class. Subclasses list `RunInput`
+    # first among their bases, so this field wins over `Node.name` again.
+    name: str = field()
 
     def __post_init__(self) -> None:
         check_name("Input", self.name)

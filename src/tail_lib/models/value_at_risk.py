@@ -72,7 +72,7 @@ class ValueAtRiskModel(Node[TimeSeries]):
 
 
 @dataclass(frozen=True)
-class ValueAtRiskInput(ValueAtRiskModel, RunInput):
+class ValueAtRiskInput(RunInput, ValueAtRiskModel):
     """Value-at-risk forecasts passed in at run time, under a name (R13).
 
     The value-at-risk on date `t` is the input's value on date `t`. Like every

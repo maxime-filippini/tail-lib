@@ -78,6 +78,12 @@ separately. The fields are the constructor arguments. Arrays given to a node
 (a value per series) are stored as nested tuples (`frozen_floats`), so they
 can be hashed; `np.asarray` gives the array back.
 
+- Any node takes an optional keyword `name`, a Python identifier (R20),
+  `None` by default. It is not part of the node's identity
+  (`compare=False`), nor a setting, nor in its `repr`: two equal nodes with
+  different names are one node, computed once. A context (step 5 of the
+  migration) will register its VaR models by name.
+
 - `compute(returns, /, **inputs)` is pure: it uses only its arguments and
   the node's own settings (see `CLAUDE.md`). After the returns, it takes one
   keyword-only argument per dependency, named after its field, holding that
@@ -88,7 +94,12 @@ can be hashed; `np.asarray` gives the array back.
 - Run inputs (R13) are `RunInput` nodes, `VolatilityInput` and
   `ValueAtRiskInput`, each with a `name`, checked to be a Python
   identifier. The cache never computes them: their output is the run input
-  of their name. Their `compute` refuses to run.
+  of their name. Their `compute` refuses to run. Their name is both the
+  node's name and the input it reads, and, unlike other nodes' names, it is
+  part of their identity and a setting. `RunInput` redefines the field
+  (required, positional), so its subclasses list it first among their
+  bases: a dataclass takes its fields from its bases in reverse order, and
+  the model base class would otherwise bring back `Node.name`.
 - `dependencies()` lists the nodes whose outputs `compute` takes: the fields holding
   nodes, keyed by field, e.g. `{"vol": ..., "mean": ...}`. It
   is written once, in `Node`. So a graph can be walked without computing

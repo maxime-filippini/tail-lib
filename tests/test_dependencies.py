@@ -131,7 +131,8 @@ def test_settings_and_dependencies_cover_the_constructor_arguments(
     node: Node[Any],
 ) -> None:
     # Every constructor argument is either a setting or a dependency, and
-    # nothing else is.
+    # nothing else is, but a node's `name`, which isn't part of its identity
+    # (a run input's is, and is a setting).
     # A node without its own `__init__` shows `object`'s `*args, **kwargs`.
     parameters = inspect.signature(type(node).__init__).parameters.values()
     arguments = {
@@ -140,6 +141,8 @@ def test_settings_and_dependencies_cover_the_constructor_arguments(
         if parameter.name != "self"
         and parameter.kind not in {parameter.VAR_POSITIONAL, parameter.VAR_KEYWORD}
     }
+    if not isinstance(node, RunInput):
+        arguments.remove("name")
     settings = set(node.settings())
     dependencies = set(node.dependencies())
 

@@ -12,15 +12,15 @@ Working rules, from `CLAUDE.md` and the developer:
 - Commit only when the developer says so. Commits have no co-author trailer.
 
 State as of 2026-10-27: branch `feat/context-api`, from `develop`, not
-pushed. All checks green (ty, ruff, 623 tests).
+pushed. All checks green (ty, ruff, 630 tests).
 
 ## Next up
 
 1. **Context API**, plan agreed with the developer on 2026-10-26, see
-   "Context API" under "Design questions". Steps 0 to 4d committed, with the
-   `var` rename. The end of step 4 (no `evaluate`, the `CLAUDE.md` rules
-   reworded) done, awaiting review. Then steps 5 and 6, each reviewed on
-   its own.
+   "Context API" under "Design questions". Steps 0 to 4 committed, with the
+   `var` rename. Step 5a is split in two: 5a-1, node names, done, awaiting
+   review; 5a-2, `Context` and `Results`. Then 5b, 5c and 6, each reviewed
+   on its own.
 2. **Run date range (R21–R23)**, agreed with the developer on 2026-10-25,
    see "Run date range" under "Design questions". Step 1 (docs) done,
    awaiting review. Steps 2 to 5 wait for the context API.
@@ -436,6 +436,44 @@ Done at the end of step 4 (2026-10-27), no output changed:
   field holding another node, a setting a field holding a plain value, and
   `compute` gets the inputs' outputs from the run. They name neither
   `evaluate` nor the `Cache`, so they hold with the context too.
+
+Decided for step 5 by the developer (2026-10-27):
+
+- Names: every node takes an optional `name=` keyword, not part of its
+  identity (as in the sketch). A context registers its VaR models by it,
+  and `Results` reads any named node by it. Names are unique in a context.
+  Rejected: names given to the context only (`ctx.add("gauss", model)`).
+- Run inputs: one name. A run input's name is its node name and the input
+  it reads, and stays part of its identity, so `ValueAtRiskInput("var_ext",
+  cf=0.99)` is the model `var_ext`. The input spec is unchanged; in step 6
+  a spec input model's key has to match its `name`. Rejected: a separate
+  field for the input it reads, which changes the spec's JSON.
+- A name is required in a context only: building a VaR model without one
+  inside a `with Context()` block raises `ValueError` there. Outside a
+  context (tests, `Run` until 5c) no name is needed. Rejected: always
+  required.
+- `Results` is read by node (`results[node]`), by name
+  (`results["gauss"]`), and through tables: `results.models` (name to VaR
+  series) and `results.backtests[model][test]`, as `RunResult` has, so the
+  report moves over with few changes in 5b. Rejected: by node or name only.
+
+Done in step 5a-1 (2026-10-27), no output changed:
+
+- `Node.name`: optional, keyword-only, a Python identifier, checked in
+  `Node.__post_init__`. `compare=False`, so not part of the identity, and
+  `repr=False`. `settings()` and `dependencies()` skip fields with
+  `compare=False`, so the name is neither.
+- `RunInput` redefines `name` as a required positional field, part of the
+  identity. Two dataclass details made this need care, both commented in
+  `graph.py`: the field is written `name: str = field()`, since a bare
+  annotation inherits `Node`'s `None` default from the class attribute;
+  and `VolatilityInput` and `ValueAtRiskInput` list `RunInput` first among
+  their bases (was second), since a dataclass collects its bases' fields in
+  reverse MRO order and the model base class would bring back `Node.name`.
+  Their constructors are unchanged. A bad name is now reported before a bad
+  `cf` on `ValueAtRiskInput`.
+- Nothing reads a node's name yet: `Run`, the report and the specs ignore
+  it until the context.
 
 **Still open**
 
