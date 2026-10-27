@@ -35,6 +35,8 @@ import tail_lib
 from tail_lib.backtests.overshootings import Overshootings
 from tail_lib.graph import Preprocessor
 from tail_lib.models.ewma import Backcast
+from tail_lib.models.ewma import DecayFactors
+from tail_lib.models.ewma import DecayModel
 from tail_lib.models.ewma import StartingVol
 from tail_lib.models.value_at_risk import ValueAtRiskModel
 from tail_lib.run import _input_name
@@ -238,11 +240,14 @@ def build_report_data(
         for edge in run.graph.edges
     ]
 
-    # Every node is already in the cache: `get` only reads it. Backtests
-    # don't give a time series: their results are in `backtests`.
+    # Every node is already in the cache: `get` only reads it. A decay model
+    # gives its decay factors with their refits: the page charts the factors.
+    # Backtests don't give a time series: their results are in `backtests`.
     outputs: dict[str, Values] = {}
     for graph_node in run.graph.nodes:
         output = cache.get(graph_node.node)
+        if isinstance(output, DecayFactors):
+            output = output.values
         if isinstance(output, TimeSeries):
             outputs[ids[graph_node.node]] = _values(output.values)
 
@@ -290,7 +295,7 @@ def _kind(node: Node[Any]) -> NodeKind:
             return "overshootings"
         case ValueAtRiskModel():
             return "model"
-        case Preprocessor():
+        case Preprocessor() | DecayModel():
             return "preprocessor"
         case _:
             # A run's other nodes are its backtests.

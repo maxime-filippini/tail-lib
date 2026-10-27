@@ -20,6 +20,7 @@ from tail_lib.backtests.kupiec import KupiecResult
 from tail_lib.backtests.kupiec import KupiecTest
 from tail_lib.models.ewma import Backcast
 from tail_lib.models.ewma import ConstantDecay
+from tail_lib.models.ewma import DecayModel
 from tail_lib.models.ewma import EwmaDecayCalibration
 from tail_lib.models.ewma import EwmaStart
 from tail_lib.models.ewma import StartingVol
@@ -33,7 +34,6 @@ from tail_lib.models.value_at_risk import ValueAtRiskInput
 from tail_lib.models.value_at_risk import ValueAtRiskModel
 from tail_lib.models.volatility import ConstantVolatility
 from tail_lib.models.volatility import EwmaVolatility
-from tail_lib.models.volatility import FittedEwmaVolatility
 from tail_lib.models.volatility import VolatilityFilter
 from tail_lib.models.volatility import VolatilityInput
 from tail_lib.models.volatility import VolatilityModel
@@ -42,11 +42,11 @@ from tail_lib.specs import BacktestSpec
 from tail_lib.specs import ConstantDecaySpec
 from tail_lib.specs import ConstantMeanSpec
 from tail_lib.specs import ConstantVolatilitySpec
+from tail_lib.specs import DecaySpec
 from tail_lib.specs import EwmaDecayCalibrationSpec
 from tail_lib.specs import EwmaStartSpec
 from tail_lib.specs import EwmaVolatilitySpec
 from tail_lib.specs import FilteredHistoricalSimulationsSpec
-from tail_lib.specs import FittedEwmaVolatilitySpec
 from tail_lib.specs import GaussianSpec
 from tail_lib.specs import HistoricalSimulationsSpec
 from tail_lib.specs import KupiecSpec
@@ -121,6 +121,16 @@ class Builder:
     def calibration(self, spec: EwmaDecayCalibrationSpec) -> EwmaDecayCalibration:
         """Get the decay calibration of a spec, building it on first request."""
         return _get_or_build(self._calibrations, spec, _build_calibration)
+
+    def decay(self, spec: DecaySpec) -> DecayModel:
+        """Get the decay model of a spec, constant or calibrated."""
+        match spec:
+            case ConstantDecaySpec():
+                return self.constant_decay(spec)
+            case EwmaDecayCalibrationSpec():
+                return self.calibration(spec)
+            case _:
+                assert_never(spec)
 
     def volatility_filter(self, spec: VolatilityFilterSpec) -> VolatilityFilter:
         """Get the volatility filter of a spec, building it on first request.
@@ -198,10 +208,8 @@ class Builder:
                 return ConstantVolatility(_values(spec.vol))
             case EwmaVolatilitySpec():
                 return EwmaVolatility(
-                    self.constant_decay(spec.decay), start=_ewma_start(spec.start)
+                    self.decay(spec.decay), start=_ewma_start(spec.start)
                 )
-            case FittedEwmaVolatilitySpec():
-                return FittedEwmaVolatility(self.calibration(spec.calibration))
             case _:
                 assert_never(spec)
 

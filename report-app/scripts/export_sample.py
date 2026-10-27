@@ -18,7 +18,6 @@ from tail_lib.models.value_at_risk import GaussianModel
 from tail_lib.models.value_at_risk import HistoricalSimulationsModel
 from tail_lib.models.value_at_risk import ValueAtRiskInput
 from tail_lib.models.volatility import EwmaVolatility
-from tail_lib.models.volatility import FittedEwmaVolatility
 from tail_lib.models.volatility import VolatilityFilter
 from tail_lib.report.data import build_report_data
 from tail_lib.run import Run
@@ -39,7 +38,7 @@ if __name__ == "__main__":
     var_ext = TimeSeries(dates=returns.dates, values=np.full((1000, 2), -0.025))
 
     vol = EwmaVolatility(ConstantDecay(0.94))
-    fitted = FittedEwmaVolatility(EwmaDecayCalibration(Trailing(length=250, step=20)))
+    fitted = EwmaVolatility(EwmaDecayCalibration(Trailing(length=250, step=20)))
     vol_filter = VolatilityFilter(vol, mean=ConstantMean(0.0002))
     run = Run(
         {

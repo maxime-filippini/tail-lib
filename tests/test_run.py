@@ -12,7 +12,7 @@ from tail_lib.models.value_at_risk import GaussianModel
 from tail_lib.models.value_at_risk import HistoricalSimulationsModel
 from tail_lib.models.value_at_risk import ValueAtRiskInput
 from tail_lib.models.volatility import ConstantVolatility
-from tail_lib.models.volatility import FittedEwmaVolatility
+from tail_lib.models.volatility import EwmaVolatility
 from tail_lib.models.volatility import VolatilityInput
 from tail_lib.run import Run
 from tail_lib.run import RunSpec
@@ -220,7 +220,7 @@ _LAST = {"type": "last", "length": 100}
 _GAUSS_ON_LAST_CALIBRATION = {
     "type": "gaussian",
     "cf": 0.99,
-    "vol": {"type": "fitted_ewma", "calibration": {"window": _LAST}},
+    "vol": {"type": "ewma", "decay": {"type": "ewma_calibration", "window": _LAST}},
 }
 
 
@@ -233,7 +233,7 @@ def test_a_model_with_a_last_window_can_not_be_backtested() -> None:
     with pytest.raises(
         ValueError,
         match=r"Model 'today' has a `last` window, at "
-        r"`models\.today\.vol\.calibration\.window`.*\['kupiec'\]",
+        r"`models\.today\.vol\.decay\.window`.*\['kupiec'\]",
     ):
         RunSpec.model_validate(spec)
 
@@ -251,9 +251,7 @@ def test_a_last_window_in_a_filter_is_found_through_it() -> None:
         "backtests": {"kupiec": {"type": "kupiec"}},
     }
 
-    with pytest.raises(
-        ValueError, match=r"`models\.fhs\.filter\.vol\.calibration\.window`"
-    ):
+    with pytest.raises(ValueError, match=r"`models\.fhs\.filter\.vol\.decay\.window`"):
         RunSpec.model_validate(spec)
 
 
@@ -289,14 +287,15 @@ _BACKTESTING_RUN = {
             "type": "gaussian",
             "cf": 0.99,
             "vol": {
-                "type": "fitted_ewma",
-                "calibration": {
+                "type": "ewma",
+                "decay": {
                     "type": "ewma_calibration",
                     "window": _TRAILING,
                     "bounds": [0.8, 0.99],
                     "start": {"type": "backcast", "window": 10},
                     "n_iter": 30,
                 },
+                "start": {"type": "backcast", "window": 10},
             },
             "mean": {"type": "constant", "mean": [0.0, 0.001]},
         },
@@ -497,9 +496,9 @@ def test_backtests_take_their_settings_through_a_function() -> None:
         (
             GaussianModel(
                 cf=0.99,
-                vol=FittedEwmaVolatility(EwmaDecayCalibration(Last(length=100))),
+                vol=EwmaVolatility(EwmaDecayCalibration(Last(length=100))),
             ),
-            "models.today.vol.calibration.window",
+            "models.today.vol.decay.window",
         ),
     ],
 )

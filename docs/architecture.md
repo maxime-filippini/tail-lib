@@ -34,9 +34,9 @@ How tail-lib is organized, and how a call flows from a spec to the numbers
 | `windows.py` | `Trailing` and `Last` window specs, and `Windows`: the windows over a series, `apply` and `to_series` (D5). With `skip_leading_nan=True`, the windows start on the first date where every series has a value (R16). |
 | `graph.py` | `Node`, `Preprocessor`, `Cache`, `Pool`: the computation graph. |
 | `models/mean.py` | `MeanModel`, `ZeroMean`, `ConstantMean`. |
-| `models/ewma.py` | EWMA start specs (`Backcast`, `StartingVol`), the recursion (`ewma_update`, `ewma_variance`), decay nodes (`ConstantDecay`, `EwmaDecayCalibration`) and the decay fit. |
+| `models/ewma.py` | EWMA start specs (`Backcast`, `StartingVol`), the recursion (`ewma_update`, `ewma_variance`), decay nodes (`ConstantDecay`, `EwmaDecayCalibration`), which output `DecayFactors` (the decay on each date, its refit dates and the first date of each fit), and the decay fit. |
 | `models/garch.py` | The GARCH(1, 1) recursion (`garch_update`), shared by the simulator and a future GARCH volatility model. |
-| `models/volatility.py` | `VolatilityModel`, `VolatilityInput`, `ConstantVolatility`, `EwmaVolatility`, `FittedEwmaVolatility` (D7), `VolatilityFilter`. |
+| `models/volatility.py` | `VolatilityModel`, `VolatilityInput`, `ConstantVolatility`, `EwmaVolatility` (constant or calibrated decay, D7), `VolatilityFilter`. |
 | `models/value_at_risk.py` | `ValueAtRiskModel`, `ValueAtRiskInput`, `HistoricalSimulationsModel` (D2), `FilteredHistoricalSimulationsModel`, `GaussianModel`. |
 | `backtests/overshootings.py` | `overshootings` (function) and `Overshootings` (node). |
 | `backtests/kupiec.py` | `kupiec_pof` (function), `KupiecResult`, `KupiecTest` (node). |
@@ -152,7 +152,7 @@ pydantic. YAML could later be a loader producing dicts.
    name are an error, so none silently reads another's input) and, if there
    are backtests, rejects a model with a `last` window
    anywhere in its graph, giving the path through the graph, e.g.
-   `models.today.vol.calibration.window`. Each distinct model node
+   `models.today.vol.decay.window`. Each distinct model node
    gets one `Overshootings`, shared by all its backtests. Last, it walks
    the whole graph again, from each model, then from each backtest of each
    model, into `run.graph` (a `RunGraph`): each distinct node once, as a
@@ -175,9 +175,10 @@ Example:
 {
   "models": {
     "gauss_99": {"type": "gaussian", "cf": 0.99,
-                 "vol": {"type": "fitted_ewma",
-                         "calibration": {"window": {"type": "trailing",
-                                                    "length": 250}}}},
+                 "vol": {"type": "ewma",
+                         "decay": {"type": "ewma_calibration",
+                                   "window": {"type": "trailing",
+                                              "length": 250}}}},
     "hs_99": {"type": "historical", "cf": 0.99,
               "window": {"type": "trailing", "length": 250}},
     "fhs_99": {"type": "filtered_historical", "cf": 0.99,
@@ -216,7 +217,7 @@ backtest's, is `trailing` or `last`, and needs its `type`. A model with a
 date, e.g. today's VaR without computing every window. It can't be
 backtested: that value is the forecast for a date after the data. So
 `RunSpec` rejects a run with backtests and such a model, giving the path to
-the window, e.g. `models.today.vol.calibration.window` (`find_last_window`
+the window, e.g. `models.today.vol.decay.window` (`find_last_window`
 in `specs.py`). `Run` checks the same on its nodes, for runs built in
 Python.
 

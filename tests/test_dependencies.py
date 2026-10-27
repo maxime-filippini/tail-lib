@@ -20,7 +20,6 @@ from tail_lib.models.value_at_risk import HistoricalSimulationsModel
 from tail_lib.models.value_at_risk import ValueAtRiskInput
 from tail_lib.models.volatility import ConstantVolatility
 from tail_lib.models.volatility import EwmaVolatility
-from tail_lib.models.volatility import FittedEwmaVolatility
 from tail_lib.models.volatility import VolatilityFilter
 from tail_lib.models.volatility import VolatilityInput
 from tail_lib.run import _input_name
@@ -57,7 +56,7 @@ def _one_node_of_each_type() -> list[Node[Any]]:
         VolatilityInput("vol"),
         ConstantVolatility(0.01),
         vol,
-        FittedEwmaVolatility(calibration),
+        EwmaVolatility(calibration),
         vol_filter,
         ValueAtRiskInput("var", cf=0.99),
         HistoricalSimulationsModel(cf=0.99, window=Trailing(length=100)),

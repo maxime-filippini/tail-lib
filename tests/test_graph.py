@@ -6,12 +6,13 @@ from tail_lib.graph import Dependencies
 from tail_lib.graph import Pool
 from tail_lib.graph import Preprocessor
 from tail_lib.graph import Settings
+from tail_lib.models.ewma import DecayFactors
 from tail_lib.models.ewma import EwmaDecayCalibration
 from tail_lib.models.value_at_risk import GaussianModel
 from tail_lib.models.value_at_risk import HistoricalSimulationsModel
 from tail_lib.models.value_at_risk import ValueAtRiskModel
 from tail_lib.models.volatility import ConstantVolatility
-from tail_lib.models.volatility import FittedEwmaVolatility
+from tail_lib.models.volatility import EwmaVolatility
 from tail_lib.models.volatility import VolatilityFilter
 from tail_lib.models.volatility import VolatilityModel
 from tail_lib.time_series import TimeSeries
@@ -126,7 +127,7 @@ def test_pool_shares_decay_calibration_across_models() -> None:
     class _CountingCalibration(EwmaDecayCalibration):
         n_calls = 0
 
-        def compute(self, returns: TimeSeries) -> TimeSeries:
+        def compute(self, returns: TimeSeries) -> DecayFactors:
             _CountingCalibration.n_calls += 1
             return super().compute(returns)
 
@@ -136,12 +137,8 @@ def test_pool_shares_decay_calibration_across_models() -> None:
     # Two volatility models, each a different node, on one calibration.
     Pool(
         {
-            "gaussian_99": GaussianModel(
-                cf=0.99, vol=FittedEwmaVolatility(calibration)
-            ),
-            "gaussian_95": GaussianModel(
-                cf=0.95, vol=FittedEwmaVolatility(calibration)
-            ),
+            "gaussian_99": GaussianModel(cf=0.99, vol=EwmaVolatility(calibration)),
+            "gaussian_95": GaussianModel(cf=0.95, vol=EwmaVolatility(calibration)),
         }
     ).run(returns)
 

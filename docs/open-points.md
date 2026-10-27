@@ -17,10 +17,9 @@ pushed. All checks green (ty, ruff, 595 tests).
 ## Next up
 
 1. **Context API**, plan agreed with the developer on 2026-10-26, see
-   "Context API" under "Design questions". Steps 0 (docs) and 1
-   (`tests/test_regression.py`) reviewed. Step 2 (nodes identified by
-   value) and 2b (field names) done, awaiting review. Then steps 3 to 6,
-   each reviewed on its own.
+   "Context API" under "Design questions". Steps 0 to 2b committed. Step 3
+   (`DecayFactors`, one `EwmaVolatility`) done, awaiting review. Then steps
+   4 to 6, each reviewed on its own.
 2. **Run date range (R21–R23)**, agreed with the developer on 2026-10-25,
    see "Run date range" under "Design questions". Step 1 (docs) done,
    awaiting review. Steps 2 to 5 wait for the context API.
@@ -66,8 +65,7 @@ Recorded so later changes don't undo them by accident.
 
 ### `Last` windows for models
 
-- Historical simulation (filtered or not), the decay calibration and the
-  fitted EWMA take
+- Historical simulation (filtered or not) and the decay calibration take
   `Trailing | Last`. With `Last`, a model gives one value, on the last date,
   e.g. today's VaR without computing every window (R6, R7).
 - Such a model can't be backtested: its only VaR is the forecast for a date
@@ -86,7 +84,7 @@ Chosen by the developer over flat `vol` and `mean` fields on the FHS spec
 (as in `GaussianSpec`), from which the builder would make the filter: that
 breaks "a spec's fields mirror its node's arguments". Identical filter
 specs give one filter node (`Builder.volatility_filter`, D3), and paths go
-through it, e.g. `models.fhs.filter.vol.calibration.window`.
+through it, e.g. `models.fhs.filter.vol.decay.window`.
 
 ### JSON round trip (R9)
 
@@ -310,6 +308,37 @@ Done in step 2b (2026-10-27), no output changed:
 - `compute` arguments keep their names (`means`, `vols`, `decay`): they
   become the field names in step 4, where `compute` takes one keyword per
   input.
+
+Done in step 3 (2026-10-27), no output changed (the fitted EWMA's pins are
+now computed by `EwmaVolatility` on a calibration):
+
+- Decay models (`DecayModel`, no longer a `Preprocessor`) output
+  `DecayFactors`: `values`, the decay on each date as a `TimeSeries`;
+  `refits`, the index of each refit date; `fit_starts`, for each refit, the
+  index of the first date its fit used. A constant decay has one refit, on
+  date 0, from date 0; a calibration one per window, on its last date, from
+  its first. Refits are index arrays, one entry per refit, rather than the
+  sketch's per-date mask: shorter, and the dates are `values.dates[refits]`.
+  `DecayFactors` checks they are increasing and that each fit starts on or
+  before its refit.
+- `EwmaVolatility` takes any decay model and runs the recursion once per
+  refit, from its fit's first date, up to the date before the next refit
+  (D7). The runs go through one vectorized recursion, the runs on a batch
+  axis, as `FittedEwmaVolatility` did, so a calibration with `step = 1`
+  doesn't loop per refit (R6). `FittedEwmaVolatility` and the `fitted_ewma`
+  spec are gone: `{"type": "ewma", "decay": {"type": "ewma_calibration",
+  ...}}` replaces it. A decay in the `ewma` spec now needs its `type`.
+- Two starts meet when an EWMA reads a calibration: the EWMA's own `start`
+  and the one the calibration fitted with. `FittedEwmaVolatility` used the
+  calibration's (D7). Chosen here, to confirm: the two have to be equal,
+  checked when the EWMA is built and in the `ewma` spec (with its path,
+  R9b), so no number changes silently. Alternative: the EWMA's `start`
+  seeds every run and the calibration's only its fits (the sketch's way,
+  simpler, but a calibration with a non-default start would then be
+  re-filtered from another start than it was fitted with).
+- Paths through a calibrated EWMA go through `decay`, e.g.
+  `models.today.vol.decay.window`. The report labels decay nodes as
+  preprocessors and charts their `values`.
 
 **Still open**
 

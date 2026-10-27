@@ -16,7 +16,6 @@ from tail_lib.models.value_at_risk import HistoricalSimulationsModel
 from tail_lib.models.value_at_risk import ValueAtRiskInput
 from tail_lib.models.volatility import ConstantVolatility
 from tail_lib.models.volatility import EwmaVolatility
-from tail_lib.models.volatility import FittedEwmaVolatility
 from tail_lib.models.volatility import VolatilityFilter
 from tail_lib.report.data import ReportData
 from tail_lib.report.data import build_report_data
@@ -202,7 +201,10 @@ def test_bounds_starts_and_arrays_are_written_as_json() -> None:
     decay = ConstantDecay(np.array([0.94, 0.97]))
     run = Run(
         {
-            "fitted": GaussianModel(cf=0.99, vol=FittedEwmaVolatility(calibration)),
+            "fitted": GaussianModel(
+                cf=0.99,
+                vol=EwmaVolatility(calibration, start=calibration.start),
+            ),
             "ewma": GaussianModel(cf=0.99, vol=EwmaVolatility(decay)),
         }
     )
@@ -210,7 +212,7 @@ def test_bounds_starts_and_arrays_are_written_as_json() -> None:
     data = build_report_data(run, Cache(returns_series(n=150, n_assets=2)))
     nodes = {node.id: node for node in data.nodes}
 
-    assert nodes["models.fitted.vol.calibration"].settings == {
+    assert nodes["models.fitted.vol.decay"].settings == {
         "window": {"type": "last", "length": 100},
         "bounds": [0.9, 0.99],
         "start": {"type": "starting_vol", "vol": [0.01, 0.02]},

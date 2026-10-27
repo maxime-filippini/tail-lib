@@ -27,10 +27,10 @@ result = run.run(returns, inputs={"var_ext": var_ext})
 {
   "models": {
     "gauss_99": {"type": "gaussian", "cf": 0.99,
-                 "vol": {"type": "fitted_ewma",
-                         "calibration": {"type": "ewma_calibration",
-                                         "window": {"type": "trailing",
-                                                    "length": 250}}}},
+                 "vol": {"type": "ewma",
+                         "decay": {"type": "ewma_calibration",
+                                   "window": {"type": "trailing",
+                                              "length": 250}}}},
     "hs_99": {"type": "historical", "cf": 0.99,
               "window": {"type": "trailing", "length": 250}},
     "fhs_99": {"type": "filtered_historical", "cf": 0.99,
@@ -118,8 +118,7 @@ The Python spec classes are in [`tail_lib.specs`](../reference/specs.md).
 | `type` | Node | Fields |
 |---|---|---|
 | `constant` | `ConstantVolatility` | `vol`: *values*, positive |
-| `ewma` | `EwmaVolatility` | `decay` (a [constant decay](#decay-factors)), `start` (an [EWMA start](#ewma-starts-start)) = `{"type": "backcast", "window": 20}` |
-| `fitted_ewma` | `FittedEwmaVolatility` | `calibration` (a [decay calibration](#decay-factors)) |
+| `ewma` | `EwmaVolatility` | `decay` (a [decay factor](#decay-factors), constant or calibrated), `start` (an [EWMA start](#ewma-starts-start)) = `{"type": "backcast", "window": 20}`, the calibration's `start` with a calibrated decay |
 | `input` | `VolatilityInput` | `name` |
 
 ### Volatility filter: `filter`
@@ -141,9 +140,8 @@ its `type` (`"volatility_filter"`) can be left out.
 
 ### Decay factors
 
-An `ewma` volatility takes a constant decay in `decay`; a `fitted_ewma`
-volatility takes a calibration in `calibration`. Each slot takes a single
-spec, so the `type` can be left out.
+An `ewma` volatility takes a constant or a calibrated decay in `decay`, so
+the `type` is needed.
 
 | `type` | Node | Fields |
 |---|---|---|

@@ -153,7 +153,7 @@ the inputs before computing anything. So these mistakes fail fast:
 | Mistake | Error |
 |---|---|
 | No model | `ValueError` when building the run. |
-| A model with a `Last` window, in a run with backtests | `ValueError` when building the run, with the path to the window, e.g. `models.today.vol.calibration.window`. Put such models in their own run, without backtests. |
+| A model with a `Last` window, in a run with backtests | `ValueError` when building the run, with the path to the window, e.g. `models.today.vol.decay.window`. Put such models in their own run, without backtests. |
 | Two different nodes reading the same input name | `ValueError` when building the run. Models that read the same input share one input node. |
 | A missing input | `KeyError` from `run.run`, before computing, e.g. `Missing inputs ['var_ext']! Inputs given: [].` |
 | An input with other dates or another shape than the returns | `ValueError` when the input is read. |

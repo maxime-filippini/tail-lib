@@ -6,6 +6,7 @@ from pydantic import ValidationError
 from tail_lib.build import Builder
 from tail_lib.graph import Pool
 from tail_lib.models.ewma import ConstantDecay
+from tail_lib.models.ewma import DecayFactors
 from tail_lib.models.ewma import EwmaDecayCalibration
 from tail_lib.models.mean import ConstantMean
 from tail_lib.models.value_at_risk import FilteredHistoricalSimulationsModel
@@ -13,7 +14,6 @@ from tail_lib.models.value_at_risk import GaussianModel
 from tail_lib.models.value_at_risk import HistoricalSimulationsModel
 from tail_lib.models.volatility import ConstantVolatility
 from tail_lib.models.volatility import EwmaVolatility
-from tail_lib.models.volatility import FittedEwmaVolatility
 from tail_lib.models.volatility import VolatilityFilter
 from tail_lib.specs import EwmaDecayCalibrationSpec
 from tail_lib.specs import GaussianSpec
@@ -28,8 +28,11 @@ from tests.helpers import simulated_returns
 _VAR_SPEC: TypeAdapter[ValueAtRiskSpec] = TypeAdapter(ValueAtRiskSpec)
 
 _FITTED_EWMA = {
-    "type": "fitted_ewma",
-    "calibration": {"window": {"type": "trailing", "length": 100, "step": 50}},
+    "type": "ewma",
+    "decay": {
+        "type": "ewma_calibration",
+        "window": {"type": "trailing", "length": 100, "step": 50},
+    },
 }
 
 
@@ -42,9 +45,7 @@ def test_gaussian_spec_builds_the_same_model_as_python() -> None:
     built = Builder().var_model(spec).run(returns)
 
     calibration = EwmaDecayCalibration(Trailing(length=100, step=50))
-    expected = GaussianModel(cf=0.99, vol=FittedEwmaVolatility(calibration)).run(
-        returns
-    )
+    expected = GaussianModel(cf=0.99, vol=EwmaVolatility(calibration)).run(returns)
     np.testing.assert_array_equal(built.values, expected.values)
 
 
@@ -123,7 +124,10 @@ def test_last_windows_in_model_specs_build_as_in_python() -> None:
         {
             "type": "gaussian",
             "cf": 0.99,
-            "vol": {"type": "fitted_ewma", "calibration": {"window": last}},
+            "vol": {
+                "type": "ewma",
+                "decay": {"type": "ewma_calibration", "window": last},
+            },
         }
     )
     builder = Builder()
@@ -133,7 +137,7 @@ def test_last_windows_in_model_specs_build_as_in_python() -> None:
 
     expected_hs = HistoricalSimulationsModel(cf=0.95, window=Last(length=100))
     calibration = EwmaDecayCalibration(Last(length=100))
-    expected_gauss = GaussianModel(cf=0.99, vol=FittedEwmaVolatility(calibration))
+    expected_gauss = GaussianModel(cf=0.99, vol=EwmaVolatility(calibration))
     np.testing.assert_array_equal(built_hs.values, expected_hs.run(returns).values)
     np.testing.assert_array_equal(
         built_gauss.values, expected_gauss.run(returns).values
@@ -145,8 +149,8 @@ def test_identical_specs_written_separately_share_one_node() -> None:
     builder = Builder()
     spec_99 = GaussianSpec.model_validate({"cf": 0.99, "vol": _FITTED_EWMA})
     spec_95 = GaussianSpec.model_validate_json(
-        '{"cf": 0.95, "vol": {"type": "fitted_ewma",'
-        ' "calibration": {"window": {"type": "trailing", "length": 100, "step": 50}}}}'
+        '{"cf": 0.95, "vol": {"type": "ewma", "decay": {"type": "ewma_calibration",'
+        ' "window": {"type": "trailing", "length": 100, "step": 50}}}}'
     )
 
     model_99 = builder.var_model(spec_99)
@@ -164,7 +168,9 @@ def test_shared_calibration_is_fitted_once_in_a_run(
     n_fits = 0
     compute = EwmaDecayCalibration.compute
 
-    def counting_compute(self: EwmaDecayCalibration, returns: TimeSeries) -> TimeSeries:
+    def counting_compute(
+        self: EwmaDecayCalibration, returns: TimeSeries
+    ) -> DecayFactors:
         nonlocal n_fits
         n_fits += 1
         return compute(self, returns)
@@ -240,9 +246,12 @@ _CONSTANT_VOL = {"type": "constant", "vol": 0.01}
             {
                 "type": "gaussian",
                 "cf": 0.99,
-                "vol": {"type": "ewma", "decay": {"value": [0.94, 1.2]}},
+                "vol": {
+                    "type": "ewma",
+                    "decay": {"type": "constant", "value": [0.94, 1.2]},
+                },
             },
-            r"gaussian\.vol\.ewma\.decay\.value\.list\.1\n",
+            r"gaussian\.vol\.ewma\.decay\.constant\.value\.list\.1\n",
         ),
         (
             {"type": "gaussian", "cf": 0.99, "vol": {"type": "constant", "vol": []}},
@@ -261,8 +270,9 @@ _CONSTANT_VOL = {"type": "constant", "vol": 0.01}
                 "type": "gaussian",
                 "cf": 0.99,
                 "vol": {
-                    "type": "fitted_ewma",
-                    "calibration": {
+                    "type": "ewma",
+                    "decay": {
+                        "type": "ewma_calibration",
                         "window": {"type": "trailing", "length": 100},
                         "bounds": [0.99, 0.9],
                     },
@@ -289,4 +299,21 @@ def test_non_finite_values_are_rejected() -> None:
     with pytest.raises(ValidationError, match="finite number"):
         _VAR_SPEC.validate_json(
             '{"type": "gaussian", "cf": 0.99, "vol": {"type": "constant", "vol": NaN}}'
+        )
+
+
+def test_an_ewma_spec_needs_its_calibration_start() -> None:
+    calibration = {
+        "type": "ewma_calibration",
+        "window": {"type": "trailing", "length": 100},
+        "start": {"type": "backcast", "window": 10},
+    }
+
+    with pytest.raises(ValidationError, match=r"ewma\n.*give both the same start"):
+        _VAR_SPEC.validate_python(
+            {
+                "type": "gaussian",
+                "cf": 0.99,
+                "vol": {"type": "ewma", "decay": calibration},
+            }
         )

@@ -30,6 +30,7 @@ from tail_lib.distributions import StudentT
 from tail_lib.graph import Node
 from tail_lib.graph import Pool
 from tail_lib.models.ewma import ConstantDecay
+from tail_lib.models.ewma import DecayModel
 from tail_lib.models.ewma import EwmaDecayCalibration
 from tail_lib.models.ewma import StartingVol
 from tail_lib.models.mean import ConstantMean
@@ -41,7 +42,6 @@ from tail_lib.models.value_at_risk import ValueAtRiskInput
 from tail_lib.models.value_at_risk import ValueAtRiskModel
 from tail_lib.models.volatility import ConstantVolatility
 from tail_lib.models.volatility import EwmaVolatility
-from tail_lib.models.volatility import FittedEwmaVolatility
 from tail_lib.models.volatility import VolatilityFilter
 from tail_lib.models.volatility import VolatilityInput
 from tail_lib.run import Run
@@ -102,9 +102,7 @@ def _models() -> dict[str, ValueAtRiskModel]:
             cf=0.99, filter=vol_filter, window=Trailing(length=250, step=5)
         ),
         "gaussian_ewma": GaussianModel(cf=0.99, vol=ewma, mean=mean),
-        "gaussian_fitted": GaussianModel(
-            cf=0.99, vol=FittedEwmaVolatility(calibration)
-        ),
+        "gaussian_fitted": GaussianModel(cf=0.99, vol=EwmaVolatility(calibration)),
         "gaussian_input_vol": GaussianModel(cf=0.99, vol=VolatilityInput("vol_ext")),
         "var_input": ValueAtRiskInput("var_ext", cf=0.99),
     }
@@ -121,26 +119,34 @@ def _last_models() -> dict[str, ValueAtRiskModel]:
     }
 
 
+_CALIBRATION = EwmaDecayCalibration(Trailing(length=150, step=50))
+_CALIBRATION_LAST = EwmaDecayCalibration(Last(length=150))
+
+
+def _decays() -> dict[str, DecayModel]:
+    """One decay model of each type and window, by key."""
+    return {
+        "decay.constant": ConstantDecay(np.array([0.9, 0.97])),
+        "decay.calibration": _CALIBRATION,
+        "decay.calibration_last": _CALIBRATION_LAST,
+    }
+
+
 def _nodes() -> dict[str, Node[TimeSeries]]:
     """One node of each type with a time series output, by key."""
     models = _models()
-    calibration = EwmaDecayCalibration(Trailing(length=150, step=50))
-    calibration_last = EwmaDecayCalibration(Last(length=150))
     ewma = EwmaVolatility(ConstantDecay(0.94))
     preprocessors: dict[str, Node[TimeSeries]] = {
         "mean.zero": ZeroMean(),
         "mean.constant": ConstantMean(np.array([1e-4, -2e-4])),
-        "decay.constant": ConstantDecay(np.array([0.9, 0.97])),
-        "decay.calibration": calibration,
-        "decay.calibration_last": calibration_last,
         "vol.constant": ConstantVolatility(np.array([0.01, 0.02])),
         "vol.input": VolatilityInput("vol_ext"),
         "vol.ewma_backcast": ewma,
         "vol.ewma_starting_vol": EwmaVolatility(
             ConstantDecay(np.array([0.9, 0.97])), start=StartingVol(0.01)
         ),
-        "vol.fitted_ewma": FittedEwmaVolatility(calibration),
-        "vol.fitted_ewma_last": FittedEwmaVolatility(calibration_last),
+        "vol.fitted_ewma": EwmaVolatility(_CALIBRATION),
+        "vol.fitted_ewma_last": EwmaVolatility(_CALIBRATION_LAST),
         "filter.zero_mean": VolatilityFilter(ewma),
         "filter.constant_mean": VolatilityFilter(
             ewma, mean=ConstantMean(np.array([1e-4, -2e-4]))
@@ -172,6 +178,9 @@ def _outputs(returns: TimeSeries) -> dict[str, np.ndarray]:
     inputs = _inputs(returns)
     nodes = Pool(_nodes()).run(returns, inputs)
     outputs = {f"node.{key}": series.values for key, series in nodes.items()}
+    # A decay model's factors are pinned; its refits are tested in test_ewma.
+    decays = Pool(_decays()).run(returns, inputs)
+    outputs |= {f"node.{key}": decay.values.values for key, decay in decays.items()}
 
     result = _run().run(returns, inputs)
     for model, tests in result.backtests.items():
