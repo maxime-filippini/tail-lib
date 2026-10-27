@@ -147,16 +147,6 @@ def test_settings_and_dependencies_cover_the_constructor_arguments(
     assert settings | dependencies == arguments
 
 
-def test_no_library_node_has_its_own_evaluate() -> None:
-    own = {
-        type(node).__name__
-        for node in _one_node_of_each_type()
-        if type(node).evaluate is not Node.evaluate
-    }
-
-    assert own == set()
-
-
 @pytest.mark.parametrize(
     "node", _one_node_of_each_type(), ids=lambda node: type(node).__name__
 )

@@ -62,7 +62,7 @@ change to the public API, a spec field or a default also updates the guide:
 
 This section, "From a spec to results" and "From Python" describe the code
 as it is. A migration to a context API is under way, step by step: nodes
-identified by value (done), a pure `compute` with no `evaluate` (under way),
+identified by value (done), a pure `compute` with no `evaluate` (done),
 and a `Context` in place of `Run`, `Cache` and `Pool`. See "Context API" in
 `docs/open-points.md`.
 
@@ -85,14 +85,11 @@ can be hashed; `np.asarray` gives the array back.
   mean)`. Building a node checks this signature (D11, `_check_compute`), so
   a mismatch fails where the node is declared; a node's `__post_init__`
   calls `super().__post_init__()` for it.
-- `evaluate(cache)` is written once, in `Node`, and no library node
-  overrides it: it gets each dependency's output with `cache.get(node)`,
-  then calls `compute`.
 - Run inputs (R13) are `RunInput` nodes, `VolatilityInput` and
   `ValueAtRiskInput`, each with a `name`, checked to be a Python
   identifier. The cache never computes them: their output is the run input
   of their name. Their `compute` refuses to run.
-- `dependencies()` lists the nodes `evaluate` reads: the fields holding
+- `dependencies()` lists the nodes whose outputs `compute` takes: the fields holding
   nodes, keyed by field, e.g. `{"vol": ..., "mean": ...}`. It
   is written once, in `Node`. So a graph can be walked without computing
   it: `Run` walks it to find its run inputs and `last` windows. The returns
@@ -100,7 +97,7 @@ can be hashed; `np.asarray` gives the array back.
   overrides it: a node needing more than its inputs' outputs gets it inside
   them, e.g. the FHS reads the mean and volatility from its filter's
   `FilteredReturns`. `tests/test_dependencies.py` checks, for one node of
-  each library type, that it matches what `evaluate` asks the cache for.
+  each library type, that it matches what the cache reads for it.
 - `settings()` lists the node's other fields, with the values the node
   uses, defaults included, e.g. `{"cf": 0.99, "window": Trailing(250),
   "interpolation": "linear"}`. It is also written once, in `Node`. The
@@ -109,12 +106,14 @@ can be hashed; `np.asarray` gives the array back.
   `dependencies()`, it covers every constructor argument. A field the node
   sets itself (`init=False`), e.g. the `cf_var` a Kupiec test copies from
   its overshootings, is neither.
-- `Cache(returns, inputs)` belongs to one returns series. It computes each
-  node at most once, identified by value, and detects cycles. It also
-  holds the named run inputs (R13): `cache.input(name)` checks the input is
-  aligned with the returns, and raises `KeyError` if it is missing.
-  `cache.get` gives a `RunInput` node `cache.input(node.name)`, and calls
-  `evaluate` for every other node.
+- `Cache(returns, inputs)` belongs to one returns series. `cache.get(node)`
+  computes each node at most once, identified by value: it gets the
+  output of each of the node's `dependencies()`, then calls
+  `node.compute(returns, **outputs)`, by field name. It detects cycles. It
+  also holds the named run inputs (R13): `cache.input(name)` checks the
+  input is aligned with the returns, and raises `KeyError` if it is
+  missing. `cache.get` gives a `RunInput` node `cache.input(node.name)`
+  instead of computing it.
 - `Pool(nodes)` computes named nodes on one cache. Pools evaluated on the
   same cache share their common nodes.
 - `node.run(returns, inputs)` and `pool.run(returns, inputs)` do the same with
@@ -431,7 +430,7 @@ the other outputs as percentages.
    fields being its constructor arguments, arrays stored with
    `frozen_floats` in `__post_init__` (which ends with
    `super().__post_init__()`). Write `compute(self, returns, /, *, ...)`,
-   pure, with one keyword per input field, and no `evaluate`. The
+   pure, with one keyword per input field. The
    docstring states the formula, the timing, the fields (`Attributes:`)
    and a reference. `dependencies` and `settings` come from the fields. Add one instance to
    `_one_node_of_each_type` in `tests/test_dependencies.py`: the test fails

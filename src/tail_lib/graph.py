@@ -1,9 +1,9 @@
 """The node graph: nodes, the cache that computes them, and pools of nodes.
 
 A node is one computation on a returns time series: a preprocessor (a model
-input such as a volatility), a value-at-risk model, or a backtest. A node gets
-its inputs, the outputs of other nodes, from a `Cache`, which computes each
-node at most once.
+input such as a volatility), a value-at-risk model, or a backtest. A `Cache`
+computes each node at most once: first its inputs, the nodes in its fields,
+then the node's `compute` on their outputs.
 
 Nodes are frozen dataclasses, identified by value: two nodes of the same class
 with equal constructor arguments, their input nodes included, are one node
@@ -59,8 +59,8 @@ class Node[T](ABC):
     the returns, then one keyword argument per dependency, named after its
     field, holding that dependency's output, and uses nothing else but the
     node's own settings. E.g. a Gaussian model, with fields `cf`, `vol` and
-    `mean`, has `compute(self, returns, /, *, vol, mean)`. `evaluate` gets
-    those outputs from a `Cache` and calls `compute`.
+    `mean`, has `compute(self, returns, /, *, vol, mean)`. A `Cache`
+    computes the dependencies first, then calls `compute` with their outputs.
 
     Building a node checks that `compute` takes exactly its dependencies, by
     name (D11), so a mismatch fails where the model is declared, not
@@ -69,13 +69,12 @@ class Node[T](ABC):
     """
 
     def __post_init__(self) -> None:
-        if type(self).evaluate is Node.evaluate:
-            self._check_compute()
+        self._check_compute()
 
     # Each node takes its own inputs, so `compute` has no common signature.
     # The typing spec reads `*args: Any, **kwargs: Any` like `...`: every
     # subclass can narrow it, and ty checks direct calls to the subclass's.
-    # Only the call in `evaluate` is unchecked, hence `_check_compute`.
+    # Only the call in `Cache.get` is unchecked, hence `_check_compute`.
     @abstractmethod
     def compute(self, *args: Any, **kwargs: Any) -> T:  # noqa: ANN401
         """Compute the output from the returns and the outputs of the inputs.
@@ -88,20 +87,6 @@ class Node[T](ABC):
             T: The output of this node.
 
         """
-
-    def evaluate(self, cache: Cache) -> T:
-        """Get the output of each dependency from the cache, then compute.
-
-        Args:
-            cache (Cache): Holds the returns, and the outputs of other nodes
-                on them.
-
-        Returns:
-            T: The output of this node.
-
-        """
-        inputs = {name: cache.get(node) for name, node in self.dependencies().items()}
-        return self.compute(cache.returns, **inputs)
 
     def _check_compute(self) -> None:
         """Check that `compute` takes the returns, then exactly the dependencies.
@@ -130,7 +115,7 @@ class Node[T](ABC):
             raise TypeError(msg)
 
     def dependencies(self) -> Dependencies:
-        """List the nodes `evaluate` gets from the cache: the fields holding nodes.
+        """List the nodes whose outputs `compute` takes: the fields holding nodes.
 
         Each is keyed by its field, e.g. `{"vol": ..., "mean": ...}` for a
         Gaussian model. The returns and the named run inputs are
@@ -404,9 +389,15 @@ class Cache:
             msg = f"{type(node).__name__} depends on itself!"
             raise ValueError(msg)
 
+        # The node's inputs first, then the node on their outputs, passed by
+        # field name.
         self._pending.add(node)
         try:
-            output = node.evaluate(self)
+            inputs = {
+                name: self.get(dependency)
+                for name, dependency in node.dependencies().items()
+            }
+            output = node.compute(self._returns, **inputs)
         finally:
             self._pending.discard(node)
 

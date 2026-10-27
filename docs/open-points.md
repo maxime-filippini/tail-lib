@@ -12,16 +12,15 @@ Working rules, from `CLAUDE.md` and the developer:
 - Commit only when the developer says so. Commits have no co-author trailer.
 
 State as of 2026-10-27: branch `feat/context-api`, from `develop`, not
-pushed. All checks green (ty, ruff, 624 tests).
+pushed. All checks green (ty, ruff, 623 tests).
 
 ## Next up
 
 1. **Context API**, plan agreed with the developer on 2026-10-26, see
-   "Context API" under "Design questions". Steps 0 to 4c committed, with the
-   `var` rename. Step 4d (`RunInput`, the input nodes on the generic
-   `evaluate`) done, awaiting review. Then the generic `evaluate` goes, and
-   the `CLAUDE.md` rules on `evaluate` and the `Cache` are reworded with the
-   developer; then steps 5 and 6, each reviewed on its own.
+   "Context API" under "Design questions". Steps 0 to 4d committed, with the
+   `var` rename. The end of step 4 (no `evaluate`, the `CLAUDE.md` rules
+   reworded) done, awaiting review. Then steps 5 and 6, each reviewed on
+   its own.
 2. **Run date range (R21–R23)**, agreed with the developer on 2026-10-25,
    see "Run date range" under "Design questions". Step 1 (docs) done,
    awaiting review. Steps 2 to 5 wait for the context API.
@@ -421,9 +420,22 @@ Done in step 4d (2026-10-27), no output changed:
   any node checks its `compute` (D11).
 - `run._input_name` is an `isinstance` check on `RunInput` instead of a
   `match` on the two classes, so the report's `input_name` follows.
-- Left for the next change: the generic `evaluate` goes (the cache calls
-  `compute` itself), and with it the `type(self).evaluate is Node.evaluate`
-  condition before the D11 check, which only test nodes still need.
+
+Done at the end of step 4 (2026-10-27), no output changed:
+
+- `Node.evaluate` is gone: `Cache.get` gets the output of each of a node's
+  `dependencies()`, then calls `node.compute(returns, **outputs)`. So
+  building any node checks its `compute` (D11), with no exception for
+  nodes overriding `evaluate`. `Run.evaluate` and `Pool.evaluate` stay
+  until step 5.
+- The two test nodes that overrode `evaluate` (in `tests/test_graph.py`)
+  are rewritten: one as a frozen dataclass with `filter` and `vol` fields,
+  the cycle one with a `compute` taking its `dependency`.
+- The `CLAUDE.md` rules "Nodes for estimable parameters" and "Pure
+  `compute`" are reworded, chosen by the developer: an input node is a
+  field holding another node, a setting a field holding a plain value, and
+  `compute` gets the inputs' outputs from the run. They name neither
+  `evaluate` nor the `Cache`, so they hold with the context too.
 
 **Still open**
 

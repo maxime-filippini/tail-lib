@@ -35,32 +35,32 @@ class _CountingVolatility(ConstantVolatility):
         return super().compute(returns)
 
 
+@dataclass(frozen=True, kw_only=True)
 class _FilteredReturnsModel(ValueAtRiskModel):
     """Depends on a volatility model both directly and through a filter."""
 
-    def __init__(self, *, cf: float, vol: VolatilityModel) -> None:
-        super().__init__(cf=cf)
-        self._vol_model = vol
-        self._filter = VolatilityFilter(vol)
+    filter: VolatilityFilter
+    vol: VolatilityModel
 
-    def dependencies(self) -> Dependencies:
-        return {"filter": self._filter, "vol": self._vol_model}
-
-    def evaluate(self, cache: Cache) -> TimeSeries:
-        filtered = cache.get(self._filter)
-        vols = cache.get(self._vol_model)
-        return self.compute(filtered=filtered, vols=vols)
-
-    def compute(self, *, filtered: FilteredReturns, vols: TimeSeries) -> TimeSeries:
-        z = filtered.standardized
-        return TimeSeries(dates=z.dates, values=z.values * vols.values)
+    def compute(
+        self,
+        returns: TimeSeries,  # noqa: ARG002
+        /,
+        *,
+        filter: FilteredReturns,  # noqa: A002
+        vol: TimeSeries,
+    ) -> TimeSeries:
+        z = filter.standardized
+        return TimeSeries(dates=z.dates, values=z.values * vol.values)
 
 
 def test_run_computes_nested_preprocessors_once() -> None:
     returns = returns_series(n=50)
     vol = _CountingVolatility(0.02)
 
-    rescaled = _FilteredReturnsModel(cf=0.99, vol=vol).run(returns)
+    model = _FilteredReturnsModel(cf=0.99, filter=VolatilityFilter(vol), vol=vol)
+
+    rescaled = model.run(returns)
 
     assert vol.n_calls == 1
     np.testing.assert_allclose(rescaled.values[1:], returns.values[1:])
@@ -79,12 +79,14 @@ def test_run_rejects_cyclic_preprocessors() -> None:
         def settings(self) -> Settings:
             return {}
 
-        def evaluate(self, cache: Cache) -> TimeSeries:
-            if self.dependency is not None:
-                cache.get(self.dependency)
-            return cache.returns
-
-        def compute(self, returns: TimeSeries, /) -> TimeSeries:
+        # Never reached: the cache finds the cycle while getting the inputs.
+        def compute(
+            self,
+            returns: TimeSeries,
+            /,
+            *,
+            dependency: TimeSeries | None = None,  # noqa: ARG002
+        ) -> TimeSeries:
             return returns
 
     a, b = _Chained(), _Chained()
@@ -123,7 +125,9 @@ def test_pool_shares_nested_preprocessors_across_models() -> None:
 
     Pool(
         {
-            "filtered": _FilteredReturnsModel(cf=0.99, vol=vol),
+            "filtered": _FilteredReturnsModel(
+                cf=0.99, filter=VolatilityFilter(vol), vol=vol
+            ),
             "gaussian": GaussianModel(cf=0.99, vol=vol),
         }
     ).run(returns)
