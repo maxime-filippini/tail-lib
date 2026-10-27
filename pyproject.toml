@@ -17,6 +17,7 @@ build-backend = "setuptools.build_meta"
 
 [dependency-groups]
 dev = [
+    "coverage>=7.17.0",
     "ipykernel>=7.4.0",
     "pytest>=9.1.1",
     "ruff>=0.17.0",
@@ -26,6 +27,14 @@ docs = [
     "mkdocstrings-python>=2.0.10",
     "zensical>=0.0.72",
 ]
+
+[tool.coverage.run]
+branch = true
+source = ["src/tail_lib"]
+
+[tool.coverage.report]
+precision = 1
+show_missing = true
 
 [tool.ruff]
 exclude = ["./.user", "./.scratch"]

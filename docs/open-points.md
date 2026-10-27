@@ -200,6 +200,11 @@ developer:
 - The docs site is built in CI on every run, and deployed to GitHub Pages
   (https://maxime-filippini.github.io/tail-lib/) on pushes to `develop`.
   Not deployed yet: the docs commits aren't on `develop`.
+- CI measures line and branch coverage (`coverage` job, Python from
+  `.python-version`) and publishes the HTML report with the docs, at
+  `/coverage/`. The README badge reads `coverage/coverage.json` there, so it
+  stays broken until the first deployment from `develop`. There's no
+  minimum coverage (`fail_under`): to decide with the developer.
 - The guide installs from the git repository: tail-lib isn't on PyPI.
 
 - `NaN` in the middle of a window (e.g. a missing return). Proposal: keep
