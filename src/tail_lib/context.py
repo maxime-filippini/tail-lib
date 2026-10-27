@@ -30,8 +30,13 @@ from typing import Any
 from typing import Self
 from typing import overload
 
+import numpy as np
+
 from tail_lib._checks import check_name
+from tail_lib._range import _check_model_history
+from tail_lib._range import _range_slice
 from tail_lib.backtests.kupiec import Kupiec
+from tail_lib.backtests.overshootings import Overshootings
 from tail_lib.build import _build_backtest
 from tail_lib.build import _build_var_model
 from tail_lib.build import _check_input_specs
@@ -50,6 +55,7 @@ from tail_lib.windows import Last
 from tail_lib.windows import _first_full_date
 
 if TYPE_CHECKING:
+    import datetime
     from collections.abc import Iterable
     from collections.abc import Mapping
     from contextvars import Token
@@ -360,6 +366,9 @@ class Context:
         self,
         returns: TimeSeries,
         inputs: Mapping[str, TimeSeries] | None = None,
+        *,
+        lower: datetime.date | np.datetime64 | None = None,
+        upper: datetime.date | np.datetime64 | None = None,
     ) -> Results:
         """Compute every node of the context once, on one returns series.
 
@@ -369,12 +378,26 @@ class Context:
         series with the dates and shape of the returns (R24), checked after
         each node.
 
+        With either bound, nodes still compute on the whole trimmed history
+        (R23). VaR is `NaN` outside the selected dates; preprocessors retain
+        their history. Backtests receive only flags after the first selected
+        forecast through the last selected date, inclusive. A single-date
+        range has no observations to backtest.
+
         Args:
             returns (TimeSeries): The returns time series. Leading dates are
                 removed until every portfolio has a value (R21).
             inputs (Mapping[str, TimeSeries] | None): The run inputs, by name,
                 each with the original dates and shape of `returns`. They
                 are trimmed with the returns. Inputs no node reads are ignored.
+            lower (datetime.date | np.datetime64 | None): Inclusive first
+                forecast date. If a bound is given, omitted bounds use the
+                first or last date of the trimmed history. All models must
+                have finished their warm-up by the lower bound.
+            upper (datetime.date | np.datetime64 | None): Inclusive last
+                forecast date. Bounds select observations inside the history;
+                they need not themselves be observations. With neither bound,
+                the run keeps its full-history behavior, including warm-ups.
 
         Returns:
             Results: The output of every node, and the models' value-at-risk
@@ -384,7 +407,8 @@ class Context:
             KeyError: If a run input is missing, checked before computing.
             ValueError: As `graph`, or if a run input or a node's output
                 does not match the returns, or no date has a return for
-                every portfolio.
+                every portfolio. Also if bounds are invalid, a model cannot
+                cover the range, or a bounded VaR uses a step other than 1.
             TypeError: If a node other than a backtest outputs no time
                 series.
 
@@ -409,6 +433,13 @@ class Context:
             returns = returns[first:]
             inputs = {name: series[first:] for name, series in inputs.items()}
 
+        selection = None
+        flags = None
+        if lower is not None or upper is not None:
+            selection = _range_slice(returns, lower, upper)
+            _check_model_history(self._models, returns, inputs, selection.start)
+            flags = _flag_range(selection, graph)
+
         # Nodes have different output types: `Results` restores the type of
         # each when read by node.
         outputs: dict[Node[Any], Any] = {}
@@ -421,9 +452,15 @@ class Context:
                     name: outputs[dependency]
                     for name, dependency in node.dependencies().items()
                 }
-                output = node.compute(returns, **node_inputs)
+                node_returns = returns
+                if isinstance(node, Backtest) and flags is not None:
+                    node_returns = returns[flags]
+                    node_inputs = _backtest_inputs(node_inputs, flags)
+                output = node.compute(node_returns, **node_inputs)
                 if not isinstance(node, Backtest):
                     _check_output(node, output, returns)
+            if selection is not None:
+                output = _select_output(node, output, selection)
             outputs[node] = output
 
         backtests = {
@@ -470,7 +507,8 @@ class Results:
         returns (TimeSeries): The returns the run computed on, starting at
             the first date with a value for every portfolio (R21).
         models (dict[str, TimeSeries]): The value-at-risk of each model, by
-            name.
+            name. With explicit run bounds, values outside the requested
+            range are `NaN`, on the full grid of `returns` (R24).
         backtests (dict[str, dict[str, BacktestResult]]): The result of each
             backtest of each model, by model name, then backtest name.
         outputs (Mapping[Node[Any], Any]): The output of every node computed.
@@ -514,6 +552,50 @@ class Results:
             msg = f"{type(key).__name__} wasn't computed in this run!"
             raise KeyError(msg)
         return self.outputs[key]
+
+
+def _flag_range(selection: slice, graph: RunGraph) -> slice:
+    """Select flags starting one observation after the first forecast."""
+    flags = slice(selection.start + 1, selection.stop)
+    if flags.start == flags.stop and any(
+        isinstance(entry.node, Backtest) for entry in graph.nodes
+    ):
+        msg = "A bounded run with backtests needs at least two forecast dates!"
+        raise ValueError(msg)
+    return flags
+
+
+# A backtest's inputs have different output types, as in `Context.run`.
+def _backtest_inputs(inputs: Mapping[str, Any], flags: slice) -> dict[str, Any]:
+    """Give backtests only the selected flags; their outputs need no full grid."""
+    return {
+        name: value[flags] if isinstance(value, TimeSeries) else value
+        for name, value in inputs.items()
+    }
+
+
+# Outputs differ by node, as in `Context.run` and `_check_output`.
+def _select_output(node: Node[Any], output: Any, selection: slice) -> Any:  # noqa: ANN401
+    """Mask forecasts and flags, keeping historical preprocessors intact."""
+    if isinstance(node, ValueAtRiskModel):
+        if not isinstance(output, TimeSeries):
+            msg = f"{type(node).__name__} must output a TimeSeries of VaR!"
+            raise TypeError(msg)
+        if np.isnan(output.values[selection]).any():
+            msg = f"Model {node.name!r} has missing VaR inside the requested range!"
+            raise ValueError(msg)
+        return _mask_dates(output, selection)
+    if isinstance(node, Overshootings):
+        return _mask_dates(output, slice(selection.start + 1, selection.stop))
+    return output
+
+
+def _mask_dates(series: TimeSeries, selection: slice) -> TimeSeries:
+    """Keep the full grid, with NaN outside the selected observations (R24)."""
+    values = series.values.copy()
+    values[: selection.start] = np.nan
+    values[selection.stop :] = np.nan
+    return TimeSeries(dates=series.dates, values=values)
 
 
 def _other_roots(

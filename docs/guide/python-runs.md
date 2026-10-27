@@ -142,6 +142,50 @@ every `step` observations. Trim the history yourself to choose a different
 calibration anchor. Each execution finds its own start; the context and
 the caller's arrays are unchanged.
 
+## Date range
+
+Give inclusive forecast bounds to a specific execution of a context:
+
+```python
+results = ctx.run(returns, lower=returns.dates[-100], upper=returns.dates[-1])
+```
+
+Bounds accept Python `datetime.date` or NumPy `datetime64`. If one is
+omitted, it defaults to the corresponding endpoint of the common trimmed
+history. Bounds must stay inside that history. They need not be observation
+dates: a weekend bound includes only the observations inside the interval.
+An interval containing no observations is an error.
+
+All nodes compute on the full trimmed history. Calibrations keep their
+original refit dates, so changing the range does not change overlapping
+VaRs. Every output keeps the dates and shape of `results.returns` (R24).
+VaR values outside the selected range are `NaN`; historical preprocessors
+remain available through `results[node]`. Reading a model through
+`results.models`, its name or its node gives the same masked series.
+
+Before computing, the context checks the built-in models' warm-ups against
+the first selected forecast date. A model that needs more history fails
+with its name and availability, rather than silently giving a shorter
+sample. Custom computations can have additional warm-ups: the run also
+checks actual VaR coverage after computing each model. Missing forecasts
+anywhere inside the selected range are an error. Bounded HS and FHS
+require `Trailing(..., step=1)` so there is a fresh VaR on every date.
+Calibrations and backtests keep their own steps.
+
+Backtests use flags after the first forecast date through the upper date.
+The first flag compares the next observation's return with the first
+selected VaR. Rolling windows start with those flags, and whole-sample and
+last-window tests end at the last selected date. A single-date run can
+produce today's VaR, but cannot run backtests.
+
+Calls without either bound retain their full-history behavior, including
+leading warm-up `NaN`s and existing VaR steps. `Last` windows are retained:
+they still produce a forecast only on the last date of the supplied
+history. Use a single-date range with a trailing model to select a
+historical date without changing the calibration anchor. Specs describe
+the context; execution bounds are passed to `Context.run`, including for
+contexts built with `Context.from_spec`.
+
 ## Results
 
 `ctx.run(returns)` returns [`Results`][tail_lib.context.Results]:
@@ -149,7 +193,8 @@ the caller's arrays are unchanged.
 `results.models[model]`
 :   The VaR of the model, a `TimeSeries` on the dates of `results.returns`,
     the common trimmed history, with its shape. Dates before the model's
-    first value are `NaN`.
+    first value are `NaN`. With bounds, dates outside the requested range
+    are also `NaN`.
 
 `results.backtests[model][backtest]`
 :   The result of a backtest on a model, e.g. a

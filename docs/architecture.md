@@ -48,6 +48,7 @@ How tail-lib is organized, and how a call flows from a spec to the numbers
 | `build.py` | Plain functions from specs to nodes and backtest declarations (R9a), with node sharing by value (D9). |
 | `run.py` | `RunSpec`: named model and backtest specs, labels, and their validation (R9, R9b). |
 | `context.py` | `Context`, `Results`, `GraphNode`, `GraphEdge`, `RunGraph`: binding, graph inspection and execution (D10). |
+| `_range.py` | Private validation of inclusive execution bounds and built-in model warm-ups (R22). |
 
 ## User documentation
 
@@ -181,7 +182,7 @@ results["gauss"], results[vol], results.backtests["gauss"]["kupiec"]
   on every model, including models added later (R4). `Kupiec._bind` creates
   `_KupiecTest(Overshootings(model), window=...)`. The executable node
   retains explicit dependencies and the usual signature check (D11).
-- **`run(returns, inputs)`** reports missing inputs and checks the inputs
+- **`run(returns, inputs, *, lower=None, upper=None)`** reports missing inputs and checks the inputs
   against the original returns before computing (R13). It finds the first
   date where every portfolio has a return, using `_first_full_date` from
   `windows.py`, and slices both returns and used inputs from that date
@@ -194,6 +195,29 @@ results["gauss"], results[vol], results.backtests["gauss"]["kupiec"]
   (a `TimeSeries`, a `DecayFactors`' `values`, `FilteredReturns`'
   `standardized`) has the dates and shape of the returns (R24), and raises
   `TypeError` for an output holding none.
+- **Bounded runs (R22–R24).** Giving either bound opts into inclusive range
+  selection. `_range_slice` validates increasing unique datetime dates,
+  rejects bounds outside the trimmed history or an empty selection, and
+  resolves bounds between observations with `searchsorted`. Missing bounds
+  use the history endpoints. `_check_model_history` walks model inputs
+  first and propagates each node's first usable observation, before any
+  `compute`: window lengths, EWMA backcasts, the filter's one-date lag and
+  external inputs' warm-ups. Bounded VaR windows require step 1. There is
+  no per-node span or schedule planning. Unknown custom computations can
+  have additional warm-ups, so actual model coverage is also checked
+  after computing, before the output is masked or consumed.
+- **Selection in the execution loop.** Every model still computes from
+  the common history. `_select_output` masks its VaR outside the selected
+  range on the full returns grid, before any downstream node reads it.
+  Preprocessors keep their historical outputs. Overshootings keep that
+  same grid with flags only on `(lower, upper]`: `_flag_range` excludes
+  the first forecast date and the extra flag after the upper bound.
+  Backtests receive their time-series inputs and returns sliced to those
+  flag dates; their outputs need not use the full returns grid (R24).
+  This gives whole-sample tests the selected upper date and anchors rolling
+  windows to the selected flags. A single selected forecast date is rejected
+  when the graph contains backtests. Without either bound, none of these
+  selection or history checks changes the existing full-history behavior.
 - **`Results`** holds every node's output (`outputs`), the named nodes
   (`named`), `models` (name to VaR) and `backtests` (model, then test, to
   result). Its `returns` are the common trimmed history; every time series
@@ -204,8 +228,9 @@ The date range design was simplified on 2026-10-27 (R23): nodes compute
 from that common history, then the range selects the results. Calibration
 steps stay anchored to the history, so changing only the output range
 does not move refits. There is no per-node span planning or separate
-`plan` call. Common-history trimming is built; per-execution bounds and
-range selection are the next increment, tracked in `open-points.md`.
+`plan` call. Common-history trimming, per-execution bounds and range
+selection are built. The report still needs to distinguish the selected
+range from available history, tracked in `open-points.md`.
 
 The node tests use `tests.helpers.run_node(node, returns, inputs)`, which
 binds a node to its own context and reads its output from `Results`. An

@@ -26,8 +26,9 @@ Requirements are numbered so changes and reviews can cite them (e.g. "R4").
   results.
 - **R15** — Backtests may need their own computation windows, e.g. a Kupiec
   test on rolling 250 days and on rolling 500 days, side by side in one run.
-- **R16** — *Superseded by R21–R23 (2026-10-25); the code still follows it
-  until the run date range is built.* Windows don't start where the series
+- **R16** — *Superseded by R21–R23 (2026-10-25). Kept as decision history;
+  full-history computation still skips leading warm-up `NaN`s internally.*
+  Windows don't start where the series
   being windowed is still `NaN`. A node's warm-up (e.g. an EWMA backcast, a
   VaR's first window) shows up as leading `NaN` in its output, and the first
   window of the next node starts on the first available value. For example,
@@ -58,7 +59,9 @@ Requirements are numbered so changes and reviews can cite them (e.g. "R4").
 - **R24** — Nodes compute on time series, which keep track of the dates.
   Every node's time series output has the same dates and shape as the
   run's returns, throughout the graph (2026-10-26). Backtest results are
-  not time series: they have one value per window.
+  not time series: they have one value per window. With explicit run bounds,
+  VaR is `NaN` outside the requested range, while upstream outputs retain
+  their historical values (2026-10-27).
 
 ### Simulation
 

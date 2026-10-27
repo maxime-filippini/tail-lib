@@ -13,7 +13,7 @@ Working rules, from `CLAUDE.md` and the developer:
 
 State as of 2026-10-27: branch `feat/context-api`, from `develop`, not
 pushed. ty and ruff (excluding the untracked `examples/t.ipynb`) pass, as
-do all 679 tests. The notebook still imports the removed `Run` and has an
+do all 706 tests. The notebook still imports the removed `Run` and has an
 existing import-order lint error; it is left untouched.
 
 ## Next up
@@ -29,7 +29,9 @@ existing import-order lint error; it is left untouched.
    simplified on 2026-10-27: compute from the common trimmed history,
    then select the range. No per-node spans or `Context.plan`. See "Run
    date range" under "Design questions". Common-history trimming (R21)
-   is complete. Next: per-execution bounds.
+   is committed as `4060bd6`. Per-execution bounds and backtests on the
+   selected range are complete. Next: report
+   range metadata and display.
 3. **Run report (R19)**, every step built; spec agreed on 2026-10-25, see "Run report" under
    "Design questions". Step 1 (nodes describe their settings) done. Then,
    each reviewed on its own: names as identifiers (R20, done), labels on
@@ -709,8 +711,10 @@ its results, while other models kept the earlier history.
   graph walk backward from the VaR range. Computing unneeded historical
   windows is accepted for simplicity; optimizing this can wait.
 - Every time series output keeps the dates and shape of the run's
-  trimmed returns throughout the graph (R24). The representation of the
-  selected result range will be settled with the bounds implementation.
+  trimmed returns throughout the graph (R24). Chosen on 2026-10-27:
+  VaR is masked with `NaN` outside the requested range, and upstream
+  outputs retain their history. Model access by name, node or
+  `results.models` gives the same masked series.
 - Shared nodes are computed once (D3), and their consumers see the same
   values.
 - Calibrations count their `step` from the first complete training window
@@ -737,7 +741,7 @@ span-planning step is superseded by the simpler full-history design:
 
 1. Docs: R21–R23, R16 and D6 marked superseded; updated for the simplified
    design on 2026-10-27.
-2. Common-history trimming (R21), complete:
+2. Common-history trimming (R21), committed as `4060bd6`:
    `Context.run` checks every used input against the original returns,
    finds the first date where all portfolios have a return, and slices
    both returns and used inputs from there before computing anything.
@@ -745,11 +749,30 @@ span-planning step is superseded by the simpler full-history design:
    data and the context are unchanged. Inputs' own warm-ups do not move
    the start; missing observations inside the remaining history are left
    in place. `Results.returns` and every node output use the trimmed grid.
-3. Per-execution lower and upper bounds, history checks and result
-   selection. VaR is daily; calibration steps stay anchored to history.
-   No history declarations, per-node spans or `Context.plan` are needed.
-4. Backtests on the overshootings of the range.
-5. The report shows the selected range and available history.
+3. Per-execution lower and upper bounds, complete.
+   `Context.run(..., lower=..., upper=...)` accepts inclusive
+   Python dates or NumPy datetimes. Omitted bounds use the trimmed history
+   endpoints; bounds between observations select the dates inside them.
+   Bounds outside that history, reversed bounds, `NaT` and empty ranges
+   fail before computing. Bounded runs require unique increasing dates.
+   The private `_range.py` propagates first usable observations for the
+   built-in models and external inputs before computing; unknown custom
+   warm-ups and missing values inside the range are checked on the actual
+   forecast. VaR outside the range is `NaN` on the full grid. Calibrations
+   and all other preprocessors keep their historical values and dates.
+   Bounded HS/FHS require step 1; calibrations keep their steps. Calls
+   without bounds retain their existing warm-ups and VaR steps.
+   No history declarations, per-node spans or `Context.plan` were added.
+4. Backtests on `(lower, upper]`, implemented with step 3 so bounded runs
+   cannot silently backtest the wrong sample. Overshootings are masked on
+   the full grid. Backtests receive sliced time-series inputs and returns
+   for only the selected flags, so whole-sample and last-window tests end
+   at the upper date and rolling windows count from the first selected
+   flag. A single-date range with backtests fails before computing.
+5. The report shows the selected range and available history. Still to
+   build: explicit range metadata on results and in the report contract.
+   Current report charts read the masked VaR but its header still shows
+   the full available history.
 
 **Rejected**
 
@@ -768,11 +791,13 @@ span-planning step is superseded by the simpler full-history design:
 
 **Still open**
 
-- Bounds' defaults, behavior for dates absent from the history, how the
-  selected range is exposed on results while retaining R24's graph
-  alignment, and whether `RunSpec` also needs execution bounds. Bounds
-  on `Context.run` are agreed.
-- Whether a one-date range replaces `Last` windows for models.
+- Whether a one-date range eventually replaces `Last` windows for models.
+  This increment retains `Last`: it still forecasts only on the final
+  history date, and bounds do not move its window. A single-date range on
+  a trailing model selects any sufficiently warmed-up historical date.
+- Whether a service needs serialized execution bounds in addition to its
+  context spec. For now `RunSpec` is unchanged; pass bounds to the specific
+  execution of `Context.from_spec(spec).run(...)`.
 
 ### Run report (R19)
 
