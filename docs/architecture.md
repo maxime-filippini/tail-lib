@@ -60,6 +60,12 @@ change to the public API, a spec field or a default also updates the guide:
 
 ## The node graph (`graph.py`)
 
+This section, "From a spec to results" and "From Python" describe the code
+as it is. A migration to a context API is planned, step by step: nodes
+identified by value, a pure `compute` with no `evaluate`, and a `Context`
+in place of `Run`, `Cache` and `Pool`. See "Context API" in
+`docs/open-points.md`.
+
 Every computation is a `Node[T]`: a preprocessor (a model input such as a
 volatility), a VaR model, or a backtest.
 

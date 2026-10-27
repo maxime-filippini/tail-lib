@@ -11,15 +11,18 @@ Working rules, from `CLAUDE.md` and the developer:
   `docs/architecture.md`, e.g. every backtest runs on every model (R4).
 - Commit only when the developer says so. Commits have no co-author trailer.
 
-State as of 2026-10-24: branch `feat/model-api`, not pushed, all checks
-green (ty, ruff, 229 tests), nothing uncommitted.
+State as of 2026-10-26: branch `feat/context-api`, from `develop`, not
+pushed.
 
 ## Next up
 
-1. **Run date range (R21–R23)**, agreed with the developer on 2026-10-25,
+1. **Context API**, plan agreed with the developer on 2026-10-26, see
+   "Context API" under "Design questions". Step 0 (docs) done, awaiting
+   review. Then steps 1 to 6, each reviewed on its own.
+2. **Run date range (R21–R23)**, agreed with the developer on 2026-10-25,
    see "Run date range" under "Design questions". Step 1 (docs) done,
-   awaiting review. Then steps 2 to 5, each reviewed on its own.
-2. **Run report (R19)**, every step built; spec agreed on 2026-10-25, see "Run report" under
+   awaiting review. Steps 2 to 5 wait for the context API.
+3. **Run report (R19)**, every step built; spec agreed on 2026-10-25, see "Run report" under
    "Design questions". Step 1 (nodes describe their settings) done. Then,
    each reviewed on its own: names as identifiers (R20, done), labels on
    the run (R20, done), and step 2 (`run.graph`, `Run.evaluate`, done).
@@ -29,7 +32,7 @@ green (ty, ruff, 229 tests), nothing uncommitted.
    table), 6 (the rolling backtests tab) done. Step 7 (node outputs on
    click) done, awaiting review. Left: the "Later" and "Still open" items
    under "Run report".
-3. **Serializing results (R12)**, a design to propose first. See "Design
+4. **Serializing results (R12)**, a design to propose first. See "Design
    questions" below.
 
 ## Decisions on finished work
@@ -128,7 +131,9 @@ developer:
   tests) inherit from, as VaR models inherit from `ValueAtRiskModel`
   (developer's request, 2026-10-25). Backtests could then be identified by
   type: today the report's `_kind` labels as a backtest any node that is
-  neither a VaR model nor a preprocessor (`report/data.py`).
+  neither a VaR model nor a preprocessor (`report/data.py`). Planned in
+  step 4a of "Context API": the run also uses it to skip the time series
+  shape check (R24).
 - Specs from HTTP (R17) are untrusted. To discuss: limits on what one spec
   can ask for (number of models, window lengths), and whether the service
   needs spec errors in a structured form (pydantic's `errors()` gives each
@@ -164,6 +169,110 @@ developer:
 
 ## Design questions
 
+### Context API
+
+The developer's sketch, `.scratch/api_update_pure.py` (not in git),
+proposes a new way to declare and run models. Migration plan agreed on
+2026-10-26; D9–D11 in `docs/requirements.md` describe the target.
+
+**Agreed**
+
+- Nodes are frozen dataclasses, identified by value (D9). A node's inputs
+  are its fields that hold nodes; its other fields are its settings. So
+  `dependencies()` and `settings()` are no longer written by each node.
+- No `evaluate`: the run calls `compute(returns, **inputs)`, one keyword
+  argument per input, named after its field, holding that input's output.
+  Building a node checks the signature (D11).
+- Nodes compute on `TimeSeries` (R24), not bare arrays, so the dates stay
+  with the values. Every time series output has the dates and shape of the
+  run's returns, checked by the run. Backtest results are not time series.
+- Decay nodes output a `DecayFactors`: the decay on each date, the refit
+  dates and the first date each fit used. One `EwmaVolatility` re-filters
+  from that output alone (D7), and replaces `FittedEwmaVolatility`, which
+  today reads its calibration's `window` and `start`.
+- `VolatilityFilter` stays a node, so the FHS spec keeps its nested
+  `filter` (see "FHS spec" above), and FHS models on 500 and 750 dates
+  share one filter. Proposed, to settle in step 4c: the filter's output
+  holds the standardized returns, the mean and the volatility, so the FHS
+  takes only `filter`, as `compute` only sees its own inputs.
+- Node fields take the spec field names, e.g. `vol` and `mean` rather than
+  `vol_model` and `mean_model`, so a path through a run reads like the
+  path in its spec.
+- `with Context(...) as ctx:` replaces `Run`. Nodes built in the block bind
+  to it, through a `ContextVar` (D10). VaR models are named, and names are
+  Python identifiers (R20). `ctx.graph()` orders the nodes without
+  computing; `ctx.run(returns, inputs)` computes each once and returns
+  `Results`, read by node or by name. `Cache`, `Pool` and `node.run` go.
+- Backtests are given to the `Context` constructor, as functions from a
+  model's `Overshootings` to a test node, as `Run` takes them today, and
+  run on every VaR model (R4). A `Backtest` base class comes with them (see
+  "Small open points").
+- Run inputs (R13): `run(returns, inputs)` sets the output of each input
+  node to `inputs[node.name]`, after checking it is aligned with the
+  returns, and never calls its `compute`. Missing inputs are still
+  reported before computing.
+- A context without VaR models computes its other nodes, e.g. a
+  volatility on its own. This replaces `Pool` and `node.run`, and reopens
+  "Runs without VaR models" below.
+- Done before steps 2 to 5 of the run date range, which will use the
+  context's graph walk.
+
+**Not taken from the sketch.** The sketch simplifies some methods. The
+migration keeps today's numbers, and each of these would be its own
+change, if the developer asks for it: a grid fit of the decay (today:
+golden-section search with `bounds` and `n_iter`); `arch`'s weighted
+backcast (today: `Backcast` and `StartingVol`); `Rolling` and `Expanding`
+windows with `refit_every` (today: `Trailing` with `step`, and `Last`, to
+revisit with the run date range); dropping the HS `interpolation`, the
+Gaussian volatility check and `Gaussian().quantile`; the new
+`SampleMean` and `SampleVolatility` nodes and a default volatility for
+`GaussianModel` (R9a defaults are an open question); names with dashes
+(R20).
+
+**Steps**, each reviewed on its own, with every check green:
+
+0. Docs: this section, R24, D9–D11.
+1. Pin the numbers: a test computing one node of each type, and a run with
+   backtests, on fixed simulated returns, against saved arrays. Later
+   steps keep it green, or change it on purpose and say why.
+2. Nodes as frozen dataclasses, identified by value, still on `Cache` and
+   `evaluate`. Arrays in fields are stored as tuples, so they hash.
+   `dependencies()` and `settings()` written once, from the fields. Then
+   2b: the field renames, with spec and report paths.
+3. `DecayFactors`, and one `EwmaVolatility` for constant and calibrated
+   decays. The `ewma` spec takes a `constant` or `ewma_calibration`
+   decay; `fitted_ewma` goes.
+4. Pure `compute`, family by family, through a generic `evaluate` in the
+   base class until the last one: 4a means, constant volatility, HS,
+   Gaussian, overshootings, Kupiec and the `Backtest` base class; 4b EWMA;
+   4c the filter and FHS; 4d input nodes. Then the generic `evaluate`
+   goes, and the `CLAUDE.md` rules on `evaluate` and the `Cache` are
+   reworded with the developer.
+5. `Context` and `Results`: 5a next to `Run`; 5b the report takes a
+   context and reads `Results`; 5c `Run`, `RunResult`, `Cache` and `Pool`
+   removed, the example and the guide moved over.
+6. A context from a spec (R9, R9a, R17), see "Still open".
+7. Then the run date range, from its step 2 (trimming the returns, R21, is
+   its step 3).
+
+**Still open**
+
+- Building a context from a spec, to settle before step 6. Recommended:
+  `Context.from_spec(spec)` opens a context with the spec's backtests and
+  labels, and builds each model with plain `match` functions, the model's
+  key in `models` as its name. Value identity shares identical parts (D9),
+  so the `Builder` tables go; the check on an input declared twice
+  differently, and `RunSpec`'s `last`-window check with its paths (R9b),
+  stay. Alternatives: keep the `Builder` class; or, later, let the node
+  dataclasses be the specs (pydantic over them, value ranges as field
+  annotations), which would also write a context back as a spec (R12,
+  D4).
+- Whether `RunSpec` keeps its name.
+- Hashing: nested frozen dataclasses hash again on every lookup. Cache the
+  hash if a large run (R6) shows it.
+- Building a node inside a `with` block binds it: one line in the guide,
+  so it isn't a surprise (R10).
+
 ### Run date range (R21–R23)
 
 Agreed with the developer on 2026-10-25, after the risk-manager review
@@ -184,8 +293,10 @@ portfolio's windows and changes its results.
   output it needs (e.g. an FHS on 500 dates needs 499 dates of filtered
   returns before; the filter needs the volatility of the date before). The
   `Run` walks the graph back from the VaR range and gives each node its
-  span. Each node computes on its span, so outputs have different lengths
-  per node, and the VaR covers exactly the range.
+  span, and the VaR covers exactly the range. Each node computes on its
+  span, but its output keeps the dates and shape of the run's returns
+  (R24, 2026-10-26, replacing outputs of different lengths per node).
+  Proposed, to settle in step 3: dates outside a node's span are `NaN`.
 - Each node type has a fixed start rule (R23): the first date it is needed,
   or the first available date. `EwmaVolatility` starts as early as
   possible, every other node on the first date it is needed. Only nodes
@@ -208,7 +319,9 @@ portfolio's windows and changes its results.
 - `NaN`s inside a portfolio's history are left to the review's finding 2
   (validation).
 
-**Steps**, each reviewed on its own:
+**Steps**, each reviewed on its own. Steps 2 to 5 wait for the context API
+(see "Context API" below, developer's choice on 2026-10-26), and will be
+built on its graph walk rather than on `Node.dependencies()`:
 
 1. Docs: R21–R23, R16 and D6 marked superseded, this section.
 2. Nodes declare what they need and their start rule; the `Run` derives
@@ -490,6 +603,11 @@ and in `RunResult`, with one spec dict per kind (`volatilities`, `means`,
 `constant` and `input` (recommended, and overlaps with R12); (B) widen
 `models` to any `Node[TimeSeries]` and backtest only the VaR ones
 (rejected: which models get backtested depends on hidden type checks).
+
+Reopened by the context API (2026-10-26): `Pool` and `node.run` go, and a
+context without VaR models computes its other nodes, with the same input
+checks. In Python, a volatility built in a context is computed by its
+run. Still open: the spec form, where options (A) and (B) apply again.
 
 ### Spec shorthands and defaults (R9a)
 

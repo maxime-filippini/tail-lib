@@ -52,6 +52,10 @@ Requirements are numbered so changes and reviews can cite them (e.g. "R4").
   and from the warm-up each node needs. Depending on the node, it starts on
   the first date it is needed, or as early as possible: an EWMA volatility's
   recursion starts on the first available date.
+- **R24** — Nodes compute on time series, which keep track of the dates.
+  Every node's time series output has the same dates and shape as the
+  run's returns, throughout the graph (2026-10-26). Backtest results are
+  not time series: they have one value per window.
 
 ### Simulation
 
@@ -165,6 +169,24 @@ The core developer needs to confirm them.
   starts from its long-run variance (`alpha + beta < 1`), EWMA from a given
   starting volatility, the AR lags from the long-run mean, with an optional
   burn-in; the variance recursions run on the residuals `r - mu`.
+
+Proposed for the context API (2026-10-26), see "Context API" in
+`docs/open-points.md`. Not built yet:
+
+- **D9** — *Nodes identified by value.* Two nodes of the same class with
+  equal constructor arguments, input nodes included, are one node, wherever
+  they were built. A node's name is not part of it. This replaces the two
+  ways of D3: sharing no longer depends on passing one instance or on a
+  `Builder`.
+- **D10** — *Nodes bind to their context.* A node built inside a
+  `with Context():` block belongs to that context, the innermost one of its
+  thread or asyncio task, so concurrent requests in a service (R17) never
+  mix their nodes. A node built outside any context belongs to none, and can
+  still be the input of a node in any context.
+- **D11** — *Inputs checked when a node is built.* A node's inputs are its
+  constructor arguments that are nodes, and its `compute` takes one keyword
+  argument per input, named after it. Building a node checks this, so a
+  mismatch fails where the model is declared, not mid-run.
 
 ## Open questions
 
