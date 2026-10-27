@@ -16,7 +16,10 @@ green (ty, ruff, 229 tests), nothing uncommitted.
 
 ## Next up
 
-1. **Run report (R19)**, every step built; spec agreed on 2026-10-25, see "Run report" under
+1. **Run date range (R21–R23)**, agreed with the developer on 2026-10-25,
+   see "Run date range" under "Design questions". Step 1 (docs) done,
+   awaiting review. Then steps 2 to 5, each reviewed on its own.
+2. **Run report (R19)**, every step built; spec agreed on 2026-10-25, see "Run report" under
    "Design questions". Step 1 (nodes describe their settings) done. Then,
    each reviewed on its own: names as identifiers (R20, done), labels on
    the run (R20, done), and step 2 (`run.graph`, `Run.evaluate`, done).
@@ -26,7 +29,7 @@ green (ty, ruff, 229 tests), nothing uncommitted.
    table), 6 (the rolling backtests tab) done. Step 7 (node outputs on
    click) done, awaiting review. Left: the "Later" and "Still open" items
    under "Run report".
-2. **Serializing results (R12)**, a design to propose first. See "Design
+3. **Serializing results (R12)**, a design to propose first. See "Design
    questions" below.
 
 ## Decisions on finished work
@@ -47,7 +50,9 @@ Recorded so later changes don't undo them by accident.
 - Windows start on the first date where every series has a value (R16,
   `Windows(..., skip_leading_nan=True)`), so no window holds warm-up `NaN`s.
   Backtests and filtered historical simulation use it; other models don't
-  yet.
+  yet. To be replaced by the run date range (R21–R23): with a `step`, a
+  late-starting portfolio shifts every portfolio's windows (risk-manager
+  review of 2026-10-25, finding 1).
 - Rejected for "the last 250 days": reading `[-1]` of a rolling test
   (computes every window), and windows counted back from the last date (past
   windows move when a date is added, so results aren't reproducible, D4).
@@ -158,6 +163,81 @@ developer:
 - The branch hasn't been pushed, and there's no PR to `develop` yet.
 
 ## Design questions
+
+### Run date range (R21–R23)
+
+Agreed with the developer on 2026-10-25, after the risk-manager review
+(`docs/reviews/2026-10-25-risk-manager-review.md`, finding 1). Today,
+`Windows(..., skip_leading_nan=True)` starts the windows on the first date
+where every series has a value. FHS and rolling backtests use it, so with a
+`step` above 1, adding a later-starting portfolio to a run shifts every
+portfolio's windows and changes its results.
+
+**Agreed**
+
+- The run trims its returns at the first date where every portfolio has a
+  value (R21). The latest-starting portfolio sets the start for all; to treat
+  portfolios differently, split them into several runs.
+- The run computes its VaR models on every date between a lower and an
+  upper date (R22). VaR models lose their `step`; calibrations keep theirs.
+- Each node declares, for each dependency, how many dates before its first
+  output it needs (e.g. an FHS on 500 dates needs 499 dates of filtered
+  returns before; the filter needs the volatility of the date before). The
+  `Run` walks the graph back from the VaR range and gives each node its
+  span. Each node computes on its span, so outputs have different lengths
+  per node, and the VaR covers exactly the range.
+- Each node type has a fixed start rule (R23): the first date it is needed,
+  or the first available date. `EwmaVolatility` starts as early as
+  possible, every other node on the first date it is needed. Only nodes
+  whose values depend on their start are affected by the rule: for the
+  others, starting later only skips work.
+- A shared node starts on the earliest date any of its consumers needs. It
+  is computed once (D3), and its consumers see the same values.
+- A calibration counts its `step` from its first needed date. A run whose
+  range is one date (e.g. today's VaR) so always recalibrates on that date.
+- Before computing, the run fails if the trimmed returns can't feed every
+  VaR model on the whole range, naming the model and the date it needs
+  (R22). Proposed, not yet confirmed: also name the portfolio that sets the
+  trimmed start.
+- Backtests use the overshootings of the range: the first flag compares the
+  return of the date after the lower date with the VaR of the lower date.
+- Accepted: the EWMA starts on the trimmed start, so a portfolio's results
+  change slightly when a later-starting portfolio joins the run, or when
+  more history is passed. The gap shrinks by the decay factor each date
+  (with 0.94: about 0.2% after 100 dates, 2e-7 after 250). This weakens D4.
+- `NaN`s inside a portfolio's history are left to the review's finding 2
+  (validation).
+
+**Steps**, each reviewed on its own:
+
+1. Docs: R21–R23, R16 and D6 marked superseded, this section.
+2. Nodes declare what they need and their start rule; the `Run` derives
+   each node's span for a given range. No change to results yet; the spans
+   can be inspected before a run.
+3. `Run` takes the lower and upper dates, trims the returns, checks them,
+   and computes each node on its span. `skip_leading_nan` and the VaR
+   `step` go away.
+4. Backtests on the overshootings of the range.
+5. The report shows the range and each node's span.
+
+**Rejected**
+
+- Schedules: one `Every(n)` per run, or named schedules nodes refer to,
+  counted from the first observation. VaR has no schedule (R22).
+  Date-based schedules (e.g. month ends) were out of scope anyway.
+- A late-starting portfolio getting `NaN` until it has enough history,
+  while the others keep their dates: replaced by trimming (R21).
+- A burn-in setting on the EWMA start: the EWMA starts as early as
+  possible instead.
+- A copy of a shared node per consumer: computes it more than once, and
+  the same node gives different values to different models.
+- The start rule as a constructor argument: fixed per node type for now.
+
+**Still open**
+
+- Where the bounds are given (an argument of `Run.run`, a `RunSpec` field,
+  or both) and their defaults. To settle in step 3.
+- Whether a one-date range replaces `Last` windows for models.
 
 ### Run report (R19)
 

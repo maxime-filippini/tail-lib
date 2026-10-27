@@ -26,12 +26,32 @@ Requirements are numbered so changes and reviews can cite them (e.g. "R4").
   results.
 - **R15** — Backtests may need their own computation windows, e.g. a Kupiec
   test on rolling 250 days and on rolling 500 days, side by side in one run.
-- **R16** — Windows don't start where the series being windowed is still
-  `NaN`. A node's warm-up (e.g. an EWMA backcast, a VaR's first window) shows
-  up as leading `NaN` in its output, and the first window of the next node
-  starts on the first available value. For example, filtered historical
-  simulation on 500 days, filtered by an EWMA volatility with a 20-day
-  backcast, has its first window on filtered returns 20 to 519.
+- **R16** — *Superseded by R21–R23 (2026-10-25); the code still follows it
+  until the run date range is built.* Windows don't start where the series
+  being windowed is still `NaN`. A node's warm-up (e.g. an EWMA backcast, a
+  VaR's first window) shows up as leading `NaN` in its output, and the first
+  window of the next node starts on the first available value. For example,
+  filtered historical simulation on 500 days, filtered by an EWMA volatility
+  with a 20-day backcast, has its first window on filtered returns 20 to 519.
+
+### Runs
+
+- **R21** — A run treats all its portfolios uniformly, so its results are
+  comparable across portfolios. Its returns are trimmed at the first date
+  where every portfolio has a value: a late-starting portfolio makes every
+  portfolio of the run start on its first date. Users who want portfolios
+  treated differently split them into several runs.
+- **R22** — A run computes its VaR models between a lower and an upper date,
+  so every model's VaR covers the same dates. Before computing, the run
+  checks that every VaR model can be computed over the whole range from the
+  trimmed returns, and fails otherwise. VaR models are computed on every
+  date of the range, not on a schedule. Backtests run on the VaRs of the
+  range.
+- **R23** — The dates of the nodes upstream of the VaR models (e.g. an EWMA
+  volatility feeding an FHS or a Gaussian model) follow from the VaR range
+  and from the warm-up each node needs. Depending on the node, it starts on
+  the first date it is needed, or as early as possible: an EWMA volatility's
+  recursion starts on the first available date.
 
 ### Simulation
 
@@ -124,7 +144,9 @@ The core developer needs to confirm them.
   dates inside each window and the date each result belongs to, the window's
   last date. Results go back onto the series' dates, each date holding the
   latest result available on it.
-- **D6** — *Independent schedules.* Each node has its own window and step. A
+- **D6** — *Independent schedules.* For VaR models, superseded by R22: they
+  are computed on every date of the run's range. Calibrations keep their
+  step. Each node has its own window and step. A
   node reads its inputs as of its own calculation date, i.e. their latest
   values on that date. A windowed model gets, for each window, the returns in
   the window and its inputs as of the window's last date.
