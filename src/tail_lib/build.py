@@ -3,14 +3,6 @@
 Contexts use the plain `_build_*` functions: equal nodes share computation
 by value (D9), without tables of nodes built from specs. `_check_input_specs`
 rejects conflicting declarations before building nodes.
-
-A `Builder` turns each spec into its node, building the node's inputs from
-the nested specs first. It remembers the node built for each spec, so
-identical specs, even written separately, give one node instance, which a
-`Cache` then computes once (D3).
-
-The builder also records the run inputs (R13) its specs read, so a run can
-check they are all given before computing anything.
 """
 
 from __future__ import annotations
@@ -71,7 +63,6 @@ from tail_lib.windows import Last
 from tail_lib.windows import Trailing
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
     from collections.abc import Iterable
 
     from tail_lib._typing import FloatArray
@@ -80,162 +71,6 @@ if TYPE_CHECKING:
 
 # A union, like the specs, once there is a second backtest.
 type BacktestResult = KupiecResult
-
-
-class Builder:
-    """Builds nodes from specs, one node per distinct spec.
-
-    Use one builder for all the specs of a run, so their identical parts are
-    shared. There is one method per node role, e.g. `volatility`, each typed
-    with the specs it accepts and the node it returns.
-    """
-
-    def __init__(self) -> None:
-        # One table per role keeps each lookup typed: spec in, node out.
-        self._var_models: dict[ValueAtRiskSpec, ValueAtRiskModel] = {}
-        self._volatilities: dict[VolatilitySpec, VolatilityModel] = {}
-        self._means: dict[MeanSpec, MeanModel] = {}
-        self._constant_decays: dict[ConstantDecaySpec, ConstantDecay] = {}
-        self._calibrations: dict[EwmaDecayCalibrationSpec, EwmaDecayCalibration] = {}
-        self._filters: dict[VolatilityFilterSpec, VolatilityFilter] = {}
-        self._backtests: dict[
-            tuple[BacktestSpec, Overshootings], Backtest[BacktestResult]
-        ] = {}
-        self._inputs: dict[str, ValueAtRiskInputSpec | VolatilityInputSpec] = {}
-
-    @property
-    def input_names(self) -> frozenset[str]:
-        """The names of the run inputs read by the nodes built so far."""
-        return frozenset(self._inputs)
-
-    def var_model(self, spec: ValueAtRiskSpec) -> ValueAtRiskModel:
-        """Get the value-at-risk model of a spec, building it on first request."""
-        return _get_or_build(self._var_models, spec, self._build_var_model)
-
-    def volatility(self, spec: VolatilitySpec) -> VolatilityModel:
-        """Get the volatility model of a spec, building it on first request."""
-        return _get_or_build(self._volatilities, spec, self._build_volatility)
-
-    def mean(self, spec: MeanSpec) -> MeanModel:
-        """Get the mean model of a spec, building it on first request."""
-        return _get_or_build(self._means, spec, self._build_mean)
-
-    def constant_decay(self, spec: ConstantDecaySpec) -> ConstantDecay:
-        """Get the constant decay factor of a spec, building it on first request."""
-        return _get_or_build(self._constant_decays, spec, _build_constant_decay)
-
-    def calibration(self, spec: EwmaDecayCalibrationSpec) -> EwmaDecayCalibration:
-        """Get the decay calibration of a spec, building it on first request."""
-        return _get_or_build(self._calibrations, spec, _build_calibration)
-
-    def decay(self, spec: DecaySpec) -> DecayModel:
-        """Get the decay model of a spec, constant or calibrated."""
-        match spec:
-            case ConstantDecaySpec():
-                return self.constant_decay(spec)
-            case EwmaDecayCalibrationSpec():
-                return self.calibration(spec)
-            case _:
-                assert_never(spec)
-
-    def volatility_filter(self, spec: VolatilityFilterSpec) -> VolatilityFilter:
-        """Get the volatility filter of a spec, building it on first request.
-
-        Filtered historical simulations with the same filter spec share it,
-        e.g. on windows of 500 and 750 dates.
-        """
-        return _get_or_build(self._filters, spec, self._build_volatility_filter)
-
-    def backtest(
-        self, spec: BacktestSpec, overshootings: Overshootings
-    ) -> Backtest[BacktestResult]:
-        """Get a backtest on a model's overshootings, building it on first request.
-
-        Identical backtest specs on the same overshootings node give one node,
-        e.g. the same test under two names.
-
-        Args:
-            spec (BacktestSpec): The backtest.
-            overshootings (Overshootings): The overshootings of the model it
-                tests, shared by all the backtests of the model.
-
-        Returns:
-            Backtest[BacktestResult]: The backtest.
-
-        """
-        return _get_or_build(
-            self._backtests,
-            (spec, overshootings),
-            lambda key: _build_backtest(*key),
-        )
-
-    def _declare_input(self, spec: ValueAtRiskInputSpec | VolatilityInputSpec) -> None:
-        declared = self._inputs.setdefault(spec.name, spec)
-        if declared != spec:
-            msg = (
-                f"Input {spec.name!r} is declared twice, differently: "
-                f"{declared!r} and {spec!r}!"
-            )
-            raise ValueError(msg)
-
-    def _build_var_model(self, spec: ValueAtRiskSpec) -> ValueAtRiskModel:
-        match spec:
-            case ValueAtRiskInputSpec():
-                self._declare_input(spec)
-                return ValueAtRiskInput(spec.name, cf=spec.cf)
-            case HistoricalSimulationsSpec():
-                return HistoricalSimulationsModel(
-                    cf=spec.cf,
-                    window=_window(spec.window),
-                    interpolation=spec.interpolation,
-                )
-            case FilteredHistoricalSimulationsSpec():
-                return FilteredHistoricalSimulationsModel(
-                    cf=spec.cf,
-                    filter=self.volatility_filter(spec.filter),
-                    window=_window(spec.window),
-                    interpolation=spec.interpolation,
-                )
-            case GaussianSpec():
-                return GaussianModel(
-                    cf=spec.cf,
-                    vol=self.volatility(spec.vol),
-                    mean=self.mean(spec.mean),
-                )
-            case _:
-                assert_never(spec)
-
-    def _build_volatility(self, spec: VolatilitySpec) -> VolatilityModel:
-        match spec:
-            case VolatilityInputSpec():
-                self._declare_input(spec)
-                return VolatilityInput(spec.name)
-            case ConstantVolatilitySpec():
-                return ConstantVolatility(_values(spec.vol))
-            case EwmaVolatilitySpec():
-                return EwmaVolatility(
-                    self.decay(spec.decay), start=_ewma_start(spec.start)
-                )
-            case _:
-                assert_never(spec)
-
-    def _build_volatility_filter(self, spec: VolatilityFilterSpec) -> VolatilityFilter:
-        return VolatilityFilter(self.volatility(spec.vol), mean=self.mean(spec.mean))
-
-    def _build_mean(self, spec: MeanSpec) -> MeanModel:
-        match spec:
-            case ZeroMeanSpec():
-                return ZeroMean()
-            case ConstantMeanSpec():
-                return ConstantMean(_values(spec.mean))
-            case _:
-                assert_never(spec)
-
-
-def _get_or_build[S, N](built: dict[S, N], spec: S, build: Callable[[S], N]) -> N:
-    if spec not in built:
-        built[spec] = build(spec)
-    return built[spec]
 
 
 def _check_input_specs(specs: Iterable[Spec]) -> None:

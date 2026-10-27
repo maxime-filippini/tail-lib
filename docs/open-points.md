@@ -13,17 +13,16 @@ Working rules, from `CLAUDE.md` and the developer:
 
 State as of 2026-10-27: branch `feat/context-api`, from `develop`, not
 pushed. ty and ruff (excluding the untracked `examples/t.ipynb`) pass, as
-do all 674 tests. The notebook has an existing import-order lint error.
+do all 654 tests. The notebook still imports the removed `Run` and has an
+existing import-order lint error; it is left untouched.
 
 ## Next up
 
 1. **Context API**, plan agreed with the developer on 2026-10-26, see
-   "Context API" under "Design questions". Steps 0 to 5c-2 committed, with
-   the `var` rename. The rest,
-   reordered by the developer on 2026-10-27 so specs run at every commit:
-   step 6 (`Context.from_spec`) done, awaiting review; then 5c-3 (`Run`,
-   `RunResult`, `Cache`, `Pool`, `node.run` and the `Builder` removed), each
-   reviewed on its own.
+   "Context API" under "Design questions". All steps are committed,
+   including `Context.from_spec`, the `var` rename and the final removal
+   of `Run`, `RunResult`, `Cache`, `Pool`, `node.run` and `Builder`.
+   Next is the run date range, from step 2.
 2. **Run date range (R21–R23)**, agreed with the developer on 2026-10-25,
    see "Run date range" under "Design questions". Step 1 (docs) done,
    awaiting review. Steps 2 to 5 wait for the context API.
@@ -87,8 +86,8 @@ Recorded so later changes don't undo them by accident.
 Chosen by the developer over flat `vol` and `mean` fields on the FHS spec
 (as in `GaussianSpec`), from which the builder would make the filter: that
 breaks "a spec's fields mirror its node's arguments". Identical filter
-specs give one filter node (`Builder.volatility_filter`, D3), and paths go
-through it, e.g. `models.fhs.filter.vol.decay.window`.
+specs build equal filter nodes, computed once by value identity (D9), and
+paths go through them, e.g. `models.fhs.filter.vol.decay.window`.
 
 ### JSON round trip (R9)
 
@@ -97,10 +96,10 @@ every default. Tested on specs holding every spec class.
 
 ### Runs from Python code (R17)
 
-Python code (notebooks, scripts) builds nodes and passes them to `Run`.
+Python code (notebooks, scripts) declares nodes inside a `Context`.
 Specs are the form that can be deserialized, for the JSON service. They can
 be built in Python too, but only as a data format, with its validation,
-to be turned into nodes (`Run.from_spec`, `Builder`): they hold no logic.
+to be turned into nodes (`Context.from_spec`): they hold no logic.
 This replaces an earlier choice of specs as the one way in. Chosen by the
 developer:
 
@@ -112,18 +111,18 @@ developer:
   Rejected: a settings class per backtest (duplicates its spec), and
   backtest nodes bound to each model by hand (loses "every backtest on
   every model", R4).
-- Nodes list the nodes they read (`dependencies()`), so `Run` can find run
+- Nodes list the nodes they read (`dependencies()`), so `Context` can find run
   inputs and `last` windows up front. It also gives names for R12. Rejected:
   no graph walk, which reports missing inputs mid-run and can't reject a
   backtested `last` model.
-- `Run.from_spec(spec)` builds the nodes, then makes the same `Run`.
+- `Context.from_spec(spec)` builds the nodes inside a context.
   `RunSpec` keeps its own `last`-window check, for errors with a spec path
   (R9b).
 - Names are unique in a run's graph (developer's rule, against silent
-  overriding): models and backtests are named by dict keys, and each run
-  input name belongs to one node. Models reading the same input share its
-  node; two different nodes with one input name are an error, even if they
-  agree. A model and a backtest can't share a name either (2026-10-25), so
+  overriding): nodes carry their names, model keys in a spec become those names, and
+  backtests are named by dict keys. Each input name belongs to one node;
+  equal nodes reading one input are one node (D9), while different nodes
+  using that name are an error. A model and a backtest can't share a name either (2026-10-25), so
   one `labels` mapping covers both (R20). Rejected: separate model and
   backtest label mappings, and one label applying to both.
 - Not now: a node-built run can't be written back as a spec, which saving
@@ -131,11 +130,6 @@ developer:
 
 ## Small open points
 
-- The `Backtest` base class (developer's request, 2026-10-25) is built
-  (step 4a of "Context API"): `KupiecTest` inherits from it, and the
-  report's `_kind` names backtests by type, and raises on a node of no
-  known kind. Left: the run using it to skip the time series shape check
-  (R24), in step 5.
 - Specs from HTTP (R17) are untrusted. To discuss: limits on what one spec
   can ask for (number of models, window lengths), and whether the service
   needs spec errors in a structured form (pydantic's `errors()` gives each
@@ -596,6 +590,35 @@ Done in step 6 (2026-10-27), no pinned output changed:
   tests pass. All five Python blocks on the home page and spec guide run.
   The strict docs build still reports only the existing README link.
 
+Done in step 5c-3 (2026-10-27), no pinned output changed:
+
+- `Run`, `RunResult`, `Cache`, `Pool`, `Node.run` and `Builder` are removed.
+  `Context.run` is the execution path for Python-built and spec-built
+  graphs, and `Results` holds every output (D9–D11, R10, R24).
+- `GraphNode`, `GraphEdge`, `RunGraph`, `BacktestFunction` and the graph
+  helpers moved from `run.py` into `context.py`. The report reads its
+  input-name helper there. `run.py` keeps only `RunSpec`, at its existing
+  import path, and its validation (R9, R9b).
+- The remaining spec and graph tests use contexts. Graph tests are now in
+  `tests/test_context_graph.py`. Dependency tests record the actual
+  `compute` call for every node type and check it receives each input's
+  output by field name; run input nodes are never computed (R13, D11).
+- Twenty cases were removed: tests specific to the deleted APIs and
+  duplicates already covered by the context tests. They include the
+  `Run` comparison, shared-cache pools, direct cache lookup, cache input
+  names, and the mutable-node cycle check. Frozen dataclass nodes cannot
+  form a constructor-field cycle; the context has no cycle check for
+  custom mutable subclasses, as agreed in step 5a-2.
+- All 654 tests pass, including the unchanged regression pins. ty and
+  ruff pass with `examples/t.ipynb` excluded. This untracked notebook still
+  imports `Run`, so the full ty check reports that removed import; full
+  ruff still reports its existing import-order error. The notebook is
+  untouched. The strict docs build still reports the existing README link.
+- The HS/FHS example runs, as do all 13 Python blocks on the home page,
+  spec guide and Python-run guide. The report example writes into a
+  temporary directory. Clean interpreters can import `RunSpec` or
+  `Context` first, and the removed public names are absent.
+
 **Still open**
 
 - Whether `RunSpec` keeps its name.
@@ -623,7 +646,7 @@ portfolio's windows and changes its results.
 - Each node declares, for each dependency, how many dates before its first
   output it needs (e.g. an FHS on 500 dates needs 499 dates of filtered
   returns before; the filter needs the volatility of the date before). The
-  `Run` walks the graph back from the VaR range and gives each node its
+  `Context` walks the graph back from the VaR range and gives each node its
   span, and the VaR covers exactly the range. Each node computes on its
   span, but its output keeps the dates and shape of the run's returns
   (R24, 2026-10-26, replacing outputs of different lengths per node).
@@ -655,10 +678,10 @@ portfolio's windows and changes its results.
 built on its graph walk rather than on `Node.dependencies()`:
 
 1. Docs: R21–R23, R16 and D6 marked superseded, this section.
-2. Nodes declare what they need and their start rule; the `Run` derives
+2. Nodes declare what they need and their start rule; the `Context` derives
    each node's span for a given range. No change to results yet; the spans
    can be inspected before a run.
-3. `Run` takes the lower and upper dates, trims the returns, checks them,
+3. `Context` takes the lower and upper dates, trims the returns, checks them,
    and computes each node on its span. `skip_leading_nan` and the VaR
    `step` go away.
 4. Backtests on the overshootings of the range.
@@ -679,7 +702,7 @@ built on its graph walk rather than on `Node.dependencies()`:
 
 **Still open**
 
-- Where the bounds are given (an argument of `Run.run`, a `RunSpec` field,
+- Where the bounds are given (an argument of `Context.run`, a `RunSpec` field,
   or both) and their defaults. To settle in step 3.
 - Whether a one-date range replaces `Last` windows for models.
 
@@ -688,6 +711,9 @@ built on its graph walk rather than on `Node.dependencies()`:
 Spec agreed with the developer on 2026-10-25.
 
 **Python side**
+
+The original run/cache design below was replaced by `Context` and `Results`
+in steps 5b and 5c-3 of "Context API". It is kept as decision history.
 
 - `Report(run, returns, inputs=None)` computes the run itself, so it can
   read every node's output, not only `RunResult`. `report.save(path)`

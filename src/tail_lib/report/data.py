@@ -33,6 +33,7 @@ from pydantic import JsonValue
 
 import tail_lib
 from tail_lib.backtests.overshootings import Overshootings
+from tail_lib.context import _input_name
 from tail_lib.graph import Backtest
 from tail_lib.graph import Preprocessor
 from tail_lib.models.ewma import Backcast
@@ -42,7 +43,6 @@ from tail_lib.models.ewma import StartingVol
 from tail_lib.models.value_at_risk import ValueAtRiskModel
 from tail_lib.models.volatility import FilteredReturns
 from tail_lib.models.volatility import VolatilityFilter
-from tail_lib.run import _input_name
 from tail_lib.time_series import TimeSeries
 from tail_lib.windows import Last
 from tail_lib.windows import Trailing

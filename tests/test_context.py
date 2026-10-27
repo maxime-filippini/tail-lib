@@ -12,15 +12,12 @@ from tail_lib.context import Results
 from tail_lib.models.ewma import ConstantDecay
 from tail_lib.models.ewma import EwmaDecayCalibration
 from tail_lib.models.mean import ZeroMean
-from tail_lib.models.value_at_risk import FilteredHistoricalSimulationsModel
 from tail_lib.models.value_at_risk import GaussianModel
 from tail_lib.models.value_at_risk import HistoricalSimulationsModel
 from tail_lib.models.value_at_risk import ValueAtRiskInput
 from tail_lib.models.volatility import ConstantVolatility
 from tail_lib.models.volatility import EwmaVolatility
-from tail_lib.models.volatility import VolatilityFilter
 from tail_lib.models.volatility import VolatilityInput
-from tail_lib.run import Run
 from tail_lib.time_series import TimeSeries
 from tail_lib.windows import Last
 from tail_lib.windows import Trailing
@@ -230,41 +227,6 @@ def test_two_different_nodes_cant_read_one_input() -> None:
 
 
 # --- Running ----------------------------------------------------------------
-
-
-def test_run_gives_the_same_numbers_as_run() -> None:
-    returns = simulated_returns(n=300)
-    window = Trailing(length=100)
-    with Context(
-        backtests={
-            "kupiec": KupiecTest,
-            "kupiec_100": lambda ovs: KupiecTest(ovs, window=window),
-        }
-    ) as ctx:
-        ewma = EwmaVolatility(ConstantDecay(0.94))
-        GaussianModel(cf=0.99, vol=ewma, name="gauss")
-        HistoricalSimulationsModel(cf=0.99, window=window, name="hs")
-        FilteredHistoricalSimulationsModel(
-            cf=0.99, filter=VolatilityFilter(ewma), window=window, name="fhs"
-        )
-    expected = Run(
-        dict(ctx.models),
-        backtests={
-            "kupiec": KupiecTest,
-            "kupiec_100": lambda ovs: KupiecTest(ovs, window=window),
-        },
-    ).run(returns)
-
-    results = ctx.run(returns)
-
-    assert results.models.keys() == expected.models.keys()
-    for name, var in expected.models.items():
-        np.testing.assert_array_equal(results.models[name].values, var.values)
-        np.testing.assert_array_equal(results[name].values, var.values)
-        for test, result in expected.backtests[name].items():
-            np.testing.assert_array_equal(
-                results.backtests[name][test].p_value, result.p_value
-            )
 
 
 def test_run_computes_each_node_once() -> None:

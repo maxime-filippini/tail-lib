@@ -134,10 +134,9 @@ The core developer needs to confirm them.
   too give one forecast per date.
 - **D3** — *Shared preprocessors.* Identical preprocessor specs share one
   computation within a run, even across separately written model specs (R6,
-  R9a). Implemented two ways: in Python, nodes given the same instance share
-  its computation (e.g. backtests given one `Overshootings`); from specs, one
-  `Builder` gives one node per distinct spec value, so identical parts of
-  separately written specs are computed once.
+  R9a). Implemented by value identity (D9): equal nodes share one
+  computation in a context, whether built in Python or from specs. The
+  backtests of a model share its `Overshootings` node.
 - **D4** — *Reusing saved results.* Results saved from earlier runs (R12) can
   be loaded back to skip work. Loading them never changes a result, only the
   time a run takes. Wanted, but the design needs fleshing out before

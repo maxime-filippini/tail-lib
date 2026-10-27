@@ -1,8 +1,7 @@
 """Contexts: nodes declared in Python or built from specs, run on any returns.
 
-A `Context` will replace `Run` (step 5 of the context API migration, see
-`docs/open-points.md`). Nodes built inside `with Context() as ctx:` bind to
-it (D10). Its value-at-risk models are named, and every backtest given to the
+Nodes built inside `with Context() as ctx:` bind to it (D10). Its
+value-at-risk models are named, and every backtest given to the
 context runs on every one of them (R4). `ctx.graph()` walks the graph without
 computing; `ctx.run(returns, inputs)` computes every node once, and returns
 `Results`.
@@ -41,25 +40,79 @@ from tail_lib.graph import Node
 from tail_lib.graph import RunInput
 from tail_lib.graph import current_context
 from tail_lib.models.ewma import DecayFactors
+from tail_lib.models.ewma import EwmaDecayCalibration
+from tail_lib.models.value_at_risk import FilteredHistoricalSimulationsModel
+from tail_lib.models.value_at_risk import HistoricalSimulationsModel
 from tail_lib.models.value_at_risk import ValueAtRiskModel
 from tail_lib.models.volatility import FilteredReturns
-from tail_lib.run import _check_names_and_labels
-from tail_lib.run import _check_no_last_window
-from tail_lib.run import _graph
-from tail_lib.run import _input_names
-from tail_lib.run import _run_graph
 from tail_lib.time_series import TimeSeries
+from tail_lib.windows import Last
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from collections.abc import Iterable
     from collections.abc import Mapping
     from contextvars import Token
     from types import TracebackType
 
     from tail_lib.build import BacktestResult
-    from tail_lib.run import BacktestFunction
-    from tail_lib.run import RunGraph
     from tail_lib.run import RunSpec
+    from tail_lib.windows import Trailing
+
+
+@dataclass(frozen=True)
+class GraphNode:
+    """A node of a run's graph, with every path it is reached by.
+
+    Attributes:
+        node (Node[Any]): The node.
+        paths (tuple[str, ...]): Its paths from the run, e.g.
+            `models.gauss.vol`, or `backtests.gauss.kupiec.overshootings`
+            for a model's overshootings. A node shared by several readers has
+            several (D3).
+
+    """
+
+    # The nodes of a graph have different output types: `Any` stands for each.
+    node: Node[Any]
+    paths: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class GraphEdge:
+    """An edge of a run's graph: a node reading another one.
+
+    Attributes:
+        source (Node[Any]): The node read, a dependency of `target`.
+        target (Node[Any]): The node reading it.
+        name (str): The name `target` reads it under, its key in
+            `target.dependencies()`, e.g. `vol`.
+
+    """
+
+    source: Node[Any]
+    target: Node[Any]
+    name: str
+
+
+@dataclass(frozen=True)
+class RunGraph:
+    """Every node of a run, each once, and the edges between them.
+
+    Attributes:
+        nodes (tuple[GraphNode, ...]): Each distinct node, in the order a
+            depth-first walk reaches it: from each model, then from each
+            backtest of each model, then the other nodes bound to the context.
+        edges (tuple[GraphEdge, ...]): One edge per dependency of each node.
+
+    """
+
+    nodes: tuple[GraphNode, ...]
+    edges: tuple[GraphEdge, ...]
+
+
+type BacktestFunction = Callable[[Overshootings], Backtest[BacktestResult]]
+"""Makes a backtest node from a model's overshootings, e.g. `KupiecTest` itself."""
 
 
 class Context:
@@ -513,3 +566,175 @@ def _check_output(node: Node[Any], output: Any, returns: TimeSeries) -> None:  #
     except ValueError as error:
         msg = f"The output of {node_type} does not match the returns: {error}"
         raise ValueError(msg) from error
+
+
+def _check_names_and_labels(
+    models: Mapping[str, object],
+    backtests: Mapping[str, object],
+    labels: Mapping[str, str],
+) -> None:
+    """Check models and backtests have distinct names, and every label a name.
+
+    Args:
+        models (Mapping[str, object]): The models, or their specs, by name.
+        backtests (Mapping[str, object]): The backtests, or their specs, by
+            name.
+        labels (Mapping[str, str]): The display names, by model or backtest
+            name.
+
+    Raises:
+        ValueError: If a model and a backtest share a name, or if a label is
+            empty or names no model or backtest.
+
+    """
+    shared = models.keys() & backtests.keys()
+    if shared:
+        msg = f"Names {sorted(shared)} are both a model and a backtest!"
+        raise ValueError(msg)
+
+    unknown = labels.keys() - models.keys() - backtests.keys()
+    if unknown:
+        msg = (
+            f"Labels {sorted(unknown)} name no model or backtest! Models: "
+            f"{sorted(models)}, backtests: {sorted(backtests)}."
+        )
+        raise ValueError(msg)
+
+    empty = [name for name, label in labels.items() if not label]
+    if empty:
+        msg = f"Labels of {sorted(empty)} are empty!"
+        raise ValueError(msg)
+
+
+type _Graph = list[tuple[str, Node[Any]]]
+"""Every node of a model, with its path from the run, see `_graph`."""
+
+
+def _check_no_last_window(graphs: Mapping[str, _Graph], backtests: list[str]) -> None:
+    """Check no model has a `last` window, as a run with backtests needs.
+
+    Args:
+        graphs (Mapping[str, _Graph]): The graph of each model, by name.
+        backtests (list[str]): The names of the run's backtests, for the
+            message.
+
+    Raises:
+        ValueError: If a model, or a node it reads, has a `last` window.
+
+    """
+    for name, graph in graphs.items():
+        last = [path for path, node in graph if isinstance(_window(node), Last)]
+        if last:
+            msg = (
+                f"Model {name!r} has a `last` window, at `{last[0]}.window`, so "
+                f"it gives one forecast and can't be backtested, but the run "
+                f"has backtests {backtests}!"
+            )
+            raise ValueError(msg)
+
+
+def _input_names(graphs: Mapping[str, _Graph]) -> frozenset[str]:
+    """Find the run inputs the models read, each name belonging to one node.
+
+    Equal input nodes are one node (D9). Two different nodes can't read one
+    name, so no node silently reads another one's input, e.g. volatilities
+    read as a value-at-risk.
+
+    Args:
+        graphs (Mapping[str, _Graph]): The graph of each model, by name.
+
+    Returns:
+        frozenset[str]: The names of the run inputs.
+
+    Raises:
+        ValueError: If two different nodes read the same run input.
+
+    """
+    input_nodes: dict[str, tuple[str, Node[Any]]] = {}
+    for graph in graphs.values():
+        for path, node in graph:
+            input_name = _input_name(node)
+            if input_name is None:
+                continue
+            first_path, first_node = input_nodes.setdefault(input_name, (path, node))
+            if first_node != node:
+                msg = (
+                    f"Run input {input_name!r} is read by two different nodes, "
+                    f"at `{first_path}` and `{path}`: give each input its own "
+                    f"name!"
+                )
+                raise ValueError(msg)
+    return frozenset(input_nodes)
+
+
+# A node's dependencies have different output types: `Any` stands for each.
+def _graph(path: str, node: Node[Any]) -> _Graph:
+    """List a node and every node it reads, depth first, with their paths.
+
+    Args:
+        path (str): The path of `node`, e.g. `models.gauss`.
+        node (Node[Any]): The node.
+
+    Returns:
+        _Graph: Each node, with its path: the path of the
+            node that reads it, then the name it is read under, e.g.
+            `models.gauss.vol`. A node read twice is listed twice.
+
+    """
+    graph = [(path, node)]
+    for name, dependency in node.dependencies().items():
+        graph += _graph(f"{path}.{name}", dependency)
+    return graph
+
+
+def _run_graph(roots: list[tuple[str, Node[Any]]]) -> RunGraph:
+    """Gather the graph of a run from its roots, each node once.
+
+    Args:
+        roots (list[tuple[str, Node[Any]]]): The models and backtests, each
+            with its path, e.g. `models.gauss` or `backtests.gauss.kupiec`.
+
+    Returns:
+        RunGraph: Each distinct node with its paths, in depth-first order
+            from the roots, and the edges to each node from its
+            dependencies.
+
+    """
+    # Nodes are identified by value (D9), and dicts keep the
+    # order they are first reached in.
+    paths: dict[Node[Any], list[str]] = {}
+    for root_path, root in roots:
+        for path, node in _graph(root_path, root):
+            paths.setdefault(node, []).append(path)
+
+    nodes = tuple(
+        GraphNode(node, tuple(node_paths)) for node, node_paths in paths.items()
+    )
+    edges = tuple(
+        GraphEdge(source=dependency, target=node, name=name)
+        for node in paths
+        for name, dependency in node.dependencies().items()
+    )
+    return RunGraph(nodes=nodes, edges=edges)
+
+
+def _input_name(node: Node[Any]) -> str | None:
+    """Give the name of the run input a node reads, if it is an input node."""
+    return node.name if isinstance(node, RunInput) else None
+
+
+def _window(node: Node[Any]) -> Trailing | Last | None:
+    """Give the window of a node computed on windows, if it is one.
+
+    Backtests are not listed: their windows are on the overshootings, and a
+    `last` one is fine, e.g. Kupiec on the last 250 dates.
+    """
+    match node:
+        case (
+            HistoricalSimulationsModel()
+            | FilteredHistoricalSimulationsModel()
+            | EwmaDecayCalibration()
+        ):
+            return node.window
+        case _:
+            return None

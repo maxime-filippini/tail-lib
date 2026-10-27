@@ -5,11 +5,7 @@ import numpy as np
 import pytest
 
 from tail_lib.context import Context
-from tail_lib.graph import Cache
-from tail_lib.graph import Dependencies
-from tail_lib.graph import Pool
 from tail_lib.graph import Preprocessor
-from tail_lib.graph import Settings
 from tail_lib.models.ewma import DecayFactors
 from tail_lib.models.ewma import EwmaDecayCalibration
 from tail_lib.models.value_at_risk import GaussianModel
@@ -70,36 +66,6 @@ def test_run_computes_nested_preprocessors_once() -> None:
     np.testing.assert_allclose(rescaled.values[1:], returns.values[1:])
 
 
-def test_run_rejects_cyclic_preprocessors() -> None:
-    # Frozen nodes can't be built into a cycle: this one sets a plain
-    # attribute after it is built, which a subclass that isn't a dataclass can.
-    class _Chained(VolatilityModel):
-        def __init__(self) -> None:
-            self.dependency: Preprocessor | None = None
-
-        def dependencies(self) -> Dependencies:
-            return {} if self.dependency is None else {"dependency": self.dependency}
-
-        def settings(self) -> Settings:
-            return {}
-
-        # Never reached: the cache finds the cycle while getting the inputs.
-        def compute(
-            self,
-            returns: TimeSeries,
-            /,
-            *,
-            dependency: TimeSeries | None = None,  # noqa: ARG002
-        ) -> TimeSeries:
-            return returns
-
-    a, b = _Chained(), _Chained()
-    a.dependency, b.dependency = b, a
-
-    with pytest.raises(ValueError, match="depends on itself"):
-        GaussianModel(cf=0.99, vol=a).run(returns_series(n=50))
-
-
 def test_context_computes_shared_preprocessors_once() -> None:
     class CountingVolatility(ConstantVolatility):
         n_calls = 0
@@ -158,26 +124,6 @@ def test_context_shares_decay_calibration_across_models() -> None:
     ctx.run(returns)
 
     assert _CountingCalibration.n_calls == 1
-
-
-def test_pools_on_one_cache_share_nodes() -> None:
-    returns = returns_series(n=50)
-    vol = _CountingVolatility(0.02)
-    gaussian = GaussianModel(cf=0.99, vol=vol)
-    cache = Cache(returns)
-
-    first = Pool({"gaussian": gaussian}).evaluate(cache)
-    second = Pool({"vols": vol, "gaussian": gaussian}).evaluate(cache)
-
-    assert vol.n_calls == 1
-    assert second["gaussian"] is first["gaussian"]
-
-
-def test_var_model_output_is_cached() -> None:
-    cache = Cache(returns_series(n=50))
-    gaussian = GaussianModel(cf=0.99, vol=ConstantVolatility(0.02))
-
-    assert cache.get(gaussian) is cache.get(gaussian)
 
 
 @dataclass(frozen=True)

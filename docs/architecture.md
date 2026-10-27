@@ -19,12 +19,12 @@ How tail-lib is organized, and how a call flows from a spec to the numbers
   every decay factor), and called by each class that takes the value. Specs
   check value ranges too, for errors with a path (R9b).
 - **Names** (R20): model, backtest and run input names are Python
-  identifiers, checked by `check_name` in `Run`, in `RunInput`, and in
-  specs (`Name`). So the dotted paths through a run's graph, e.g.
-  `models.gauss.vol`, are unambiguous. A model and a backtest can't
-  share a name. Display names are `labels` on `Run` and `RunSpec`, checked
-  once by `_check_names_and_labels` in `run.py`; `run.labels` fills in
-  every name, unlabelled ones as they are.
+  identifiers, checked by `check_name` in `Node`, `RunInput` and `Context`,
+  and in specs (`Name`). Dotted paths through a context's graph, e.g.
+  `models.gauss.vol`, are unambiguous. Two different nodes can't share a
+  name, and no node can take a backtest's name. Display names are `labels`
+  on `Context` and `RunSpec`, checked by `_check_names_and_labels` in
+  `context.py`; `ctx.labels` fills in unlabelled names as they are.
 
 ## Modules
 
@@ -32,7 +32,7 @@ How tail-lib is organized, and how a call flows from a spec to the numbers
 |---|---|
 | `time_series.py`, `calendar.py` | `TimeSeries`, and the calendar behind its date helpers (R8a). |
 | `windows.py` | `Trailing` and `Last` window specs, and `Windows`: the windows over a series, `apply` and `to_series` (D5). With `skip_leading_nan=True`, the windows start on the first date where every series has a value (R16). |
-| `graph.py` | `Node`, `Preprocessor`, `Backtest`, `RunInput`, `Cache`, `Pool`: the computation graph. |
+| `graph.py` | `Node`, `Preprocessor`, `Backtest`, `RunInput`: the value-identified nodes and their fields. |
 | `models/mean.py` | `MeanModel`, `ZeroMean`, `ConstantMean`. |
 | `models/ewma.py` | EWMA start specs (`Backcast`, `StartingVol`), the recursion (`ewma_update`, `ewma_variance`), decay nodes (`ConstantDecay`, `EwmaDecayCalibration`), which output `DecayFactors` (the decay on each date, its refit dates and the first date of each fit), and the decay fit. |
 | `models/garch.py` | The GARCH(1, 1) recursion (`garch_update`), shared by the simulator and a future GARCH volatility model. |
@@ -41,13 +41,13 @@ How tail-lib is organized, and how a call flows from a spec to the numbers
 | `backtests/overshootings.py` | `overshootings` (function) and `Overshootings` (node). |
 | `backtests/kupiec.py` | `kupiec_pof` (function), `KupiecResult`, `KupiecTest` (node). |
 | `report/data.py` | `ReportData`, the JSON contract with the report page, and `build_report_data` (R19). |
-| `report/report.py`, `report/index.html` | `Report`: computes a run and saves its data in the report page, package data built from `report-app/` (R19). |
+| `report/report.py`, `report/index.html` | `Report`: reads results and saves their data in the report page, package data built from `report-app/` (R19). |
 | `distributions.py` | `Distribution`, the base class of distributions with zero mean and unit variance, and `Gaussian`, `StudentT`. Each draws values (`draw`) and gives its quantiles (`quantile`): the simulator draws its shocks from them, and `GaussianModel` reads the Gaussian quantile. |
 | `simulation.py` | `Simulator` and its processes `ArProcess`, `EwmaProcess`, `GarchProcess`; the output `Simulation` (R18). |
 | `specs.py` | Pydantic specs mirroring each node, with value ranges (R9, R9b). |
-| `build.py` | Plain functions from specs to nodes (R9a), shared by value (D9). The legacy `Builder` stays until step 5c-3. |
-| `run.py` | `RunSpec`, `Run` (from nodes, or from a spec with `Run.from_spec`), `BacktestFunction`, `RunResult`: models and backtests in one run. |
-| `context.py` | `Context`, `Results`: models declared in a `with` block or built by `Context.from_spec`, their backtests, and their results (D10). Next to `Run` until step 5c-3 of the migration. |
+| `build.py` | Plain functions from specs to nodes (R9a), shared by value (D9). |
+| `run.py` | `RunSpec`: named model and backtest specs, labels, and their validation (R9, R9b). |
+| `context.py` | `Context`, `Results`, `BacktestFunction`, `GraphNode`, `GraphEdge`, `RunGraph`: binding, graph inspection and execution (D10). |
 
 ## User documentation
 
@@ -60,12 +60,6 @@ change to the public API, a spec field or a default also updates the guide:
 `docs/guide/specs.md` has a table of every spec.
 
 ## The node graph (`graph.py`)
-
-This section, "From a spec to results" and "From Python" describe the code
-as it is. A migration to a context API is under way, step by step: nodes
-identified by value (done), a pure `compute` with no `evaluate` (done),
-and a `Context` in place of `Run`, `Cache` and `Pool`. See "Context API" in
-`docs/open-points.md`.
 
 Every computation is a `Node[T]`: a preprocessor (a model input such as a
 volatility, a `Preprocessor`), a decay model (a `DecayModel`, giving
@@ -82,8 +76,8 @@ can be hashed; `np.asarray` gives the array back.
 - Any node takes an optional keyword `name`, a Python identifier (R20),
   `None` by default. It is not part of the node's identity
   (`compare=False`), nor a setting, nor in its `repr`: two equal nodes with
-  different names are one node, computed once. A context (step 5 of the
-  migration) will register its VaR models by name.
+  different names are one node, computed once. A context registers its VaR
+  models by name.
 
 - `compute(returns, /, **inputs)` is pure: it uses only its arguments and
   the node's own settings (see `CLAUDE.md`). After the returns, it takes one
@@ -94,7 +88,7 @@ can be hashed; `np.asarray` gives the array back.
   calls `super().__post_init__()` for it.
 - Run inputs (R13) are `RunInput` nodes, `VolatilityInput` and
   `ValueAtRiskInput`, each with a `name`, checked to be a Python
-  identifier. The cache never computes them: their output is the run input
+  identifier. The context never computes them: their output is the run input
   of their name. Their `compute` refuses to run. Their name is both the
   node's name and the input it reads, and, unlike other nodes' names, it is
   part of their identity and a setting. `RunInput` redefines the field
@@ -104,12 +98,13 @@ can be hashed; `np.asarray` gives the array back.
 - `dependencies()` lists the nodes whose outputs `compute` takes: the fields holding
   nodes, keyed by field, e.g. `{"vol": ..., "mean": ...}`. It
   is written once, in `Node`. So a graph can be walked without computing
-  it: `Run` walks it to find its run inputs and `last` windows. The returns
+  it: `Context` walks it to find its run inputs and `last` windows. The returns
   and the named run inputs are not nodes, so they are not listed. No node
   overrides it: a node needing more than its inputs' outputs gets it inside
   them, e.g. the FHS reads the mean and volatility from its filter's
   `FilteredReturns`. `tests/test_dependencies.py` checks, for one node of
-  each library type, that it matches what the cache reads for it.
+  each library type, that `compute` receives each dependency's output from
+  the context, by field name. Input nodes are read without computing.
 - `settings()` lists the node's other fields, with the values the node
   uses, defaults included, e.g. `{"cf": 0.99, "window": Trailing(250),
   "interpolation": "linear"}`. It is also written once, in `Node`. The
@@ -118,42 +113,31 @@ can be hashed; `np.asarray` gives the array back.
   `dependencies()`, it covers every constructor argument. A field the node
   sets itself (`init=False`), e.g. the `cf_var` a Kupiec test copies from
   its overshootings, is neither.
-- `Cache(returns, inputs)` belongs to one returns series. `cache.get(node)`
-  computes each node at most once, identified by value: it gets the
-  output of each of the node's `dependencies()`, then calls
-  `node.compute(returns, **outputs)`, by field name. It detects cycles. It
-  also holds the named run inputs (R13): `cache.input(name)` checks the
-  input is aligned with the returns, and raises `KeyError` if it is
-  missing. `cache.get` gives a `RunInput` node `cache.input(node.name)`
-  instead of computing it.
-- `Pool(nodes)` computes named nodes on one cache. Pools evaluated on the
-  same cache share their common nodes.
-- `node.run(returns, inputs)` and `pool.run(returns, inputs)` do the same with
-  a fresh cache.
-
 Estimable parameters (a volatility, a decay) are input nodes. Every variant
 of such an input is a node, e.g. `ConstantDecay` next to
 `EwmaDecayCalibration`. Settings always set by hand (`cf`, windows, fit
 bounds) are constructor arguments.
 
-Sharing follows from value identity: equal nodes are computed once, however
-they were built. For example, backtests take an `Overshootings` node, not a
-model, so all the backtests of a model share one:
+Sharing follows from value identity: equal nodes are computed once in a
+context, however they were built. Backtests take an `Overshootings` node,
+so the tests of a model share the same flags (R4):
 
 ```python
-backtests = {
-    "kupiec": KupiecTest(Overshootings(model)),
-    "kupiec_250": KupiecTest(Overshootings(model), window=Trailing(length=250)),
-}
-Pool(backtests).run(returns)  # the overshootings of `model` are computed once
+with Context(
+    backtests={
+        "kupiec": KupiecTest,
+        "kupiec_250": lambda ovs: KupiecTest(ovs, window=Trailing(250)),
+    }
+) as ctx:
+    GaussianModel(cf=0.99, vol=ConstantVolatility(0.01), name="gauss")
+results = ctx.run(returns)
 ```
 
 ## Contexts (`context.py`)
 
-The context API's replacement for `Run`, built next to it (step 5a of the
-migration). The report, the guide, the example, the regression test and the
-node tests use it. `Context.from_spec` also builds one from a spec; `Run`
-stays until step 5c-3 removes the old API:
+`Context` binds nodes declared in a `with` block, walks their graph and
+computes them. `Context.from_spec` builds the same kind of context from a
+spec. `Results` holds every output from one execution:
 
 ```python
 with Context(backtests={"kupiec": KupiecTest}, labels={"gauss": "Gaussian"}) as ctx:
@@ -178,7 +162,7 @@ results["gauss"], results[vol], results.backtests["gauss"]["kupiec"]
   Named models are the context's `models`.
 - **`graph()`** checks the names and labels, the `last` windows when there
   are backtests, and that each run input name belongs to one node, then
-  returns a `RunGraph`, as `Run.graph` does. Roots: each model
+  returns a `RunGraph`. Roots: each model
   (`models.gauss`), each backtest of each model
   (`backtests.gauss.kupiec`), then the bound nodes not reached yet, latest
   first (`nodes.<name>`, or `nodes.<class>`, `nodes.<class>_2`, ... without
@@ -191,7 +175,7 @@ results["gauss"], results[vol], results.backtests["gauss"]["kupiec"]
   After each node but a backtest, `_check_output` checks its time series
   (a `TimeSeries`, a `DecayFactors`' `values`, `FilteredReturns`'
   `standardized`) has the dates and shape of the returns (R24), and raises
-  `TypeError` for an output holding none. It doesn't use the `Cache`.
+  `TypeError` for an output holding none.
 - **`Results`** holds every node's output (`outputs`), the named nodes
   (`named`), `models` (name to VaR) and `backtests` (model, then test, to
   result). `results[node]` or `results["name"]` reads one output.
@@ -200,9 +184,11 @@ The node tests use `tests.helpers.run_node(node, returns, inputs)`, which
 binds a node to its own context and reads its output from `Results`. An
 unnamed VaR model is bound through a named copy: names aren't part of value
 identity (D9), so the original node still reads the result. Shared-model
-and backtest tests declare their nodes in one context. Tests specifically
-covering `Run`, `Builder`, `Pool` and `Cache`, including the mutable-node
-cycle test, stay until those classes are removed (step 5c-3).
+and backtest tests declare their nodes in one context.
+
+The graph walk assumes nodes are frozen dataclasses, which cannot form a
+cycle through their constructor fields. It has no check for cycles made
+by mutating attributes on a custom subclass.
 
 ## From a spec to results
 
@@ -243,9 +229,6 @@ pydantic. YAML could later be a loader producing dicts.
    "Contexts"). The `Results` holds every output, read by node or name,
    with `models[name]` for the VaR and `backtests[model][test]` for each
    backtest result. A report reads these results without computing again.
-
-The legacy `Run.from_spec` still uses `Builder` and its sharing tables;
-they are removed together in step 5c-3.
 
 Example:
 
@@ -354,8 +337,7 @@ Values are checked when each spec is built, so an error's path starts at
 that spec, e.g. `value.list.1` for `ConstantDecaySpec(value=(0.94, 1.5))`.
 
 A context without models computes the other nodes built in its block, e.g.
-a volatility on its own. `Pool` and `node.run` (see "The node graph") still
-do it too, until step 5c-3 removes them.
+a volatility on its own. Read its output from `Results` by node or name.
 
 `examples/backtest_hs_fhs.py` runs HS, FHS and a Gaussian model built this
 way, with a rolling Kupiec test.

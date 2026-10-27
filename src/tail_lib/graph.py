@@ -1,7 +1,7 @@
-"""The node graph: nodes, the cache that computes them, and pools of nodes.
+"""The node graph: value-identified nodes and their declared inputs.
 
 A node is one computation on a returns time series: a preprocessor (a model
-input such as a volatility), a value-at-risk model, or a backtest. A `Cache`
+input such as a volatility), a value-at-risk model, or a backtest. A `Context`
 computes each node at most once: first its inputs, the nodes in its fields,
 then the node's `compute` on their outputs.
 
@@ -11,9 +11,9 @@ with equal constructor arguments, their input nodes included, are one node
 settings.
 
 Data from outside a run, e.g. value-at-risk forecasts computed earlier, enters
-it as named inputs (R13): the caller passes them to the cache by name, and the
-cache gives each input node (a `RunInput`) the input of its name as its
-output, without computing it.
+it as named inputs (R13): the caller passes them to the context by name, and
+it gives each input node (a `RunInput`) the input of its name as its output,
+without computing it.
 """
 
 from __future__ import annotations
@@ -79,7 +79,7 @@ class Node[T](ABC):
     the returns, then one keyword argument per dependency, named after its
     field, holding that dependency's output, and uses nothing else but the
     node's own settings. E.g. a Gaussian model, with fields `cf`, `vol` and
-    `mean`, has `compute(self, returns, /, *, vol, mean)`. A `Cache`
+    `mean`, has `compute(self, returns, /, *, vol, mean)`. A `Context`
     computes the dependencies first, then calls `compute` with their outputs.
 
     Building a node checks that `compute` takes exactly its dependencies, by
@@ -110,7 +110,7 @@ class Node[T](ABC):
     # Each node takes its own inputs, so `compute` has no common signature.
     # The typing spec reads `*args: Any, **kwargs: Any` like `...`: every
     # subclass can narrow it, and ty checks direct calls to the subclass's.
-    # Only the call in `Cache.get` is unchecked, hence `_check_compute`.
+    # Only the call in `Context.run` is unchecked, hence `_check_compute`.
     @abstractmethod
     def compute(self, *args: Any, **kwargs: Any) -> T:  # noqa: ANN401
         """Compute the output from the returns and the outputs of the inputs.
@@ -200,24 +200,6 @@ class Node[T](ABC):
             if node_field.init and node_field.compare
         }
 
-    def run(
-        self,
-        returns: TimeSeries,
-        inputs: Mapping[str, TimeSeries] | None = None,
-    ) -> T:
-        """Compute this node on the returns, with a fresh cache.
-
-        Args:
-            returns (TimeSeries): The returns time series.
-            inputs (Mapping[str, TimeSeries] | None): The named inputs of the
-                run, each with the dates and shape of `returns`.
-
-        Returns:
-            T: The output of this node.
-
-        """
-        return Cache(returns, inputs).get(self)
-
 
 # Node types are hashable, and their signatures don't change: read each once.
 @cache
@@ -305,8 +287,8 @@ class RunInput(Node[TimeSeries]):
     """A node whose output is given to the run, by name, not computed (R13).
 
     E.g. volatilities or value-at-risk forecasts computed outside the library.
-    The cache gives it the run input of its name as its output, see
-    `Cache.input`, and never calls its `compute`.
+    The context gives it the run input of its name as its output, and never
+    calls its `compute`.
 
     Its name is both the node's name and the input it reads, e.g.
     `ValueAtRiskInput("var_ext", cf=0.99)` is the model `var_ext`, reading
@@ -334,7 +316,7 @@ class RunInput(Node[TimeSeries]):
 
     # Every `compute` takes the returns first, even when it doesn't use them.
     def compute(self, returns: TimeSeries, /) -> TimeSeries:  # noqa: ARG002
-        """Refuse to compute: the output is the run input, see `Cache.get`.
+        """Refuse to compute: the output is the run input, see `Context.run`.
 
         Raises:
             TypeError: Always.
@@ -342,152 +324,3 @@ class RunInput(Node[TimeSeries]):
         """
         msg = f"Input {self.name!r} is given to the run, not computed!"
         raise TypeError(msg)
-
-
-class Cache:
-    """Outputs of nodes on one returns time series.
-
-    Each node is computed at most once per cache. Nodes are identified by
-    value (D9), so equal nodes, even built separately, share one computation.
-
-    The cache also holds the named inputs of the run. Inputs no node reads are
-    ignored.
-    """
-
-    def __init__(
-        self,
-        returns: TimeSeries,
-        inputs: Mapping[str, TimeSeries] | None = None,
-    ) -> None:
-        """Build an empty cache for a returns time series.
-
-        Args:
-            returns (TimeSeries): The returns every node is computed on.
-            inputs (Mapping[str, TimeSeries] | None): The named inputs of the
-                run, each with the dates and shape of `returns`.
-
-        """
-        self._returns = returns
-        self._inputs = {} if inputs is None else dict(inputs)
-        # Nodes have different output types: `get` restores the type of each.
-        self._outputs: dict[Node[Any], Any] = {}
-        self._pending: set[Node[Any]] = set()
-
-    @property
-    def returns(self) -> TimeSeries:
-        """The returns every node is computed on."""
-        return self._returns
-
-    @property
-    def input_names(self) -> frozenset[str]:
-        """The names of the run inputs given to the cache."""
-        return frozenset(self._inputs)
-
-    def input(self, name: str) -> TimeSeries:
-        """Get a named input of the run.
-
-        Args:
-            name (str): The name of the input.
-
-        Returns:
-            TimeSeries: The input, with the dates and shape of the returns.
-
-        Raises:
-            KeyError: If no input has this name.
-            ValueError: If the input does not match the returns.
-
-        """
-        if name not in self._inputs:
-            msg = f"Missing input {name!r}! Inputs given: {sorted(self._inputs)}."
-            raise KeyError(msg)
-
-        value = self._inputs[name]
-        try:
-            self._returns.check_aligned(value)
-        except ValueError as error:
-            msg = f"Input {name!r} does not match the returns: {error}"
-            raise ValueError(msg) from error
-        return value
-
-    def get[T](self, node: Node[T]) -> T:
-        """Get the output of a node, computing it on first request.
-
-        Args:
-            node (Node[T]): The node.
-
-        Returns:
-            T: The output of the node.
-
-        Raises:
-            KeyError: If the node is a run input that wasn't given.
-            ValueError: If the node needs its own output as an input, or is
-                a run input that does not match the returns.
-
-        """
-        if node in self._outputs:
-            return self._outputs[node]
-
-        # A run input's output is the input of its name, never computed (R13).
-        if isinstance(node, RunInput):
-            self._outputs[node] = self.input(node.name)
-            return self._outputs[node]
-
-        if node in self._pending:
-            msg = f"{type(node).__name__} depends on itself!"
-            raise ValueError(msg)
-
-        # The node's inputs first, then the node on their outputs, passed by
-        # field name.
-        self._pending.add(node)
-        try:
-            inputs = {
-                name: self.get(dependency)
-                for name, dependency in node.dependencies().items()
-            }
-            output = node.compute(self._returns, **inputs)
-        finally:
-            self._pending.discard(node)
-
-        self._outputs[node] = output
-        return output
-
-
-class Pool[T]:
-    """Named nodes computed on the same returns.
-
-    The nodes share one cache, so a node they depend on in common is computed
-    once across the pool. Pools evaluated on the same cache share it too.
-    """
-
-    def __init__(self, nodes: Mapping[str, Node[T]]) -> None:
-        self._nodes = dict(nodes)
-
-    def evaluate(self, cache: Cache) -> dict[str, T]:
-        """Compute every node of the pool on a cache.
-
-        Args:
-            cache (Cache): The cache, possibly shared with other pools.
-
-        Returns:
-            dict[str, T]: The output of each node, keyed by name.
-
-        """
-        return {name: cache.get(node) for name, node in self._nodes.items()}
-
-    def run(
-        self,
-        returns: TimeSeries,
-        inputs: Mapping[str, TimeSeries] | None = None,
-    ) -> dict[str, T]:
-        """Compute every node of the pool on the returns, with a fresh cache.
-
-        Args:
-            returns (TimeSeries): The returns time series.
-            inputs (Mapping[str, TimeSeries] | None): The named inputs of the
-                run, each with the dates and shape of `returns`.
-
-        Returns:
-            dict[str, T]: The output of each node, keyed by name.
-
-        """
-        return self.evaluate(Cache(returns, inputs))

@@ -3,8 +3,8 @@ import pytest
 from pydantic import TypeAdapter
 from pydantic import ValidationError
 
-from tail_lib.build import Builder
-from tail_lib.graph import Pool
+from tail_lib.build import _build_calibration
+from tail_lib.context import Context
 from tail_lib.models.ewma import ConstantDecay
 from tail_lib.models.ewma import DecayFactors
 from tail_lib.models.ewma import EwmaDecayCalibration
@@ -12,9 +12,11 @@ from tail_lib.models.mean import ConstantMean
 from tail_lib.models.value_at_risk import FilteredHistoricalSimulationsModel
 from tail_lib.models.value_at_risk import GaussianModel
 from tail_lib.models.value_at_risk import HistoricalSimulationsModel
+from tail_lib.models.value_at_risk import ValueAtRiskModel
 from tail_lib.models.volatility import ConstantVolatility
 from tail_lib.models.volatility import EwmaVolatility
 from tail_lib.models.volatility import VolatilityFilter
+from tail_lib.run import RunSpec
 from tail_lib.specs import EwmaDecayCalibrationSpec
 from tail_lib.specs import GaussianSpec
 from tail_lib.specs import TrailingSpec
@@ -23,6 +25,7 @@ from tail_lib.time_series import TimeSeries
 from tail_lib.windows import Last
 from tail_lib.windows import Trailing
 from tests.helpers import returns_series
+from tests.helpers import run_node
 from tests.helpers import simulated_returns
 
 _VAR_SPEC: TypeAdapter[ValueAtRiskSpec] = TypeAdapter(ValueAtRiskSpec)
@@ -36,16 +39,22 @@ _FITTED_EWMA = {
 }
 
 
+def _model(spec: ValueAtRiskSpec) -> ValueAtRiskModel:
+    return Context.from_spec(RunSpec(models={"model": spec})).models["model"]
+
+
 def test_gaussian_spec_builds_the_same_model_as_python() -> None:
     returns = simulated_returns(n=300)
     spec = _VAR_SPEC.validate_python(
         {"type": "gaussian", "cf": 0.99, "vol": _FITTED_EWMA}
     )
 
-    built = Builder().var_model(spec).run(returns)
+    built = run_node(_model(spec), returns)
 
     calibration = EwmaDecayCalibration(Trailing(length=100, step=50))
-    expected = GaussianModel(cf=0.99, vol=EwmaVolatility(calibration)).run(returns)
+    expected = run_node(
+        GaussianModel(cf=0.99, vol=EwmaVolatility(calibration)), returns
+    )
     np.testing.assert_array_equal(built.values, expected.values)
 
 
@@ -55,10 +64,10 @@ def test_historical_spec_builds_the_same_model_as_python() -> None:
         {"type": "historical", "cf": 0.95, "window": {"type": "trailing", "length": 50}}
     )
 
-    built = Builder().var_model(spec).run(returns)
+    built = run_node(_model(spec), returns)
 
-    expected = HistoricalSimulationsModel(cf=0.95, window=Trailing(length=50)).run(
-        returns
+    expected = run_node(
+        HistoricalSimulationsModel(cf=0.95, window=Trailing(length=50)), returns
     )
     np.testing.assert_array_equal(built.values, expected.values)
 
@@ -83,36 +92,38 @@ def test_filtered_historical_spec_builds_the_same_model_as_python() -> None:
     returns = simulated_returns(n=300)
     spec = _VAR_SPEC.validate_python(_fhs_spec(100))
 
-    built = Builder().var_model(spec).run(returns)
+    built = run_node(_model(spec), returns)
 
     vol_filter = VolatilityFilter(
         EwmaVolatility(ConstantDecay(0.94)), mean=ConstantMean(1e-4)
     )
-    expected = FilteredHistoricalSimulationsModel(
-        cf=0.99,
-        filter=vol_filter,
-        window=Trailing(length=100),
-        interpolation="below",
-    ).run(returns)
+    expected = run_node(
+        FilteredHistoricalSimulationsModel(
+            cf=0.99,
+            filter=vol_filter,
+            window=Trailing(length=100),
+            interpolation="below",
+        ),
+        returns,
+    )
     np.testing.assert_array_equal(built.values, expected.values)
     assert not np.isnan(built.values[-1]).any()
 
 
-def test_filtered_historical_specs_share_their_filter() -> None:
-    builder = Builder()
+def test_filtered_historical_specs_build_equal_filters() -> None:
     gauss = _VAR_SPEC.validate_python(
         {"type": "gaussian", "cf": 0.99, "vol": _FILTER["vol"]}
     )
 
-    fhs_100 = builder.var_model(_VAR_SPEC.validate_python(_fhs_spec(100)))
-    fhs_150 = builder.var_model(_VAR_SPEC.validate_python(_fhs_spec(150)))
-    gauss_model = builder.var_model(gauss)
+    fhs_100 = _model(_VAR_SPEC.validate_python(_fhs_spec(100)))
+    fhs_150 = _model(_VAR_SPEC.validate_python(_fhs_spec(150)))
+    gauss_model = _model(gauss)
 
-    assert fhs_100.dependencies()["filter"] is fhs_150.dependencies()["filter"]
-    # The filter's volatility is the Gaussian model's too: one node per spec.
+    assert fhs_100.dependencies()["filter"] == fhs_150.dependencies()["filter"]
+    # The filter's volatility equals the Gaussian model's (D9).
     assert (
         fhs_100.dependencies()["filter"].dependencies()["vol"]
-        is gauss_model.dependencies()["vol"]
+        == gauss_model.dependencies()["vol"]
     )
 
 
@@ -130,36 +141,36 @@ def test_last_windows_in_model_specs_build_as_in_python() -> None:
             },
         }
     )
-    builder = Builder()
 
-    built_hs = builder.var_model(hs).run(returns)
-    built_gauss = builder.var_model(gauss).run(returns)
+    built_hs = run_node(_model(hs), returns)
+    built_gauss = run_node(_model(gauss), returns)
 
     expected_hs = HistoricalSimulationsModel(cf=0.95, window=Last(length=100))
     calibration = EwmaDecayCalibration(Last(length=100))
     expected_gauss = GaussianModel(cf=0.99, vol=EwmaVolatility(calibration))
-    np.testing.assert_array_equal(built_hs.values, expected_hs.run(returns).values)
     np.testing.assert_array_equal(
-        built_gauss.values, expected_gauss.run(returns).values
+        built_hs.values, run_node(expected_hs, returns).values
+    )
+    np.testing.assert_array_equal(
+        built_gauss.values, run_node(expected_gauss, returns).values
     )
     assert np.isnan(built_gauss.values[:-1]).all()
 
 
-def test_identical_specs_written_separately_share_one_node() -> None:
-    builder = Builder()
+def test_identical_specs_written_separately_build_equal_nodes() -> None:
     spec_99 = GaussianSpec.model_validate({"cf": 0.99, "vol": _FITTED_EWMA})
     spec_95 = GaussianSpec.model_validate_json(
         '{"cf": 0.95, "vol": {"type": "ewma", "decay": {"type": "ewma_calibration",'
         ' "window": {"type": "trailing", "length": 100, "step": 50}}}}'
     )
 
-    model_99 = builder.var_model(spec_99)
-    model_95 = builder.var_model(spec_95)
+    model_99 = _model(spec_99)
+    model_95 = _model(spec_95)
 
-    assert model_99 is not model_95
-    assert builder.var_model(spec_99) is model_99
+    assert model_99 != model_95
+    assert _model(spec_99) == model_99
     assert spec_99.vol == spec_95.vol
-    assert builder.volatility(spec_99.vol) is builder.volatility(spec_95.vol)
+    assert model_99.dependencies()["vol"] == model_95.dependencies()["vol"]
 
 
 def test_shared_calibration_is_fitted_once_in_a_run(
@@ -175,18 +186,20 @@ def test_shared_calibration_is_fitted_once_in_a_run(
         n_fits += 1
         return compute(self, returns)
 
-    builder = Builder()
-    models = {
-        f"gauss_{cf}": builder.var_model(
-            _VAR_SPEC.validate_python(
-                {"type": "gaussian", "cf": cf, "vol": _FITTED_EWMA}
-            )
-        )
-        for cf in (0.95, 0.99)
-    }
-
+    spec = RunSpec.model_validate(
+        {
+            "models": {
+                f"gauss_{int(cf * 100)}": {
+                    "type": "gaussian",
+                    "cf": cf,
+                    "vol": _FITTED_EWMA,
+                }
+                for cf in (0.95, 0.99)
+            }
+        }
+    )
     monkeypatch.setattr(EwmaDecayCalibration, "compute", counting_compute)
-    Pool(models).run(simulated_returns(n=300))
+    Context.from_spec(spec).run(simulated_returns(n=300))
 
     assert n_fits == 1
 
@@ -198,18 +211,18 @@ def test_list_values_become_one_value_per_series() -> None:
         ' "vol": {"type": "constant", "vol": [0.01, 0.02]}}'
     )
 
-    built = Builder().var_model(spec).run(returns)
+    built = run_node(_model(spec), returns)
 
-    expected = GaussianModel(
-        cf=0.99, vol=ConstantVolatility(np.array([0.01, 0.02]))
-    ).run(returns)
+    expected = run_node(
+        GaussianModel(cf=0.99, vol=ConstantVolatility(np.array([0.01, 0.02]))), returns
+    )
     np.testing.assert_array_equal(built.values, expected.values)
 
 
 def test_spec_defaults_match_node_defaults() -> None:
     spec = EwmaDecayCalibrationSpec(window=TrailingSpec(length=100))
 
-    built = Builder().calibration(spec)
+    built = _build_calibration(spec)
 
     default = EwmaDecayCalibration(Trailing(length=100))
     assert built.window == default.window
