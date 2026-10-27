@@ -1,8 +1,9 @@
 """Specs: models written as data, e.g. parsed from JSON (R9).
 
-A spec describes a node and its settings, and nothing more: `build` turns
-specs into nodes. Each spec class mirrors one node class, and its fields
-mirror the node's constructor arguments. A node input is a nested spec, e.g.
+A spec describes a model node or a backtest declaration as data: `build`
+turns model specs into nodes and backtest specs into declarations. Model
+spec fields mirror the node's constructor arguments; a backtest spec
+mirrors the declaration's settings. A node input is a nested spec, e.g.
 the volatility model of a Gaussian model.
 
 Specs are frozen and compare by value, so identical specs, even written
@@ -312,7 +313,7 @@ type ValueAtRiskSpec = Annotated[
 
 
 class KupiecSpec(Spec):
-    """Spec of a `KupiecTest`, run on the overshootings of a model.
+    """Spec of a `Kupiec` declaration, registered on a context.
 
     Without a `window`, the test runs on the whole sample.
     """

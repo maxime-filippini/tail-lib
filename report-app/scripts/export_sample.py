@@ -8,7 +8,7 @@ from pathlib import Path
 
 import numpy as np
 
-from tail_lib.backtests.kupiec import KupiecTest
+from tail_lib.backtests.kupiec import Kupiec
 from tail_lib.context import Context
 from tail_lib.models.ewma import ConstantDecay
 from tail_lib.models.ewma import EwmaDecayCalibration
@@ -38,8 +38,8 @@ if __name__ == "__main__":
 
     with Context(
         backtests={
-            "kupiec": KupiecTest,
-            "kupiec_250": lambda ovs: KupiecTest(ovs, window=Trailing(length=250)),
+            "kupiec": Kupiec(),
+            "kupiec_250": Kupiec(window=Trailing(length=250)),
         },
         labels={
             "gauss": "Gaussian, EWMA 0.94",

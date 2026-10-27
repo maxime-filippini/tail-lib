@@ -24,8 +24,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from tail_lib.backtests.kupiec import Kupiec
 from tail_lib.backtests.kupiec import KupiecResult
-from tail_lib.backtests.kupiec import KupiecTest
 from tail_lib.backtests.overshootings import Overshootings
 from tail_lib.context import Context
 from tail_lib.distributions import StudentT
@@ -83,12 +83,10 @@ def _inputs(returns: TimeSeries) -> dict[str, TimeSeries]:
 # named: the names are the pinned keys.
 
 _BACKTESTS = {
-    "kupiec": KupiecTest,
-    "kupiec_250": lambda ovs: KupiecTest(ovs, window=Trailing(length=250)),
-    "kupiec_100_step": lambda ovs: KupiecTest(
-        ovs, window=Trailing(length=100, step=10)
-    ),
-    "kupiec_last": lambda ovs: KupiecTest(ovs, window=Last(length=250)),
+    "kupiec": Kupiec(),
+    "kupiec_250": Kupiec(window=Trailing(length=250)),
+    "kupiec_100_step": Kupiec(window=Trailing(length=100, step=10)),
+    "kupiec_last": Kupiec(window=Last(length=250)),
 }
 """Kupiec tests on three windows, run on every model with a history."""
 

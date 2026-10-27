@@ -4,7 +4,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from tail_lib.backtests.kupiec import KupiecTest
+from tail_lib.backtests.kupiec import Kupiec
 from tail_lib.context import Context
 from tail_lib.models.value_at_risk import GaussianModel
 from tail_lib.models.value_at_risk import ValueAtRiskInput
@@ -21,7 +21,7 @@ _SLOT = re.compile(
 
 
 def _report(title: str = "tail-lib report") -> Report:
-    with Context(backtests={"kupiec": KupiecTest}) as ctx:
+    with Context(backtests={"kupiec": Kupiec()}) as ctx:
         GaussianModel(cf=0.99, vol=ConstantVolatility(0.01), name="gauss")
     return Report(ctx, ctx.run(returns_series(n=100)), title=title)
 

@@ -3,7 +3,7 @@ import dataclasses
 import numpy as np
 import pytest
 
-from tail_lib.backtests.kupiec import KupiecTest
+from tail_lib.backtests.kupiec import Kupiec
 from tail_lib.backtests.kupiec import kupiec_pof
 from tail_lib.backtests.overshootings import Overshootings
 from tail_lib.backtests.overshootings import overshootings
@@ -390,7 +390,7 @@ def test_a_context_from_nodes_gives_the_numbers_of_its_spec() -> None:
     returns = returns_series(n=300)
     inputs = {"vol": run_node(ConstantVolatility(0.01), returns)}
     spec = RunSpec.model_validate_json(_SPEC)
-    with Context(backtests={"kupiec": KupiecTest}) as ctx:
+    with Context(backtests={"kupiec": Kupiec()}) as ctx:
         GaussianModel(cf=0.99, vol=VolatilityInput("vol"), name="gauss_99")
         hs = HistoricalSimulationsModel(cf=0.99, window=Trailing(100), name="hs_99")
         ValueAtRiskInput("var_ext", cf=0.95)
@@ -407,13 +407,9 @@ def test_a_context_from_nodes_gives_the_numbers_of_its_spec() -> None:
         )
 
 
-def test_backtests_take_their_settings_through_a_function() -> None:
+def test_backtests_take_their_settings_through_a_declaration() -> None:
     returns = returns_series(n=300)
-    with Context(
-        backtests={
-            "kupiec_100": lambda ovs: KupiecTest(ovs, window=Trailing(length=100))
-        }
-    ) as ctx:
+    with Context(backtests={"kupiec_100": Kupiec(window=Trailing(length=100))}) as ctx:
         hs = HistoricalSimulationsModel(cf=0.99, window=Trailing(50), name="hs")
 
     result = ctx.run(returns)
@@ -446,7 +442,7 @@ def test_backtests_take_their_settings_through_a_function() -> None:
 def test_a_context_rejects_backtests_on_a_last_window_model(
     model: GaussianModel | HistoricalSimulationsModel, path: str
 ) -> None:
-    with Context(backtests={"kupiec": KupiecTest}) as ctx:
+    with Context(backtests={"kupiec": Kupiec()}) as ctx:
         dataclasses.replace(model, name="today")
 
     with pytest.raises(

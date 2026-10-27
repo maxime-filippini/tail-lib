@@ -13,7 +13,7 @@ Working rules, from `CLAUDE.md` and the developer:
 
 State as of 2026-10-27: branch `feat/context-api`, from `develop`, not
 pushed. ty and ruff (excluding the untracked `examples/t.ipynb`) pass, as
-do all 654 tests. The notebook still imports the removed `Run` and has an
+do all 667 tests. The notebook still imports the removed `Run` and has an
 existing import-order lint error; it is left untouched.
 
 ## Next up
@@ -22,7 +22,9 @@ existing import-order lint error; it is left untouched.
    "Context API" under "Design questions". All steps are committed,
    including `Context.from_spec`, the `var` rename and the final removal
    of `Run`, `RunResult`, `Cache`, `Pool`, `node.run` and `Builder`.
-   Next is the run date range, from step 2.
+   Follow-up, agreed on 2026-10-27: backtest declarations (`Kupiec(name=...)`
+   inside a context, with `Context.add_backtest` underneath) are committed;
+   see "Backtest declarations" below. Next is the run date range, from step 2.
 2. **Run date range (R21–R23)**, agreed with the developer on 2026-10-25,
    see "Run date range" under "Design questions". Step 1 (docs) done,
    awaiting review. Steps 2 to 5 wait for the context API.
@@ -42,6 +44,59 @@ existing import-order lint error; it is left untouched.
 ## Decisions on finished work
 
 Recorded so later changes don't undo them by accident.
+
+### Backtest declarations (R4, R10, R11)
+
+Agreed on 2026-10-27, replacing the functions of overshootings used during
+the context migration:
+
+- `Kupiec(name="kupiec", window=...)` is a frozen, model-independent
+  declaration with keyword-only fields. Constructing it inside a context
+  registers it on the innermost one, as for models (D10). A name is required
+  inside a context and is checked even outside one (R20). Outside, a
+  declaration may be unnamed and reused. Names are registration metadata,
+  excluded from equality.
+  `KupiecSpec` remains its JSON form; the executable `_KupiecTest` is
+  internal. The result type and the `kupiec_pof` function are unchanged.
+- `ctx.add_backtest(name, declaration)` records the declaration; the
+  construction hook calls it for direct declarations in a block. The
+  constructor's `backtests` mapping uses the same method. It checks names
+  are identifiers and rejects duplicate backtest names and collisions
+  with named nodes. A failed registration keeps the existing declaration.
+- `ctx.graph()` calls each declaration's private `_bind(model)` with node
+  registration suspended. Binding happens against every current model,
+  so registration order does not matter and declarations can be reused in
+  different contexts (R4, D10). No nodes are computed during registration
+  or graph construction.
+- Kupiec binding builds `_KupiecTest(Overshootings(model), window=...)`.
+  The internal node keeps explicit dependencies, pure `compute` and its
+  signature check (D11), and reads that model's confidence level. Equal
+  nodes, including overshootings and identical tests under different
+  names, compute once (D9).
+- Specs become the same declarations (`build._build_backtest`) and are
+  registered through the context constructor. Unnamed spec declarations
+  are created with automatic registration suspended, so an outer Python
+  context is untouched on success and failure. The JSON format is unchanged.
+- Reports display the public name `Kupiec` for the internal executable
+  node. Its settings, paths, graph edges and numerical outputs are unchanged.
+- This revisits the earlier rejection of a settings class per backtest:
+  the public interface still has two classes for declaring Kupiec tests,
+  `Kupiec` and `KupiecSpec`. The concrete executable node is internal.
+- Thirteen new cases cover registration before, between and after models,
+  collisions with each kind of named node, duplicate registration, missing
+  and invalid names, shared outputs under different names, and reuse across
+  contexts with different confidence levels and shapes. Existing nesting,
+  thread and asyncio tests now check backtest registration too; spec tests
+  check that construction does not affect a surrounding context.
+  Existing numerical tests use the public declaration; internal graph and
+  dependency tests still inspect the concrete node.
+- Validation: all 667 tests pass, with regression data unchanged. The
+  example prints the same table, and all 20 Python blocks on the home page,
+  spec guide, Python-run guide and backtest guide run. The report sample
+  regenerates and `npm run check` passes without warnings. ty and ruff pass
+  excluding the untouched notebook; full checks still report its removed
+  `Run` import and import order. The strict docs build still reports the
+  existing README link in the historical review.
 
 ### Rolling backtests (R15, R16)
 
@@ -103,14 +158,13 @@ to be turned into nodes (`Context.from_spec`): they hold no logic.
 This replaces an earlier choice of specs as the one way in. Chosen by the
 developer:
 
-- Backtests are given to a run as functions from a model's `Overshootings`
-  to a test node, e.g. `KupiecTest` itself, or
-  `lambda ovs: KupiecTest(ovs, window=Trailing(length=250))`. ty checks
-  lambdas; it accepts `functools.partial` without checking its arguments.
-  ES backtests may later need the model too, not only its overshootings.
-  Rejected: a settings class per backtest (duplicates its spec), and
-  backtest nodes bound to each model by hand (loses "every backtest on
-  every model", R4).
+- Backtests are model-independent declarations, registered by construction
+  inside a context, explicitly with `ctx.add_backtest`, or in the context
+  constructor's mapping (see
+  "Backtest declarations"). The context binds them against each model;
+  future tests can use outputs besides overshootings. This replaces the
+  original function-of-overshootings interface. Rejected: backtests bound
+  to selected models by hand (loses "every backtest on every model", R4).
 - Nodes list the nodes they read (`dependencies()`), so `Context` can find run
   inputs and `last` windows up front. It also gives names for R12. Rejected:
   no graph walk, which reports missing inputs mid-run and can't reject a
@@ -199,10 +253,11 @@ proposes a new way to declare and run models. Migration plan agreed on
   Python identifiers (R20). `ctx.graph()` orders the nodes without
   computing; `ctx.run(returns, inputs)` computes each once and returns
   `Results`, read by node or by name. `Cache`, `Pool` and `node.run` go.
-- Backtests are given to the `Context` constructor, as functions from a
-  model's `Overshootings` to a test node, as `Run` takes them today, and
-  run on every VaR model (R4). A `Backtest` base class comes with them (see
-  "Small open points").
+- Backtests run on every VaR model (R4). The original constructor mapping
+  of functions of overshootings was replaced on 2026-10-27 by immutable
+  declarations, now registered by construction in the block or explicitly
+  with `Context.add_backtest`, see "Backtest declarations".
+  Internal executable nodes still inherit `Backtest`.
 - Run inputs (R13): `run(returns, inputs)` sets the output of each input
   node to `inputs[node.name]`, after checking it is aligned with the
   returns, and never calls its `compute`. Missing inputs are still

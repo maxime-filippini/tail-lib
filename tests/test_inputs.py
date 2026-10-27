@@ -1,9 +1,8 @@
 import numpy as np
 import pytest
 
-from tail_lib.backtests.kupiec import KupiecTest
+from tail_lib.backtests.kupiec import Kupiec
 from tail_lib.backtests.kupiec import kupiec_pof
-from tail_lib.backtests.overshootings import Overshootings
 from tail_lib.backtests.overshootings import overshootings
 from tail_lib.context import Context
 from tail_lib.models.value_at_risk import GaussianModel
@@ -22,11 +21,13 @@ def test_var_input_is_backtested_like_the_model_it_came_from() -> None:
     hs = HistoricalSimulationsModel(cf=0.99, window=Trailing(length=100))
     precomputed = run_node(hs, returns)
 
-    from_input = run_node(
-        KupiecTest(Overshootings(ValueAtRiskInput("var_99", cf=0.99))),
-        returns,
-        inputs={"var_99": precomputed},
-    )
+    with Context() as ctx:
+        ValueAtRiskInput("var_99", cf=0.99)
+        Kupiec(name="kupiec")
+
+    from_input = ctx.run(returns, inputs={"var_99": precomputed}).backtests["var_99"][
+        "kupiec"
+    ]
 
     expected = kupiec_pof(overshootings(precomputed, returns), cf_var=0.99)
     np.testing.assert_array_equal(from_input.n_overshootings, expected.n_overshootings)

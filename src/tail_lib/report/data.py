@@ -32,6 +32,7 @@ from pydantic import ConfigDict
 from pydantic import JsonValue
 
 import tail_lib
+from tail_lib.backtests.kupiec import _KupiecTest
 from tail_lib.backtests.overshootings import Overshootings
 from tail_lib.context import _input_name
 from tail_lib.graph import Backtest
@@ -237,7 +238,12 @@ def build_report_data(
         NodeData(
             id=ids[graph_node.node],
             kind=_kind(graph_node.node),
-            class_name=type(graph_node.node).__name__,
+            # Display the public declaration, not its internal node class.
+            class_name=(
+                "Kupiec"
+                if isinstance(graph_node.node, _KupiecTest)
+                else type(graph_node.node).__name__
+            ),
             settings={
                 name: _setting_json(value)
                 for name, value in graph_node.node.settings().items()

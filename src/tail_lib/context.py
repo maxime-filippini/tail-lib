@@ -9,7 +9,8 @@ computing; `ctx.run(returns, inputs)` computes every node once, and returns
 `Context.from_spec(spec)` builds the same kind of context from a `RunSpec`,
 with the spec's model keys as node names (R9, R17).
 
-    with Context(backtests={"kupiec": KupiecTest}) as ctx:
+    with Context() as ctx:
+        Kupiec(name="kupiec")
         vol = EwmaVolatility(ConstantDecay(0.94))
         GaussianModel(cf=0.99, vol=vol, name="gauss")
         HistoricalSimulationsModel(cf=0.99, window=Trailing(250), name="hs")
@@ -23,7 +24,6 @@ with the spec's model keys as node names (R9, R17).
 from __future__ import annotations
 
 from dataclasses import dataclass
-from functools import partial
 from types import MappingProxyType
 from typing import TYPE_CHECKING
 from typing import Any
@@ -31,7 +31,7 @@ from typing import Self
 from typing import overload
 
 from tail_lib._checks import check_name
-from tail_lib.backtests.overshootings import Overshootings
+from tail_lib.backtests.kupiec import Kupiec
 from tail_lib.build import _build_backtest
 from tail_lib.build import _build_var_model
 from tail_lib.build import _check_input_specs
@@ -49,7 +49,6 @@ from tail_lib.time_series import TimeSeries
 from tail_lib.windows import Last
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
     from collections.abc import Iterable
     from collections.abc import Mapping
     from contextvars import Token
@@ -111,10 +110,6 @@ class RunGraph:
     edges: tuple[GraphEdge, ...]
 
 
-type BacktestFunction = Callable[[Overshootings], Backtest[BacktestResult]]
-"""Makes a backtest node from a model's overshootings, e.g. `KupiecTest` itself."""
-
-
 class Context:
     """The nodes declared in a `with Context():` block, and how to compute them.
 
@@ -141,27 +136,26 @@ class Context:
 
     def __init__(
         self,
-        backtests: Mapping[str, BacktestFunction] | None = None,
+        backtests: Mapping[str, Kupiec] | None = None,
         labels: Mapping[str, str] | None = None,
     ) -> None:
         """Open an empty context, to fill in a `with` block.
 
         Args:
-            backtests (Mapping[str, BacktestFunction] | None): The backtests,
-                by name, each as a function from a model's overshootings to
-                the test node, e.g. `KupiecTest`, or
-                `lambda ovs: KupiecTest(ovs, window=Trailing(length=250))`.
+            backtests (Mapping[str, Kupiec] | None): Backtest declarations,
+                by name, e.g. `{"kupiec": Kupiec()}` or
+                `{"kupiec_250": Kupiec(window=Trailing(250))}`. They are
+                registered through `add_backtest`, as if added later.
             labels (Mapping[str, str] | None): Display names, by model or
                 backtest name, e.g. `{"gauss": "Gaussian 99%"}`, e.g. for a
                 report (R20). Names without one are shown as they are.
 
         Raises:
             ValueError: If a backtest name isn't a Python identifier.
+            TypeError: If a backtest isn't a declaration.
 
         """
-        self._backtests = {} if backtests is None else dict(backtests)
-        for name in self._backtests:
-            check_name("Backtest", name)
+        self._backtests: dict[str, Kupiec] = {}
         self._labels = {} if labels is None else dict(labels)
         # Every distinct node bound, by value, in the order first bound.
         self._nodes: dict[Node[Any], None] = {}
@@ -171,6 +165,43 @@ class Context:
         # One token per open `with` block on this context, to restore the
         # context outside it on exit. A list, so blocks can nest.
         self._tokens: list[Token[Context | None]] = []
+        for name, backtest in ({} if backtests is None else backtests).items():
+            self.add_backtest(name, backtest)
+
+    def add_backtest(self, name: str, backtest: Kupiec) -> None:
+        """Register a declaration to test every model of this context (R4).
+
+        Registration computes nothing and records no executable nodes.
+        `graph()` binds the declaration to each model, including models
+        added after the backtest. A declaration is immutable and can be
+        reused in several contexts.
+
+        Named declarations built inside a `with` block call this method
+        automatically. For explicit registration, build the declaration
+        outside the block. The `name` argument chooses its registered name.
+
+        Args:
+            name (str): The backtest's name, a Python identifier (R20).
+            backtest (Kupiec): The test and its settings, e.g.
+                `Kupiec(window=Trailing(250))`.
+
+        Raises:
+            ValueError: If the name isn't an identifier, is already a
+                registered backtest, or belongs to a named node.
+            TypeError: If `backtest` isn't a declaration.
+
+        """
+        check_name("Backtest", name)
+        if not isinstance(backtest, Kupiec):
+            msg = f"Backtest {name!r} needs a Kupiec declaration, got {backtest!r}!"
+            raise TypeError(msg)
+        if name in self._backtests:
+            msg = f"Backtest {name!r} is already registered!"
+            raise ValueError(msg)
+        if name in self._named:
+            msg = f"Name {name!r} is both a node and a backtest!"
+            raise ValueError(msg)
+        self._backtests[name] = backtest
 
     @classmethod
     def from_spec(cls, spec: RunSpec) -> Self:
@@ -195,10 +226,16 @@ class Context:
 
         """
         _check_input_specs(spec.models.values())
-        backtests: dict[str, BacktestFunction] = {
-            name: partial(_build_backtest, backtest)
-            for name, backtest in spec.backtests.items()
-        }
+        # Spec declarations use mapping keys as names. Build them without
+        # registering in a surrounding Python context (D10).
+        token = current_context.set(None)
+        try:
+            backtests = {
+                name: _build_backtest(backtest)
+                for name, backtest in spec.backtests.items()
+            }
+        finally:
+            current_context.reset(token)
         with cls(backtests=backtests, labels=spec.labels) as ctx:
             for name, model in spec.models.items():
                 _build_var_model(model, name=name)
@@ -392,8 +429,8 @@ class Context:
         try:
             return {
                 model_name: {
-                    test_name: make(Overshootings(model))
-                    for test_name, make in self._backtests.items()
+                    test_name: declaration._bind(model)  # noqa: SLF001
+                    for test_name, declaration in self._backtests.items()
                 }
                 for model_name, model in self._models.items()
             }

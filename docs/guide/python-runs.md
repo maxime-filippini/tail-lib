@@ -8,7 +8,7 @@ and computes them on any returns series.
 ## The steps
 
 ```python
-from tail_lib.backtests.kupiec import KupiecTest
+from tail_lib.backtests.kupiec import Kupiec
 from tail_lib.context import Context
 from tail_lib.models.ewma import ConstantDecay
 from tail_lib.models.value_at_risk import FilteredHistoricalSimulationsModel
@@ -16,15 +16,14 @@ from tail_lib.models.value_at_risk import GaussianModel
 from tail_lib.models.value_at_risk import HistoricalSimulationsModel
 from tail_lib.models.volatility import EwmaVolatility
 from tail_lib.models.volatility import VolatilityFilter
+from tail_lib.windows import Last
 from tail_lib.windows import Trailing
 
 # 1. The context, with the backtests to run on every model.
-with Context(
-    backtests={
-        "kupiec": KupiecTest,
-        "kupiec_250": lambda ovs: KupiecTest(ovs, window=Trailing(length=250)),
-    },
-) as ctx:
+with Context() as ctx:
+    Kupiec(name="kupiec")
+    Kupiec(name="kupiec_250", window=Trailing(length=250))
+
     # 2. The models, each with a name. `vol` and `vol_filter` are shared:
     # computed once.
     vol = EwmaVolatility(ConstantDecay(0.94))
@@ -68,19 +67,45 @@ volatility shared by several contexts.
 
 ## Backtests
 
-Every backtest runs on every model (R4). A backtest is given as a function
-from a model's overshootings to the test node:
+Every registered backtest runs on every model (R4). Declare the test's
+settings and its name inside the context block:
 
-- the class itself, `KupiecTest`, for its default settings (the whole
-  sample);
-- a lambda, for other settings, e.g.
-  `lambda ovs: KupiecTest(ovs, window=Trailing(length=250))`.
+```python
+with Context() as ctx:
+    Kupiec(name="kupiec_last", window=Last(length=250))
+    ...  # the models
+```
 
-The context builds one
-[`Overshootings`][tail_lib.backtests.overshootings.Overshootings] node per
-model, and all the backtests of that model share it. Backtests are named, so
-several versions of one test can sit side by side, e.g. on 250 and 500
-dates. See [Backtests](backtests.md) for the tests and their results.
+A [`Kupiec`][tail_lib.backtests.kupiec.Kupiec] declaration is immutable and
+independent of any model. Creating one inside a `with Context():` block
+registers it on the innermost context, as for model nodes. A name is
+required there and is checked when the declaration is built. The name is
+registration metadata, so equal settings under different names still
+share computation.
+
+Outside a context, a declaration can be unnamed and reused. Pass it through
+the constructor's `backtests` mapping, or register it explicitly with
+`ctx.add_backtest(name, declaration)`. Mapping keys and explicit names
+choose its name in that context:
+
+```python
+rolling_test = Kupiec(window=Trailing(250))  # outside any context
+with Context(backtests={"kupiec_250": rolling_test}) as ctx:
+    ...  # the models
+```
+
+Registration records settings only and computes nothing. When `ctx.graph()`
+builds the graph, the context binds each declaration to every VaR model,
+including models added after registration. The internal executable nodes
+read each model's overshootings and confidence level. Their shared
+[`Overshootings`][tail_lib.backtests.overshootings.Overshootings] node is
+computed once (D9).
+
+A backtest name must be a Python identifier, and cannot belong to a named
+node or an already registered backtest. Registering the same declaration
+under different names is allowed; equal executable nodes compute once.
+Results remain `results.backtests[model][test]`. See
+[Backtests](backtests.md) for the tests and their results.
 
 ## Names and labels
 
@@ -91,7 +116,7 @@ friendlier names in `labels`:
 
 ```python
 with Context(
-    backtests={"kupiec_250": lambda ovs: KupiecTest(ovs, window=Trailing(length=250))},
+    backtests={"kupiec_250": Kupiec(window=Trailing(length=250))},
     labels={"fhs_500": "Filtered HS, 500 days", "kupiec_250": "Kupiec, 250 days"},
 ) as ctx:
     ...
@@ -145,7 +170,7 @@ and shape of the returns.
 from tail_lib.models.value_at_risk import ValueAtRiskInput
 from tail_lib.models.volatility import VolatilityInput
 
-with Context(backtests={"kupiec": KupiecTest}) as ctx:
+with Context(backtests={"kupiec": Kupiec()}) as ctx:
     ValueAtRiskInput("var_ext", cf=0.99)
     GaussianModel(cf=0.99, vol=VolatilityInput("vol_svc"), name="gauss_svc")
 
@@ -162,6 +187,8 @@ Most mistakes fail before anything is computed:
 
 | Mistake | Error |
 |---|---|
+| A backtest without a name, in a context | `ValueError` when it is built. |
+| A duplicate backtest registration | `ValueError` when the second declaration is built (or from explicit registration); the original is kept. |
 | A model without a name, in a context | `ValueError` on the line building it. |
 | Two different nodes with one name, or a node with a backtest's name | `ValueError` on the line building the second. |
 | A model with a `Last` window, in a context with backtests | `ValueError` from `ctx.run` (or `ctx.graph()`), with the path to the window, e.g. `models.today.vol.decay.window`. Put such models in their own context, without backtests. |

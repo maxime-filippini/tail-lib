@@ -10,15 +10,18 @@ import numpy as np
 from scipy import special
 from scipy import stats
 
+from tail_lib._checks import check_name
 from tail_lib._checks import check_probability
+from tail_lib.backtests.overshootings import Overshootings
 from tail_lib.graph import Backtest
+from tail_lib.graph import current_context
 from tail_lib.windows import Windows
 
 if TYPE_CHECKING:
     from tail_lib._typing import DateArray1D
     from tail_lib._typing import FloatArray
     from tail_lib._typing import IntArray
-    from tail_lib.backtests.overshootings import Overshootings
+    from tail_lib.models.value_at_risk import ValueAtRiskModel
     from tail_lib.time_series import TimeSeries
     from tail_lib.windows import Last
     from tail_lib.windows import Trailing
@@ -136,11 +139,55 @@ def kupiec_pof(
     )
 
 
+@dataclass(frozen=True, kw_only=True)
+class Kupiec:
+    """Declare a Kupiec test to apply to every model of a context (R4).
+
+    Inside `with Context():`, building `Kupiec(name="kupiec")` registers
+    it on the innermost context (D10). A name is required there. Outside
+    a context, it can be unnamed and reused through the context's
+    `backtests` mapping or `add_backtest` method.
+
+    When the context builds its graph, it creates an internal test node
+    for each model, reading that model's overshootings and confidence
+    level. Equal nodes share computation by value (D9). The test's formula
+    and timing are those of `kupiec_pof`.
+
+    Attributes:
+        name (str | None): Registration name, a Python identifier (R20).
+            Required inside a context, optional outside. Not part of the
+            declaration's value identity.
+        window (Trailing | Last | None): Test the whole sample (`None`,
+            the default), trailing windows, or the last dates only.
+
+    """
+
+    name: str | None = field(default=None, compare=False, repr=False)
+    window: Trailing | Last | None = None
+
+    def __post_init__(self) -> None:
+        if self.name is not None:
+            check_name("Backtest", self.name)
+        context = current_context.get()
+        if context is not None:
+            if self.name is None:
+                msg = (
+                    "Kupiec is built in a context, so it needs a name, "
+                    'e.g. `name="kupiec"`!'
+                )
+                raise ValueError(msg)
+            context.add_backtest(self.name, self)
+
+    def _bind(self, model: ValueAtRiskModel) -> _KupiecTest:
+        """Build the executable node for one model, inside the context's walk."""
+        return _KupiecTest(Overshootings(model), window=self.window)
+
+
 @dataclass(frozen=True)
-class KupiecTest(Backtest[KupiecResult]):
+class _KupiecTest(Backtest[KupiecResult]):
     """Kupiec's proportion-of-failures test of a value-at-risk model, as a node.
 
-    Gets the model's overshootings from the cache, then tests them with
+    Gets the model's overshootings from the context, then tests them with
     `kupiec_pof` at the model's confidence level, on the whole sample, on
     trailing windows or on the last dates.
 

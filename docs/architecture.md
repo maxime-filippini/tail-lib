@@ -39,15 +39,15 @@ How tail-lib is organized, and how a call flows from a spec to the numbers
 | `models/volatility.py` | `VolatilityModel`, `VolatilityInput`, `ConstantVolatility`, `EwmaVolatility` (constant or calibrated decay, D7), `VolatilityFilter`. |
 | `models/value_at_risk.py` | `ValueAtRiskModel`, `ValueAtRiskInput`, `HistoricalSimulationsModel` (D2), `FilteredHistoricalSimulationsModel`, `GaussianModel`. |
 | `backtests/overshootings.py` | `overshootings` (function) and `Overshootings` (node). |
-| `backtests/kupiec.py` | `kupiec_pof` (function), `KupiecResult`, `KupiecTest` (node). |
+| `backtests/kupiec.py` | `kupiec_pof` (function), `KupiecResult`, `Kupiec` (declaration), `_KupiecTest` (internal node). |
 | `report/data.py` | `ReportData`, the JSON contract with the report page, and `build_report_data` (R19). |
 | `report/report.py`, `report/index.html` | `Report`: reads results and saves their data in the report page, package data built from `report-app/` (R19). |
 | `distributions.py` | `Distribution`, the base class of distributions with zero mean and unit variance, and `Gaussian`, `StudentT`. Each draws values (`draw`) and gives its quantiles (`quantile`): the simulator draws its shocks from them, and `GaussianModel` reads the Gaussian quantile. |
 | `simulation.py` | `Simulator` and its processes `ArProcess`, `EwmaProcess`, `GarchProcess`; the output `Simulation` (R18). |
-| `specs.py` | Pydantic specs mirroring each node, with value ranges (R9, R9b). |
-| `build.py` | Plain functions from specs to nodes (R9a), shared by value (D9). |
+| `specs.py` | Pydantic specs for model nodes and backtest declarations, with value ranges (R9, R9b). |
+| `build.py` | Plain functions from specs to nodes and backtest declarations (R9a), with node sharing by value (D9). |
 | `run.py` | `RunSpec`: named model and backtest specs, labels, and their validation (R9, R9b). |
-| `context.py` | `Context`, `Results`, `BacktestFunction`, `GraphNode`, `GraphEdge`, `RunGraph`: binding, graph inspection and execution (D10). |
+| `context.py` | `Context`, `Results`, `GraphNode`, `GraphEdge`, `RunGraph`: binding, graph inspection and execution (D10). |
 
 ## User documentation
 
@@ -123,12 +123,9 @@ context, however they were built. Backtests take an `Overshootings` node,
 so the tests of a model share the same flags (R4):
 
 ```python
-with Context(
-    backtests={
-        "kupiec": KupiecTest,
-        "kupiec_250": lambda ovs: KupiecTest(ovs, window=Trailing(250)),
-    }
-) as ctx:
+with Context() as ctx:
+    Kupiec(name="kupiec")
+    Kupiec(name="kupiec_250", window=Trailing(250))
     GaussianModel(cf=0.99, vol=ConstantVolatility(0.01), name="gauss")
 results = ctx.run(returns)
 ```
@@ -140,7 +137,7 @@ computes them. `Context.from_spec` builds the same kind of context from a
 spec. `Results` holds every output from one execution:
 
 ```python
-with Context(backtests={"kupiec": KupiecTest}, labels={"gauss": "Gaussian"}) as ctx:
+with Context(backtests={"kupiec": Kupiec()}, labels={"gauss": "Gaussian"}) as ctx:
     vol = EwmaVolatility(ConstantDecay(0.94))
     GaussianModel(cf=0.99, vol=vol, name="gauss")
     HistoricalSimulationsModel(cf=0.99, window=Trailing(length=250), name="hs")
@@ -160,14 +157,30 @@ results["gauss"], results[vol], results.backtests["gauss"]["kupiec"]
   built). Names are unique: two different nodes can't share one, and no
   node can take a backtest's name; an equal node can take its name again.
   Named models are the context's `models`.
+- **Backtest declarations** built inside the block register themselves
+  through `Kupiec.__post_init__`, using the same `current_context` variable
+  as nodes (D10). They need a name inside the block; outside, unnamed
+  declarations can be reused. Their names are metadata, excluded from
+  equality. A declaration registers settings only; executable nodes come
+  later, during the graph walk.
+- **`add_backtest(name, declaration)`** registers immutable test settings,
+  e.g. `Kupiec(window=Trailing(250))`. The constructor's `backtests` mapping
+  uses the same method. It rejects invalid names, duplicate registrations
+  and collisions with named nodes. Named declarations inside a block call
+  it automatically. Explicit registration and the constructor mapping can
+  reuse declarations built outside a block, choosing names for each use.
 - **`graph()`** checks the names and labels, the `last` windows when there
   are backtests, and that each run input name belongs to one node, then
   returns a `RunGraph`. Roots: each model
   (`models.gauss`), each backtest of each model
   (`backtests.gauss.kupiec`), then the bound nodes not reached yet, latest
   first (`nodes.<name>`, or `nodes.<class>`, `nodes.<class>_2`, ... without
-  a name). The backtest nodes are built from the backtest functions with
-  the context variable unset, so they never bind.
+  a name). The backtest nodes are built by calling each declaration's private
+  `_bind(model)`, with the context variable unset, so they never register
+  themselves. Registration order does not matter: every declaration runs
+  on every model, including models added later (R4). `Kupiec._bind` creates
+  `_KupiecTest(Overshootings(model), window=...)`. The executable node
+  retains explicit dependencies and the usual signature check (D11).
 - **`run(returns, inputs)`** reports missing inputs before computing, then
   computes each node once, in one loop over the graph ordered inputs first
   (`_inputs_first`): a `RunInput` gets its input, checked against the
@@ -208,14 +221,16 @@ pydantic. YAML could later be a loader producing dicts.
    `"window": null`), and parses back to an equal spec.
 2. **Build.** `Context.from_spec(spec)` first rejects an input declared
    twice differently (`build._check_input_specs`), then opens a context
-   with the spec's labels and backtest functions. Plain typed functions in
+   with the spec's labels and backtest declarations. Plain typed functions in
    `build.py` turn each spec into its node with a `match`, recursively
    building its inputs. Model keys become node names. A VaR input has one
    name, so its model key must match its input name; a mismatch is a
    `ValueError` naming `models.<key>`. Equal nodes share computation by
    value (D9): there are no tables of built nodes in this path. Each
-   backtest function binds its own spec with `partial(_build_backtest,
-   backtest_spec)`, and later takes a model's `Overshootings`.
+   backtest spec becomes a `Kupiec` declaration (`_build_backtest`),
+   registered through `add_backtest` by the context constructor. While
+   creating these unnamed declarations, automatic registration is suspended
+   so they cannot attach to an outer Python context (D10).
 3. **Walk the graph.** Before returning, `Context.from_spec` closes the
    block and calls `ctx.graph()` to check the names, labels, inputs and
    `last` windows. Each model gets one `Overshootings`, shared by its
@@ -293,12 +308,9 @@ calls `Context.from_spec`, which builds the nodes inside a context with
 plain functions from the specs, then checks its graph before returning.
 
 ```python
-with Context(
-    backtests={
-        "kupiec": KupiecTest,
-        "kupiec_250": lambda ovs: KupiecTest(ovs, window=Trailing(length=250)),
-    },
-) as ctx:
+with Context() as ctx:
+    Kupiec(name="kupiec")
+    Kupiec(name="kupiec_250", window=Trailing(length=250))
     vol = EwmaVolatility(ConstantDecay(0.94))
     vol_filter = VolatilityFilter(vol)
     for n in (500, 750):
@@ -313,11 +325,12 @@ results = ctx.run(returns)
   once, for all the models that read them, and would be even if each model
   built its own `EwmaVolatility(ConstantDecay(0.94))`. Nodes built from
   specs share by the same value identity.
-- Each backtest is a function from a model's `Overshootings` to the test
-  node: the class itself (`KupiecTest`) for its defaults, or a lambda for
-  its settings. Every backtest runs on every model (R4), and the backtests
-  of a model share its `Overshootings`. ty checks lambdas; it accepts
-  `functools.partial` without checking its arguments.
+- Each backtest is an immutable declaration such as `Kupiec()` or
+  `Kupiec(window=Trailing(250))`, registered by name with
+  constructing `Kupiec(name="kupiec", ...)` in the block, explicitly with
+  `ctx.add_backtest`, or in the constructor's `backtests` mapping. The
+  context creates its internal executable node for every model (R4),
+  and equal overshootings nodes are computed once (D9).
 - Values are checked when each node is built, e.g. `ConstantDecay(1.5)`
   raises, and so is a model built in a context without a name. ty reports
   a missing argument or a node in the wrong slot, e.g. a mean model given
@@ -402,7 +415,8 @@ of another context. In it:
 `Report(context, results, title=..., series_labels=...)` calls
 `build_report_data`, and keeps the result as `report.data`. So a run is
 computed once, then reported (risk-manager review, finding 2):
-`results = ctx.run(returns, inputs)`, then `Report(ctx, results)`.
+`results = ctx.run(returns, inputs)`, then `Report(ctx, results)`. Internal
+Kupiec nodes are displayed as `Kupiec`, the public declaration name.
 `report.save(path)` reads the page, `report/index.html` (package data,
 built ahead of time, so pip installs need no Node), and replaces the
 placeholder in its data slot, `<script id="report-data"

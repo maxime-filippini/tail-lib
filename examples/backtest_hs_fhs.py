@@ -23,7 +23,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from tail_lib.backtests.kupiec import KupiecTest
+from tail_lib.backtests.kupiec import Kupiec
 from tail_lib.context import Context
 from tail_lib.distributions import StudentT
 from tail_lib.models.ewma import ConstantDecay
@@ -66,6 +66,23 @@ def simulate_garch_returns(n: int, seed: int = 42) -> TimeSeries:
     return sim.returns
 
 
+# Declaration of a model set, i.e. a context
+with Context() as ctx:
+    vol = EwmaVolatility(ConstantDecay(DECAY))
+    vol_filter = VolatilityFilter(vol)
+
+    for n in HS_LENGTHS:
+        HistoricalSimulationsModel(cf=CF, window=Trailing(length=n), name=f"hs_{n}")
+
+    for n in HS_LENGTHS:
+        FilteredHistoricalSimulationsModel(
+            cf=CF, filter=vol_filter, window=Trailing(length=n), name=f"fhs_{n}"
+        )
+    GaussianModel(cf=CF, vol=vol, name="gauss_ewma")
+
+    Kupiec(name="kupiec_250", window=Trailing(length=KUPIEC_LENGTH))
+
+
 def main() -> None:  # noqa: D103
     returns = simulate_garch_returns(n=2520)
     print(
@@ -74,27 +91,12 @@ def main() -> None:  # noqa: D103
         f"daily vol {returns.values.std():.2%}."
     )
 
-    # Step 2: the context and its models, as nodes. Each backtest is a
-    # function from a model's overshootings to the test, so every model gets
-    # the same test (R4). The EWMA volatility (with its 20-day backcast) is
+    # Step 2: the context and its models, as nodes. Register backtest
+    # declarations: the context wires each to every model (R4). The EWMA
+    # volatility (with its 20-day backcast) is
     # read by the filter and the Gaussian model; the filter is read by both
     # FHS models. Each is one node, computed once.
-    with Context(
-        backtests={
-            "kupiec_250": lambda ovs: KupiecTest(
-                ovs, window=Trailing(length=KUPIEC_LENGTH)
-            )
-        },
-    ) as ctx:
-        vol = EwmaVolatility(ConstantDecay(DECAY))
-        vol_filter = VolatilityFilter(vol)
-        for n in HS_LENGTHS:
-            HistoricalSimulationsModel(cf=CF, window=Trailing(length=n), name=f"hs_{n}")
-        for n in HS_LENGTHS:
-            FilteredHistoricalSimulationsModel(
-                cf=CF, filter=vol_filter, window=Trailing(length=n), name=f"fhs_{n}"
-            )
-        GaussianModel(cf=CF, vol=vol, name="gauss_ewma")
+
     print(f"Step 2: {len(ctx.models)} models: {', '.join(ctx.models)}.")
 
     # Step 3: the graph, walked without computing.

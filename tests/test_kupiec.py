@@ -1,7 +1,9 @@
+import dataclasses
+
 import numpy as np
 import pytest
 
-from tail_lib.backtests.kupiec import KupiecTest
+from tail_lib.backtests.kupiec import Kupiec
 from tail_lib.backtests.kupiec import kupiec_pof
 from tail_lib.backtests.overshootings import Overshootings
 from tail_lib.backtests.overshootings import overshootings
@@ -141,11 +143,13 @@ def test_kupiec_rejects_confidence_outside_unit_interval(cf_var: float) -> None:
         kupiec_pof(_flags(10, 1), cf_var=cf_var)
 
 
-def test_kupiec_test_node_matches_functions() -> None:
+def test_kupiec_declaration_matches_functions() -> None:
     returns = returns_series(n=300, n_assets=2)
-    model = HistoricalSimulationsModel(cf=0.95, window=Trailing(length=100))
+    with Context() as ctx:
+        model = HistoricalSimulationsModel(cf=0.95, window=Trailing(100), name="hs")
+        Kupiec(name="kupiec")
 
-    result = run_node(KupiecTest(Overshootings(model)), returns)
+    result = ctx.run(returns).backtests["hs"]["kupiec"]
 
     expected = kupiec_pof(overshootings(run_node(model, returns), returns), cf_var=0.95)
     np.testing.assert_array_equal(result.n_obs, expected.n_obs)
@@ -153,12 +157,14 @@ def test_kupiec_test_node_matches_functions() -> None:
     np.testing.assert_allclose(result.p_value, expected.p_value)
 
 
-def test_kupiec_test_node_on_windows_matches_functions() -> None:
+def test_kupiec_declaration_on_windows_matches_functions() -> None:
     returns = returns_series(n=300)
     model = HistoricalSimulationsModel(cf=0.95, window=Trailing(length=100))
     window = Trailing(length=50, step=10)
 
-    result = run_node(KupiecTest(Overshootings(model), window=window), returns)
+    ctx = Context(backtests={"kupiec": Kupiec(window=window)})
+    ctx.bind(dataclasses.replace(model, name="hs"))
+    result = ctx.run(returns).backtests["hs"]["kupiec"]
 
     flags = overshootings(run_node(model, returns), returns)
     expected = kupiec_pof(flags, cf_var=0.95, window=window)
@@ -169,9 +175,10 @@ def test_kupiec_test_node_on_windows_matches_functions() -> None:
 
 
 def test_kupiec_test_uses_the_model_confidence_level() -> None:
-    model = GaussianModel(cf=0.975, vol=ConstantVolatility(0.01))
+    with Context(backtests={"kupiec": Kupiec()}) as ctx:
+        GaussianModel(cf=0.975, vol=ConstantVolatility(0.01), name="gauss")
 
-    result = run_node(KupiecTest(Overshootings(model)), returns_series(n=50))
+    result = ctx.run(returns_series(n=50)).backtests["gauss"]["kupiec"]
 
     assert result.expected_rate == pytest.approx(0.025)
 
@@ -186,7 +193,7 @@ def test_backtests_reuse_var_computed_in_the_same_context() -> None:
             _CountingGaussian.n_calls += 1
             return super().compute(returns, vol=vol, mean=mean)
 
-    with Context(backtests={"kupiec": KupiecTest}) as ctx:
+    with Context(backtests={"kupiec": Kupiec()}) as ctx:
         _CountingGaussian(cf=0.99, vol=ConstantVolatility(0.01), name="gaussian")
         HistoricalSimulationsModel(cf=0.99, window=Trailing(length=50), name="hs")
     n = 200
@@ -198,21 +205,27 @@ def test_backtests_reuse_var_computed_in_the_same_context() -> None:
     assert results.backtests["gaussian"]["kupiec"].n_obs[0] == n - 1
 
 
-def test_backtests_of_a_model_share_its_overshootings() -> None:
-    class _CountingOvershootings(Overshootings):
-        n_calls = 0
+def test_backtests_of_a_model_share_its_overshootings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = 0
+    compute = Overshootings.compute
 
-        def compute(self, returns: TimeSeries, /, *, var: TimeSeries) -> TimeSeries:
-            _CountingOvershootings.n_calls += 1
-            return super().compute(returns, var=var)
+    def count(
+        self: Overshootings, returns: TimeSeries, /, *, var: TimeSeries
+    ) -> TimeSeries:
+        nonlocal calls
+        calls += 1
+        return compute(self, returns, var=var)
 
-    model = GaussianModel(cf=0.99, vol=ConstantVolatility(0.01))
-    ovs = _CountingOvershootings(model)
-
+    monkeypatch.setattr(Overshootings, "compute", count)
     with Context() as ctx:
-        KupiecTest(ovs, name="a")
-        KupiecTest(ovs, name="b")
+        GaussianModel(cf=0.99, vol=ConstantVolatility(0.01), name="gauss")
+        Kupiec(name="full")
 
-    ctx.run(returns_series(n=50))
+        Kupiec(name="rolling", window=Trailing(20))
 
-    assert _CountingOvershootings.n_calls == 1
+    results = ctx.run(returns_series(n=50))
+
+    assert calls == 1
+    assert set(results.backtests["gauss"]) == {"full", "rolling"}

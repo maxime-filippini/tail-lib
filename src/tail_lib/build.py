@@ -12,8 +12,8 @@ from typing import assert_never
 
 import numpy as np
 
+from tail_lib.backtests.kupiec import Kupiec
 from tail_lib.backtests.kupiec import KupiecResult
-from tail_lib.backtests.kupiec import KupiecTest
 from tail_lib.models.ewma import Backcast
 from tail_lib.models.ewma import ConstantDecay
 from tail_lib.models.ewma import DecayModel
@@ -66,8 +66,6 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
 
     from tail_lib._typing import FloatArray
-    from tail_lib.backtests.overshootings import Overshootings
-    from tail_lib.graph import Backtest
 
 # A union, like the specs, once there is a second backtest.
 type BacktestResult = KupiecResult
@@ -172,13 +170,12 @@ def _build_mean(spec: MeanSpec) -> MeanModel:
             assert_never(spec)
 
 
-def _build_backtest(
-    spec: BacktestSpec, overshootings: Overshootings
-) -> Backtest[BacktestResult]:
+def _build_backtest(spec: BacktestSpec) -> Kupiec:
+    """Build a declaration; the context supplies each model when binding."""
     match spec:
         case KupiecSpec():
             window = None if spec.window is None else _window(spec.window)
-            return KupiecTest(overshootings, window=window)
+            return Kupiec(window=window)
         case _:
             assert_never(spec)
 

@@ -7,7 +7,7 @@ its parameters.
 | Page | Module | Contents |
 |---|---|---|
 | [Run specs](run.md) | `tail_lib.run` | `RunSpec`: models and backtests written as data. |
-| [Contexts](context.md) | `tail_lib.context` | `Context`, `Results`, `BacktestFunction`, `GraphNode`, `GraphEdge`, `RunGraph`: binding, execution, results and graph inspection. |
+| [Contexts](context.md) | `tail_lib.context` | `Context`, `Results`, `GraphNode`, `GraphEdge`, `RunGraph`: binding, execution, results and graph inspection. |
 | [Specs](specs.md) | `tail_lib.specs` | The spec classes: models written as data. |
 | [Value-at-risk models](value-at-risk.md) | `tail_lib.models.value_at_risk` | Historical, filtered historical, Gaussian, input. |
 | [Volatility models](volatility.md) | `tail_lib.models.volatility` | Constant, EWMA (constant or calibrated decay), input, and the volatility filter. |

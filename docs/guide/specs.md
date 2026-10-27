@@ -74,9 +74,10 @@ are reported before computing any node.
 
 ## How specs are written
 
-- **Each spec mirrors a node.** Its fields are the node's constructor
+- **Each model spec mirrors a node.** Its fields are the node's constructor
   arguments, and a node input is a nested spec: the `vol` of a Gaussian model
-  is a volatility spec.
+  is a volatility spec. Backtest specs mirror declarations: `KupiecSpec`
+  holds the settings of `Kupiec`; the context supplies its model inputs.
 - **A `type` tag picks the spec** in each slot, e.g. `"gaussian"` or
   `"historical"` for a model. Tags are unique within a slot, not across
   slots: `"constant"` is a constant volatility in a `vol` slot and a constant
@@ -174,9 +175,13 @@ the `type` is needed.
 
 ### Backtests: `backtests.<name>`
 
-| `type` | Node | Fields |
+The context converts each spec into a declaration and registers it through
+`add_backtest`, as for Python declarations. Wiring happens during the graph
+walk; the JSON format is unchanged.
+
+| `type` | Declaration | Fields |
 |---|---|---|
-| `kupiec` | `KupiecTest` | `window` = `null`: a [window](#windows-window), or `null` for the whole sample |
+| `kupiec` | `Kupiec` | `window` = `null`: a [window](#windows-window), or `null` for the whole sample |
 
 ## Errors
 

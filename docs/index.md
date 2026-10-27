@@ -29,7 +29,7 @@ with Kupiec's test, and read the results.
 ```python
 import datetime
 
-from tail_lib.backtests.kupiec import KupiecTest
+from tail_lib.backtests.kupiec import Kupiec
 from tail_lib.context import Context
 from tail_lib.distributions import StudentT
 from tail_lib.models.ewma import ConstantDecay
@@ -50,7 +50,8 @@ simulator = Simulator(
 returns = simulator.simulate(1000, first_date=datetime.date(2020, 1, 1), rng=1).returns
 
 # 2. Models, in a context: every backtest runs on every model.
-with Context(backtests={"kupiec": KupiecTest}) as ctx:
+with Context() as ctx:
+    Kupiec(name="kupiec")
     HistoricalSimulationsModel(cf=0.99, window=Trailing(length=250), name="hs_99")
     GaussianModel(cf=0.99, vol=EwmaVolatility(ConstantDecay(0.94)), name="gauss_99")
 

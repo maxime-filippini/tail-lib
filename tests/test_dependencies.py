@@ -6,7 +6,7 @@ from typing import Any
 import numpy as np
 import pytest
 
-from tail_lib.backtests.kupiec import KupiecTest
+from tail_lib.backtests.kupiec import _KupiecTest
 from tail_lib.backtests.overshootings import Overshootings
 from tail_lib.context import Context
 from tail_lib.context import _input_name
@@ -53,7 +53,7 @@ def _one_node_of_each_type() -> list[Node[Any]]:
         ),
         gaussian,
         Overshootings(gaussian),
-        KupiecTest(Overshootings(gaussian)),
+        _KupiecTest(Overshootings(gaussian)),
     ]
 
 

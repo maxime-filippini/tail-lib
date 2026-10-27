@@ -28,7 +28,7 @@ function.
 
 ## Kupiec's test
 
-[`KupiecTest`][tail_lib.backtests.kupiec.KupiecTest] is Kupiec's (1995)
+[`Kupiec`][tail_lib.backtests.kupiec.Kupiec] is Kupiec's (1995)
 proportion-of-failures test: does the overshooting rate match the model's
 confidence level? Under the model, each date overshoots with probability
 \(p = 1 - c\). With \(x\) overshootings out of \(n\) flagged dates, the
@@ -57,17 +57,14 @@ Windows start on the first flag (R16), so no window holds a model's warm-up.
 === "Python"
 
     ```python
-    from tail_lib.backtests.kupiec import KupiecTest
+    from tail_lib.backtests.kupiec import Kupiec
     from tail_lib.context import Context
     from tail_lib.windows import Last, Trailing
 
-    with Context(
-        backtests={
-            "kupiec": KupiecTest,
-            "kupiec_250": lambda ovs: KupiecTest(ovs, window=Trailing(length=250)),
-            "kupiec_last": lambda ovs: KupiecTest(ovs, window=Last(length=250)),
-        },
-    ) as ctx:
+    with Context() as ctx:
+        Kupiec(name="kupiec")
+        Kupiec(name="kupiec_250", window=Trailing(length=250))
+        Kupiec(name="kupiec_last", window=Last(length=250))
         ...  # the models
     ```
 

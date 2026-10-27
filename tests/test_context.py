@@ -5,8 +5,11 @@ from typing import Any
 import numpy as np
 import pytest
 
-from tail_lib.backtests.kupiec import KupiecTest
+from tail_lib.backtests.kupiec import Kupiec
+from tail_lib.backtests.kupiec import _KupiecTest
+from tail_lib.backtests.kupiec import kupiec_pof
 from tail_lib.backtests.overshootings import Overshootings
+from tail_lib.backtests.overshootings import overshootings
 from tail_lib.context import Context
 from tail_lib.context import Results
 from tail_lib.models.ewma import ConstantDecay
@@ -15,6 +18,7 @@ from tail_lib.models.mean import ZeroMean
 from tail_lib.models.value_at_risk import GaussianModel
 from tail_lib.models.value_at_risk import HistoricalSimulationsModel
 from tail_lib.models.value_at_risk import ValueAtRiskInput
+from tail_lib.models.value_at_risk import ValueAtRiskModel
 from tail_lib.models.volatility import ConstantVolatility
 from tail_lib.models.volatility import EwmaVolatility
 from tail_lib.models.volatility import VolatilityInput
@@ -57,14 +61,18 @@ def test_nodes_built_in_the_block_bind_to_the_context() -> None:
 
 def test_nested_contexts_bind_to_the_innermost_one() -> None:
     with Context() as outer:
+        Kupiec(name="outer_test")
         GaussianModel(cf=0.99, vol=ConstantVolatility(0.01), name="a")
         with Context() as inner:
+            Kupiec(name="inner_test")
             GaussianModel(cf=0.99, vol=ConstantVolatility(0.02), name="b")
             assert Context.current() is inner
         GaussianModel(cf=0.99, vol=ConstantVolatility(0.03), name="c")
 
     assert set(outer.models) == {"a", "c"}
     assert set(inner.models) == {"b"}
+    assert set(outer.labels) == {"a", "c", "outer_test"}
+    assert set(inner.labels) == {"b", "inner_test"}
 
 
 def test_threads_bind_to_their_own_context() -> None:
@@ -76,6 +84,7 @@ def test_threads_bind_to_their_own_context() -> None:
             # Both threads are inside their block at once.
             barrier.wait()
             GaussianModel(cf=0.99, vol=ConstantVolatility(0.01), name=name)
+            Kupiec(name=f"test_{name}")
             barrier.wait()
         contexts[name] = ctx
 
@@ -87,6 +96,8 @@ def test_threads_bind_to_their_own_context() -> None:
 
     assert set(contexts["a"].models) == {"a"}
     assert set(contexts["b"].models) == {"b"}
+    assert set(contexts["a"].labels) == {"a", "test_a"}
+    assert set(contexts["b"].labels) == {"b", "test_b"}
 
 
 def test_asyncio_tasks_bind_to_their_own_context() -> None:
@@ -94,6 +105,7 @@ def test_asyncio_tasks_bind_to_their_own_context() -> None:
         with Context() as ctx:
             await asyncio.sleep(0)
             GaussianModel(cf=0.99, vol=ConstantVolatility(0.01), name=name)
+            Kupiec(name=f"test_{name}")
             await asyncio.sleep(0)
         return ctx
 
@@ -104,6 +116,8 @@ def test_asyncio_tasks_bind_to_their_own_context() -> None:
 
     assert set(a.models) == {"a"}
     assert set(b.models) == {"b"}
+    assert set(a.labels) == {"a", "test_a"}
+    assert set(b.labels) == {"b", "test_b"}
 
 
 # --- Names ------------------------------------------------------------------
@@ -140,7 +154,7 @@ def test_an_equal_node_can_take_its_name_again() -> None:
 
 def test_a_node_cant_take_a_backtests_name() -> None:
     with (
-        Context(backtests={"kupiec": KupiecTest}),
+        Context(backtests={"kupiec": Kupiec()}),
         pytest.raises(ValueError, match="both a node and a backtest"),
     ):
         GaussianModel(cf=0.99, vol=ConstantVolatility(0.01), name="kupiec")
@@ -148,7 +162,112 @@ def test_a_node_cant_take_a_backtests_name() -> None:
 
 def test_a_backtest_name_has_to_be_an_identifier() -> None:
     with pytest.raises(ValueError, match="identifier"):
-        Context(backtests={"kupiec-250": KupiecTest})
+        Context(backtests={"kupiec-250": Kupiec()})
+
+
+def test_a_backtest_built_in_a_context_needs_a_name() -> None:
+    with Context() as ctx, pytest.raises(ValueError, match="needs a name"):
+        Kupiec()
+
+    assert ctx.labels == {}
+
+
+@pytest.mark.parametrize("name", ["kupiec-250", "1kupiec", ""])
+def test_a_backtest_name_is_checked_outside_a_context(name: str) -> None:
+    with pytest.raises(ValueError, match="identifier"):
+        Kupiec(name=name)
+
+
+def test_equal_backtests_under_different_names_share_their_output() -> None:
+    with Context() as ctx:
+        GaussianModel(cf=0.99, vol=ConstantVolatility(0.01), name="gauss")
+        Kupiec(name="a", window=Trailing(20))
+        Kupiec(name="b", window=Trailing(20))
+
+    results = ctx.run(returns_series(n=50))
+
+    assert results.backtests["gauss"]["a"] is results.backtests["gauss"]["b"]
+
+
+@pytest.mark.parametrize("position", ["before", "between", "after"])
+def test_registered_backtests_apply_to_every_model_regardless_of_order(
+    position: str,
+) -> None:
+    _CountingVolatility.n_calls = 0
+    with Context() as ctx:
+        if position == "before":
+            Kupiec(name="rolling", window=Trailing(20))
+        vol = _CountingVolatility(0.01)
+        GaussianModel(cf=0.99, vol=vol, name="a")
+        if position == "between":
+            Kupiec(name="rolling", window=Trailing(20))
+        GaussianModel(cf=0.95, vol=vol, name="b")
+        # Inspect before the last registration: graph construction must not
+        # seal the context or compute anything.
+        ctx.graph()
+        if position == "after":
+            Kupiec(name="rolling", window=Trailing(20))
+
+    assert _CountingVolatility.n_calls == 0
+    returns = returns_series(n=80, n_assets=2)
+    results = ctx.run(returns)
+
+    assert _CountingVolatility.n_calls == 1
+    for name, cf in (("a", 0.99), ("b", 0.95)):
+        assert set(results.backtests[name]) == {"rolling"}
+        expected = kupiec_pof(
+            overshootings(results[name], returns), cf_var=cf, window=Trailing(20)
+        )
+        actual = results.backtests[name]["rolling"]
+        assert actual.expected_rate == pytest.approx(1 - cf)
+        np.testing.assert_array_equal(actual.end_dates, expected.end_dates)
+        np.testing.assert_array_equal(actual.statistic, expected.statistic)
+
+
+@pytest.mark.parametrize("node_kind", ["model", "input", "preprocessor"])
+def test_a_registered_backtest_cant_take_an_existing_node_name(node_kind: str) -> None:
+    with Context():
+        if node_kind == "model":
+            GaussianModel(cf=0.99, vol=ConstantVolatility(0.01), name="used")
+        elif node_kind == "input":
+            VolatilityInput("used")
+        else:
+            ConstantVolatility(0.01, name="used")
+
+        with pytest.raises(ValueError, match="both a node and a backtest"):
+            Kupiec(name="used")
+
+
+def test_duplicate_backtest_registration_doesnt_replace_the_declaration() -> None:
+    with Context() as ctx:
+        GaussianModel(cf=0.99, vol=ConstantVolatility(0.01), name="gauss")
+        Kupiec(name="kupiec")
+
+    with pytest.raises(ValueError, match="already registered"):
+        ctx.add_backtest("kupiec", Kupiec(window=Trailing(20)))
+
+    result = ctx.run(returns_series(n=50)).backtests["gauss"]["kupiec"]
+    assert result.n_obs.shape == (1,)
+
+
+def test_a_declaration_is_reusable_in_different_contexts() -> None:
+    declaration = Kupiec(window=Trailing(20))
+    contexts = []
+    for cf in (0.99, 0.95):
+        with Context() as ctx:
+            ctx.add_backtest("kupiec", declaration)
+            GaussianModel(cf=cf, vol=ConstantVolatility(0.01), name="gauss")
+        contexts.append(ctx)
+
+    scalar = contexts[0].run(returns_series(n=50)).backtests["gauss"]["kupiec"]
+    batch = (
+        contexts[1].run(returns_series(n=80, n_assets=2)).backtests["gauss"]["kupiec"]
+    )
+
+    assert scalar.p_value.shape == (30,)
+    assert batch.p_value.shape == (60, 2)
+    assert scalar.expected_rate == pytest.approx(0.01)
+    assert batch.expected_rate == pytest.approx(0.05)
 
 
 def test_labels_name_a_model_or_a_backtest() -> None:
@@ -161,7 +280,7 @@ def test_labels_name_a_model_or_a_backtest() -> None:
 
 def test_labels_default_to_the_names() -> None:
     with Context(
-        backtests={"kupiec": KupiecTest}, labels={"gauss": "Gaussian 99%"}
+        backtests={"kupiec": Kupiec()}, labels={"gauss": "Gaussian 99%"}
     ) as ctx:
         GaussianModel(cf=0.99, vol=ConstantVolatility(0.01), name="gauss")
         HistoricalSimulationsModel(cf=0.99, window=Trailing(length=50), name="hs")
@@ -177,7 +296,7 @@ def test_labels_default_to_the_names() -> None:
 
 
 def test_the_graph_has_paths_from_models_backtests_then_other_nodes() -> None:
-    with Context(backtests={"kupiec": KupiecTest}) as ctx:
+    with Context(backtests={"kupiec": Kupiec()}) as ctx:
         vol = ConstantVolatility(0.01)
         gauss = GaussianModel(cf=0.99, vol=vol, name="gauss")
         lone = EwmaVolatility(ConstantDecay(0.94), name="lone")
@@ -197,7 +316,7 @@ def test_the_graph_has_paths_from_models_backtests_then_other_nodes() -> None:
 
 def test_the_graph_computes_nothing() -> None:
     _CountingVolatility.n_calls = 0
-    with Context(backtests={"kupiec": KupiecTest}) as ctx:
+    with Context(backtests={"kupiec": Kupiec()}) as ctx:
         GaussianModel(cf=0.99, vol=_CountingVolatility(0.01), name="gauss")
 
     ctx.graph()
@@ -206,7 +325,7 @@ def test_the_graph_computes_nothing() -> None:
 
 
 def test_backtests_reject_a_model_with_a_last_window() -> None:
-    with Context(backtests={"kupiec": KupiecTest}) as ctx:
+    with Context(backtests={"kupiec": Kupiec()}) as ctx:
         vol = EwmaVolatility(EwmaDecayCalibration(Last(length=100)))
         GaussianModel(cf=0.99, vol=vol, name="today")
 
@@ -220,7 +339,7 @@ def test_two_different_nodes_cant_read_one_input() -> None:
     var = ValueAtRiskInput("x", cf=0.99)
     with Context() as ctx:
         GaussianModel(cf=0.99, vol=VolatilityInput("x"), name="gauss")
-        KupiecTest(Overshootings(var))
+        _KupiecTest(Overshootings(var))
 
     with pytest.raises(ValueError, match="read by two different nodes"):
         ctx.graph()
@@ -231,7 +350,7 @@ def test_two_different_nodes_cant_read_one_input() -> None:
 
 def test_run_computes_each_node_once() -> None:
     _CountingVolatility.n_calls = 0
-    with Context(backtests={"kupiec": KupiecTest}) as ctx:
+    with Context(backtests={"kupiec": Kupiec()}) as ctx:
         vol = _CountingVolatility(0.01)
         GaussianModel(cf=0.99, vol=vol, name="a")
         # Equal models under two names are one node.
@@ -340,14 +459,19 @@ def test_only_backtests_can_output_no_time_series() -> None:
         ctx.run(returns_series(n=50))
 
 
-def test_a_run_doesnt_bind_the_backtest_nodes_it_builds() -> None:
+def test_a_run_doesnt_bind_the_backtest_nodes_it_builds(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     open_contexts: list[Context | None] = []
 
-    def kupiec(ovs: Overshootings) -> KupiecTest:
-        open_contexts.append(Context.current())
-        return KupiecTest(ovs)
+    bind = Kupiec._bind  # noqa: SLF001
 
-    with Context(backtests={"kupiec": kupiec}) as ctx:
+    def recording(self: Kupiec, model: ValueAtRiskModel) -> _KupiecTest:
+        open_contexts.append(Context.current())
+        return bind(self, model)
+
+    monkeypatch.setattr(Kupiec, "_bind", recording)
+    with Context(backtests={"kupiec": Kupiec()}) as ctx:
         GaussianModel(cf=0.99, vol=ConstantVolatility(0.01), name="gauss")
         # Inside the block: the backtest nodes are built outside any context.
         ctx.run(returns_series(n=50))

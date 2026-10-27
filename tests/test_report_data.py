@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from tail_lib._typing import FloatArrayAtLeast1D
-from tail_lib.backtests.kupiec import KupiecTest
+from tail_lib.backtests.kupiec import Kupiec
 from tail_lib.context import Context
 from tail_lib.models.ewma import Backcast
 from tail_lib.models.ewma import ConstantDecay
@@ -32,8 +32,8 @@ _N_SERIES = 2
 def _context() -> Context:
     with Context(
         backtests={
-            "kupiec": KupiecTest,
-            "kupiec_50": lambda ovs: KupiecTest(ovs, window=Trailing(length=50)),
+            "kupiec": Kupiec(),
+            "kupiec_50": Kupiec(window=Trailing(length=50)),
         },
         labels={"gauss": "Gaussian 99%"},
     ) as ctx:
@@ -89,6 +89,7 @@ def test_nodes_have_their_kind_and_input() -> None:
     assert nodes["models.gauss.vol"].kind == "preprocessor"
     assert nodes["backtests.gauss.kupiec.overshootings"].kind == "overshootings"
     assert nodes["backtests.gauss.kupiec"].kind == "backtest"
+    assert nodes["backtests.gauss.kupiec"].class_name == "Kupiec"
     assert nodes["models.var_ext"].input_name == "var_ext"
     assert nodes["models.gauss"].input_name is None
 

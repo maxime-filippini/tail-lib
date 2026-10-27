@@ -339,7 +339,8 @@ def test_building_from_a_spec_restores_the_surrounding_context(*, valid: bool) -
                     "cf": 0.95,
                     "name": "var_ext" if valid else "wrong",
                 },
-            }
+            },
+            "backtests": {"kupiec": {"type": "kupiec"}},
         }
     )
     with Context() as outer:
@@ -353,3 +354,4 @@ def test_building_from_a_spec_restores_the_surrounding_context(*, valid: bool) -
         last = ConstantVolatility(0.03)
 
     assert {entry.node for entry in outer.graph().nodes} == {first, last}
+    assert outer.labels == {}

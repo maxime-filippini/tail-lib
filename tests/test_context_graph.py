@@ -3,7 +3,8 @@ from typing import Any
 
 import pytest
 
-from tail_lib.backtests.kupiec import KupiecTest
+from tail_lib.backtests.kupiec import Kupiec
+from tail_lib.backtests.kupiec import _KupiecTest
 from tail_lib.backtests.overshootings import Overshootings
 from tail_lib.context import Context
 from tail_lib.context import GraphEdge
@@ -35,7 +36,7 @@ def _paths(graph: RunGraph) -> dict[Node[Any], tuple[str, ...]]:
 
 
 def _gauss_and_fhs() -> tuple[Context, ConstantVolatility, GaussianModel]:
-    with Context(backtests={"kupiec": KupiecTest}) as ctx:
+    with Context(backtests={"kupiec": Kupiec()}) as ctx:
         vol = ConstantVolatility(0.01)
         gauss = GaussianModel(cf=0.99, vol=vol, name="gauss")
         FilteredHistoricalSimulationsModel(
@@ -75,7 +76,7 @@ def test_backtests_and_overshootings_have_paths_like_the_results() -> None:
 
     by_path = {path: n.node for n in run.graph().nodes for path in n.paths}
 
-    assert isinstance(by_path["backtests.gauss.kupiec"], KupiecTest)
+    assert isinstance(by_path["backtests.gauss.kupiec"], _KupiecTest)
     assert isinstance(by_path["backtests.gauss.kupiec.overshootings"], Overshootings)
     assert by_path["backtests.fhs.kupiec"] is not by_path["backtests.gauss.kupiec"]
 
@@ -107,7 +108,7 @@ def test_the_edges_go_from_each_dependency_to_its_reader() -> None:
 
 
 def test_equal_models_built_separately_are_one_node() -> None:
-    with Context(backtests={"kupiec": KupiecTest}) as ctx:
+    with Context(backtests={"kupiec": Kupiec()}) as ctx:
         gauss = GaussianModel(cf=0.99, vol=ConstantVolatility(0.01), name="a")
         GaussianModel(cf=0.99, vol=ConstantVolatility(0.01), name="b")
 
@@ -118,7 +119,7 @@ def test_equal_models_built_separately_are_one_node() -> None:
 
 def test_a_model_under_two_names_is_one_node_with_two_paths() -> None:
     gauss = GaussianModel(cf=0.99, vol=ConstantVolatility(0.01))
-    with Context(backtests={"kupiec": KupiecTest}) as ctx:
+    with Context(backtests={"kupiec": Kupiec()}) as ctx:
         dataclasses.replace(gauss, name="a")
         dataclasses.replace(gauss, name="b")
 
@@ -129,7 +130,7 @@ def test_a_model_under_two_names_is_one_node_with_two_paths() -> None:
         "backtests.a.kupiec.overshootings.var",
         "backtests.b.kupiec.overshootings.var",
     )
-    kupiec = next(n for n in ctx.graph().nodes if isinstance(n.node, KupiecTest))
+    kupiec = next(n for n in ctx.graph().nodes if isinstance(n.node, _KupiecTest))
     assert kupiec.paths == ("backtests.a.kupiec", "backtests.b.kupiec")
 
 
@@ -143,7 +144,7 @@ def test_a_context_without_backtests_has_only_its_models_graph() -> None:
 
 
 def test_results_hold_every_graph_node_without_recomputing() -> None:
-    with Context(backtests={"k": KupiecTest}) as ctx:
+    with Context(backtests={"k": Kupiec()}) as ctx:
         vol = _CountingVolatility(0.01)
         GaussianModel(cf=0.99, vol=vol, name="gauss")
 
