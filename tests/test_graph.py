@@ -4,6 +4,7 @@ from dataclasses import dataclass
 import numpy as np
 import pytest
 
+from tail_lib.context import Context
 from tail_lib.graph import Cache
 from tail_lib.graph import Dependencies
 from tail_lib.graph import Pool
@@ -24,6 +25,7 @@ from tail_lib.models.volatility import VolatilityModel
 from tail_lib.time_series import TimeSeries
 from tail_lib.windows import Trailing
 from tests.helpers import returns_series
+from tests.helpers import run_node
 from tests.helpers import simulated_returns
 
 
@@ -62,7 +64,7 @@ def test_run_computes_nested_preprocessors_once() -> None:
 
     model = _FilteredReturnsModel(cf=0.99, filter=VolatilityFilter(vol), vol=vol)
 
-    rescaled = model.run(returns)
+    rescaled = run_node(model, returns)
 
     assert vol.n_calls == 1
     np.testing.assert_allclose(rescaled.values[1:], returns.values[1:])
@@ -98,7 +100,7 @@ def test_run_rejects_cyclic_preprocessors() -> None:
         GaussianModel(cf=0.99, vol=a).run(returns_series(n=50))
 
 
-def test_pool_computes_shared_preprocessors_once() -> None:
+def test_context_computes_shared_preprocessors_once() -> None:
     class CountingVolatility(ConstantVolatility):
         n_calls = 0
 
@@ -108,36 +110,36 @@ def test_pool_computes_shared_preprocessors_once() -> None:
 
     returns = returns_series()
     vol = CountingVolatility(0.01)
-    models = {
-        "gaussian_99": GaussianModel(cf=0.99, vol=vol),
-        "gaussian_95": GaussianModel(cf=0.95, vol=vol),
-        "hs_99": HistoricalSimulationsModel(cf=0.99, window=Trailing(length=100)),
-    }
+    with Context() as ctx:
+        GaussianModel(cf=0.99, vol=vol, name="gaussian_99")
+        GaussianModel(cf=0.95, vol=vol, name="gaussian_95")
+        HistoricalSimulationsModel(cf=0.99, window=Trailing(length=100), name="hs_99")
 
-    results = Pool(models).run(returns)
+    results = ctx.run(returns)
 
     assert CountingVolatility.n_calls == 1
-    for name, model in models.items():
-        np.testing.assert_allclose(results[name].values, model.run(returns).values)
+    for name, model in ctx.models.items():
+        np.testing.assert_allclose(
+            results[name].values, run_node(model, returns).values
+        )
 
 
-def test_pool_shares_nested_preprocessors_across_models() -> None:
+def test_context_shares_nested_preprocessors_across_models() -> None:
     returns = returns_series(n=50)
     vol = _CountingVolatility(0.02)
 
-    Pool(
-        {
-            "filtered": _FilteredReturnsModel(
-                cf=0.99, filter=VolatilityFilter(vol), vol=vol
-            ),
-            "gaussian": GaussianModel(cf=0.99, vol=vol),
-        }
-    ).run(returns)
+    with Context() as ctx:
+        _FilteredReturnsModel(
+            cf=0.99, filter=VolatilityFilter(vol), vol=vol, name="filtered"
+        )
+        GaussianModel(cf=0.99, vol=vol, name="gaussian")
+
+    ctx.run(returns)
 
     assert vol.n_calls == 1
 
 
-def test_pool_shares_decay_calibration_across_models() -> None:
+def test_context_shares_decay_calibration_across_models() -> None:
     class _CountingCalibration(EwmaDecayCalibration):
         n_calls = 0
 
@@ -148,13 +150,12 @@ def test_pool_shares_decay_calibration_across_models() -> None:
     returns = simulated_returns()
     calibration = _CountingCalibration(Trailing(length=100, step=20))
 
-    # Two volatility models, each a different node, on one calibration.
-    Pool(
-        {
-            "gaussian_99": GaussianModel(cf=0.99, vol=EwmaVolatility(calibration)),
-            "gaussian_95": GaussianModel(cf=0.95, vol=EwmaVolatility(calibration)),
-        }
-    ).run(returns)
+    # Two VaR models on equal volatility nodes and one calibration (D9).
+    with Context() as ctx:
+        GaussianModel(cf=0.99, vol=EwmaVolatility(calibration), name="gaussian_99")
+        GaussianModel(cf=0.95, vol=EwmaVolatility(calibration), name="gaussian_95")
+
+    ctx.run(returns)
 
     assert _CountingCalibration.n_calls == 1
 
@@ -193,7 +194,7 @@ class _Scaled(Preprocessor):
 def test_compute_gets_the_output_of_each_input_by_field_name() -> None:
     returns = returns_series(n=10)
 
-    scaled = _Scaled(ConstantVolatility(0.01)).run(returns)
+    scaled = run_node(_Scaled(ConstantVolatility(0.01)), returns)
 
     np.testing.assert_allclose(scaled.values, 0.02)
 
@@ -272,12 +273,11 @@ def test_a_name_is_not_part_of_a_nodes_identity() -> None:
 def test_equal_nodes_with_different_names_are_computed_once() -> None:
     vol = _CountingVolatility(0.02)
 
-    Pool(
-        {
-            "a": GaussianModel(cf=0.99, vol=vol, name="a"),
-            "b": GaussianModel(cf=0.99, vol=vol, name="b"),
-        }
-    ).run(returns_series(n=50))
+    with Context() as ctx:
+        GaussianModel(cf=0.99, vol=vol, name="a")
+        GaussianModel(cf=0.99, vol=vol, name="b")
+
+    ctx.run(returns_series(n=50))
 
     assert vol.n_calls == 1
 

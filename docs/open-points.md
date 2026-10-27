@@ -12,19 +12,19 @@ Working rules, from `CLAUDE.md` and the developer:
 - Commit only when the developer says so. Commits have no co-author trailer.
 
 State as of 2026-10-27: branch `feat/context-api`, from `develop`, not
-pushed. All checks green (ty, ruff, 658 tests).
+pushed. ty and ruff (excluding the untracked `examples/t.ipynb`) pass, as
+do all 658 tests. The notebook has an existing import-order lint error.
 
 ## Next up
 
 1. **Context API**, plan agreed with the developer on 2026-10-26, see
-   "Context API" under "Design questions". Steps 0 to 4 committed, with the
-   `var` rename. Steps 0 to 5b committed. The rest,
+   "Context API" under "Design questions". Steps 0 to 5c-1 committed, with
+   the `var` rename. The rest,
    reordered by the developer on 2026-10-27 so specs run at every commit:
-   5c-1 (the regression test, the example and the guide on contexts) done,
-   awaiting review; then 5c-2 (tests off `node.run`, `Pool` and `Cache`),
-   step 6 (`Context.from_spec`), and 5c-3 (`Run`, `RunResult`, `Cache`,
-   `Pool`, `node.run` and the `Builder` removed), each reviewed on its
-   own.
+   5c-2 (node and shared-computation tests on contexts) done, awaiting
+   review; then step 6 (`Context.from_spec`), and 5c-3 (`Run`, `RunResult`,
+   `Cache`, `Pool`, `node.run` and the `Builder` removed), each reviewed on
+   its own.
 2. **Run date range (R21–R23)**, agreed with the developer on 2026-10-25,
    see "Run date range" under "Design questions". Step 1 (docs) done,
    awaiting review. Steps 2 to 5 wait for the context API.
@@ -547,6 +547,28 @@ Done in step 5c-1 (2026-10-27), no output changed:
   Python blocks were run against simulated returns. "Runs from specs" and
   the home page's spec block still use `Run.from_spec`, until step 6.
 - `docs/architecture.md`'s "From Python" shows a context.
+
+Done in step 5c-2 (2026-10-27), no output changed:
+
+- `tests.helpers.run_node` computes one node and its dependencies in a
+  context. An unnamed VaR model gets a named copy, equal by value (D9),
+  so the helper can read the output by the original node. This is a test
+  helper, not a new library API.
+- Node tests for decay, volatility, VaR, overshootings, Kupiec and run
+  inputs, and the simulation's filtering check, use the helper instead
+  of `node.run`. Missing inputs are now checked before computing (R13),
+  so the input test expects the context's list of missing names.
+- Shared-preprocessor and shared-calibration tests, equal models under
+  different names, and backtest sharing tests run in one context (D9,
+  D10). The run-input test passes inputs through `Context.run`.
+- Tests specifically for `Run`, `Builder`, `Pool` and `Cache` stay until
+  step 5c-3, including the cache's mutable-node cycle test and dependency
+  recording tests. The context-to-`Run` numerical comparison stays too.
+- No library code or pinned regression data changed. Next is step 6,
+  `Context.from_spec`, before removing the old API.
+- Validation: ty, ruff excluding the untracked notebook, and all 658
+  tests pass. The strict docs build still fails on the existing README
+  link in `reviews/2026-10-25-risk-manager-review.md`.
 
 **Still open**
 

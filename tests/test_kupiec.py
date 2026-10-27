@@ -5,8 +5,7 @@ from tail_lib.backtests.kupiec import KupiecTest
 from tail_lib.backtests.kupiec import kupiec_pof
 from tail_lib.backtests.overshootings import Overshootings
 from tail_lib.backtests.overshootings import overshootings
-from tail_lib.graph import Cache
-from tail_lib.graph import Pool
+from tail_lib.context import Context
 from tail_lib.models.value_at_risk import GaussianModel
 from tail_lib.models.value_at_risk import HistoricalSimulationsModel
 from tail_lib.models.volatility import ConstantVolatility
@@ -15,6 +14,7 @@ from tail_lib.windows import Last
 from tail_lib.windows import Trailing
 from tests.helpers import FIRST_DATE
 from tests.helpers import returns_series
+from tests.helpers import run_node
 
 
 def _flags(n: int, x: int) -> TimeSeries:
@@ -145,9 +145,9 @@ def test_kupiec_test_node_matches_functions() -> None:
     returns = returns_series(n=300, n_assets=2)
     model = HistoricalSimulationsModel(cf=0.95, window=Trailing(length=100))
 
-    result = KupiecTest(Overshootings(model)).run(returns)
+    result = run_node(KupiecTest(Overshootings(model)), returns)
 
-    expected = kupiec_pof(overshootings(model.run(returns), returns), cf_var=0.95)
+    expected = kupiec_pof(overshootings(run_node(model, returns), returns), cf_var=0.95)
     np.testing.assert_array_equal(result.n_obs, expected.n_obs)
     np.testing.assert_array_equal(result.n_overshootings, expected.n_overshootings)
     np.testing.assert_allclose(result.p_value, expected.p_value)
@@ -158,9 +158,9 @@ def test_kupiec_test_node_on_windows_matches_functions() -> None:
     model = HistoricalSimulationsModel(cf=0.95, window=Trailing(length=100))
     window = Trailing(length=50, step=10)
 
-    result = KupiecTest(Overshootings(model), window=window).run(returns)
+    result = run_node(KupiecTest(Overshootings(model), window=window), returns)
 
-    flags = overshootings(model.run(returns), returns)
+    flags = overshootings(run_node(model, returns), returns)
     expected = kupiec_pof(flags, cf_var=0.95, window=window)
     # HS gives its first VaR on date 99, so the first flag is on date 100.
     assert result.end_dates[0] == returns.dates[100 + 50 - 1]
@@ -171,12 +171,12 @@ def test_kupiec_test_node_on_windows_matches_functions() -> None:
 def test_kupiec_test_uses_the_model_confidence_level() -> None:
     model = GaussianModel(cf=0.975, vol=ConstantVolatility(0.01))
 
-    result = KupiecTest(Overshootings(model)).run(returns_series(n=50))
+    result = run_node(KupiecTest(Overshootings(model)), returns_series(n=50))
 
     assert result.expected_rate == pytest.approx(0.025)
 
 
-def test_backtests_reuse_var_computed_in_the_same_cache() -> None:
+def test_backtests_reuse_var_computed_in_the_same_context() -> None:
     class _CountingGaussian(GaussianModel):
         n_calls = 0
 
@@ -186,22 +186,16 @@ def test_backtests_reuse_var_computed_in_the_same_cache() -> None:
             _CountingGaussian.n_calls += 1
             return super().compute(returns, vol=vol, mean=mean)
 
-    models = {
-        "gaussian": _CountingGaussian(cf=0.99, vol=ConstantVolatility(0.01)),
-        "hs": HistoricalSimulationsModel(cf=0.99, window=Trailing(length=50)),
-    }
+    with Context(backtests={"kupiec": KupiecTest}) as ctx:
+        _CountingGaussian(cf=0.99, vol=ConstantVolatility(0.01), name="gaussian")
+        HistoricalSimulationsModel(cf=0.99, window=Trailing(length=50), name="hs")
     n = 200
-    cache = Cache(returns_series(n=n))
-
-    var = Pool(models).evaluate(cache)
-    tests = Pool(
-        {name: KupiecTest(Overshootings(m)) for name, m in models.items()}
-    ).evaluate(cache)
+    results = ctx.run(returns_series(n=n))
 
     assert _CountingGaussian.n_calls == 1
-    assert set(var) == set(tests) == {"gaussian", "hs"}
+    assert set(results.models) == set(results.backtests) == {"gaussian", "hs"}
     # The first date has no previous VaR to compare with.
-    assert tests["gaussian"].n_obs[0] == n - 1
+    assert results.backtests["gaussian"]["kupiec"].n_obs[0] == n - 1
 
 
 def test_backtests_of_a_model_share_its_overshootings() -> None:
@@ -215,6 +209,10 @@ def test_backtests_of_a_model_share_its_overshootings() -> None:
     model = GaussianModel(cf=0.99, vol=ConstantVolatility(0.01))
     ovs = _CountingOvershootings(model)
 
-    Pool({"a": KupiecTest(ovs), "b": KupiecTest(ovs)}).run(returns_series(n=50))
+    with Context() as ctx:
+        KupiecTest(ovs, name="a")
+        KupiecTest(ovs, name="b")
+
+    ctx.run(returns_series(n=50))
 
     assert _CountingOvershootings.n_calls == 1

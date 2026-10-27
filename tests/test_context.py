@@ -25,6 +25,7 @@ from tail_lib.time_series import TimeSeries
 from tail_lib.windows import Last
 from tail_lib.windows import Trailing
 from tests.helpers import returns_series
+from tests.helpers import run_node
 from tests.helpers import simulated_returns
 
 
@@ -315,7 +316,7 @@ def test_a_context_without_models_computes_its_nodes() -> None:
     results = ctx.run(returns)
 
     assert results.models == {}
-    np.testing.assert_array_equal(results[vol].values, vol.run(returns).values)
+    np.testing.assert_array_equal(results[vol].values, run_node(vol, returns).values)
 
 
 def test_run_inputs_are_read_never_computed() -> None:

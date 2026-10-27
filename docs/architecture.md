@@ -151,8 +151,8 @@ Pool(backtests).run(returns)  # the overshootings of `model` are computed once
 ## Contexts (`context.py`)
 
 The context API's replacement for `Run`, built next to it (step 5a of the
-migration). The report, the guide, the example and the regression test use
-it; `Run` stays until specs build contexts (step 6):
+migration). The report, the guide, the example, the regression test and the
+node tests use it; `Run` stays until specs build contexts (step 6):
 
 ```python
 with Context(backtests={"kupiec": KupiecTest}, labels={"gauss": "Gaussian"}) as ctx:
@@ -194,6 +194,14 @@ results["gauss"], results[vol], results.backtests["gauss"]["kupiec"]
 - **`Results`** holds every node's output (`outputs`), the named nodes
   (`named`), `models` (name to VaR) and `backtests` (model, then test, to
   result). `results[node]` or `results["name"]` reads one output.
+
+The node tests use `tests.helpers.run_node(node, returns, inputs)`, which
+binds a node to its own context and reads its output from `Results`. An
+unnamed VaR model is bound through a named copy: names aren't part of value
+identity (D9), so the original node still reads the result. Shared-model
+and backtest tests declare their nodes in one context. Tests specifically
+covering `Run`, `Builder`, `Pool` and `Cache`, including the mutable-node
+cycle test, stay until those classes are removed (step 5c-3).
 
 ## From a spec to results
 

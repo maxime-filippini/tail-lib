@@ -11,6 +11,7 @@ from tail_lib.simulation import EwmaProcess
 from tail_lib.simulation import GarchProcess
 from tail_lib.simulation import Simulator
 from tests.helpers import FIRST_DATE
+from tests.helpers import run_node
 
 GARCH = GarchProcess(omega=2e-6, alpha=0.08, beta=0.9)
 GARCH_LONG_RUN_VAR = 2e-6 / (1 - 0.08 - 0.9)
@@ -62,7 +63,7 @@ def test_ewma_volatility_filters_back_simulated_vols() -> None:
     model = EwmaVolatility(ConstantDecay(decay), start=StartingVol(0.01))
 
     np.testing.assert_allclose(
-        model.run(sim.returns).values, sim.vols.values, rtol=1e-12
+        run_node(model, sim.returns).values, sim.vols.values, rtol=1e-12
     )
 
 

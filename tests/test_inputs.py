@@ -5,7 +5,7 @@ from tail_lib.backtests.kupiec import KupiecTest
 from tail_lib.backtests.kupiec import kupiec_pof
 from tail_lib.backtests.overshootings import Overshootings
 from tail_lib.backtests.overshootings import overshootings
-from tail_lib.graph import Pool
+from tail_lib.context import Context
 from tail_lib.models.value_at_risk import GaussianModel
 from tail_lib.models.value_at_risk import HistoricalSimulationsModel
 from tail_lib.models.value_at_risk import ValueAtRiskInput
@@ -14,15 +14,18 @@ from tail_lib.models.volatility import VolatilityInput
 from tail_lib.time_series import TimeSeries
 from tail_lib.windows import Trailing
 from tests.helpers import returns_series
+from tests.helpers import run_node
 
 
 def test_var_input_is_backtested_like_the_model_it_came_from() -> None:
     returns = returns_series(n=300)
     hs = HistoricalSimulationsModel(cf=0.99, window=Trailing(length=100))
-    precomputed = hs.run(returns)
+    precomputed = run_node(hs, returns)
 
-    from_input = KupiecTest(Overshootings(ValueAtRiskInput("var_99", cf=0.99))).run(
-        returns, inputs={"var_99": precomputed}
+    from_input = run_node(
+        KupiecTest(Overshootings(ValueAtRiskInput("var_99", cf=0.99))),
+        returns,
+        inputs={"var_99": precomputed},
     )
 
     expected = kupiec_pof(overshootings(precomputed, returns), cf_var=0.99)
@@ -32,33 +35,36 @@ def test_var_input_is_backtested_like_the_model_it_came_from() -> None:
 
 def test_volatility_input_feeds_a_model() -> None:
     returns = returns_series(n=50, n_assets=2)
-    vols = ConstantVolatility(np.array([0.01, 0.02])).run(returns)
+    vols = run_node(ConstantVolatility(np.array([0.01, 0.02])), returns)
 
     model = GaussianModel(cf=0.99, vol=VolatilityInput("vol"))
-    from_input = model.run(returns, inputs={"vol": vols})
+    from_input = run_node(model, returns, inputs={"vol": vols})
 
-    expected = GaussianModel(
-        cf=0.99, vol=ConstantVolatility(np.array([0.01, 0.02]))
-    ).run(returns)
+    expected = run_node(
+        GaussianModel(cf=0.99, vol=ConstantVolatility(np.array([0.01, 0.02]))), returns
+    )
     np.testing.assert_array_equal(from_input.values, expected.values)
 
 
-def test_pool_run_passes_inputs_and_ignores_unused_ones() -> None:
+def test_context_run_passes_inputs_and_ignores_unused_ones() -> None:
     returns = returns_series(n=50)
-    vols = ConstantVolatility(0.01).run(returns)
+    vols = run_node(ConstantVolatility(0.01), returns)
 
-    outputs = Pool({"g": GaussianModel(cf=0.99, vol=VolatilityInput("vol"))}).run(
-        returns, inputs={"vol": vols, "unused": vols}
-    )
+    with Context() as ctx:
+        GaussianModel(cf=0.99, vol=VolatilityInput("vol"), name="g")
 
-    assert set(outputs) == {"g"}
+    outputs = ctx.run(returns, inputs={"vol": vols, "unused": vols})
+
+    assert set(outputs.models) == {"g"}
 
 
 def test_missing_input_is_an_error() -> None:
     returns = returns_series(n=50)
 
-    with pytest.raises(KeyError, match="Missing input 'var_99'"):
-        ValueAtRiskInput("var_99", cf=0.99).run(returns, inputs={"var_95": returns})
+    with pytest.raises(KeyError, match=r"Missing inputs \['var_99'\]"):
+        run_node(
+            ValueAtRiskInput("var_99", cf=0.99), returns, inputs={"var_95": returns}
+        )
 
 
 def test_misaligned_input_is_an_error() -> None:
@@ -66,7 +72,7 @@ def test_misaligned_input_is_an_error() -> None:
     shorter = TimeSeries(dates=returns.dates[1:], values=returns.values[1:])
 
     with pytest.raises(ValueError, match="Input 'vol' does not match the returns"):
-        VolatilityInput("vol").run(returns, inputs={"vol": shorter})
+        run_node(VolatilityInput("vol"), returns, inputs={"vol": shorter})
 
 
 def test_var_input_validates_its_confidence_level() -> None:
