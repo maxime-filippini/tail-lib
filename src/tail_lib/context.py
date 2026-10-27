@@ -280,6 +280,7 @@ class Context:
             for model_name, tests in self._backtest_nodes().items()
         }
         return Results(
+            returns=returns,
             models={name: outputs[model] for name, model in self._models.items()},
             backtests=backtests,
             outputs=MappingProxyType(outputs),
@@ -311,9 +312,11 @@ class Results:
     """The outputs of one run of a context.
 
     Read the output of any node by node, `results[vol]`, or of a node named
-    in the context by its name, `results["gauss"]`.
+    in the context by its name, `results["gauss"]`. They hold the returns
+    they were computed on, so a report needs nothing else (R19).
 
     Attributes:
+        returns (TimeSeries): The returns the run computed on.
         models (dict[str, TimeSeries]): The value-at-risk of each model, by
             name.
         backtests (dict[str, dict[str, BacktestResult]]): The result of each
@@ -324,6 +327,7 @@ class Results:
 
     """
 
+    returns: TimeSeries
     models: dict[str, TimeSeries]
     backtests: dict[str, dict[str, BacktestResult]]
     # Nodes have different output types: `Any` stands for each.

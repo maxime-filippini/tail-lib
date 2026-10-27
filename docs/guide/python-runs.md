@@ -229,8 +229,11 @@ cache.get(vol)  # already computed, so read for free
 
 ## Reports
 
-A [`Report`][tail_lib.report.report.Report] computes a run and saves it as
-one HTML file that opens offline (R19). Its tabs:
+A [`Report`][tail_lib.report.report.Report] shows the results of a run as
+one HTML file that opens offline (R19). It takes a
+[`Context`][tail_lib.context.Context], which is replacing `Run` (this guide
+moves to contexts next), and the results of its run, which it reads
+without computing anything again. Its tabs:
 
 - **Graph:** every node of the run once, with its settings; click a box to
   chart its output.
@@ -243,9 +246,14 @@ one HTML file that opens offline (R19). Its tabs:
 - **Node outputs:** the output of any node, e.g. a volatility.
 
 ```python
+from tail_lib.context import Context
 from tail_lib.report.report import Report
 
-report = Report(run, returns, inputs, title="Daily VaR", series_labels=["SPX", "SX5E"])
+with Context(backtests={"kupiec": KupiecTest}) as ctx:
+    GaussianModel(cf=0.99, vol=EwmaVolatility(ConstantDecay(0.94)), name="gauss")
+
+results = ctx.run(returns, inputs)
+report = Report(ctx, results, title="Daily VaR", series_labels=["SPX", "SX5E"])
 report.save("report.html")
 report.data  # the ReportData shown, e.g. report.data.model_dump_json()
 ```

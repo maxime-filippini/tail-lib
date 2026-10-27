@@ -9,7 +9,7 @@ it is (R17).
 Conventions in the data:
 
 - A node is identified by its first path in the run's graph, e.g.
-  `models.gauss.vol` (see `Run.graph`).
+  `models.gauss.vol` (see `Context.graph`).
 - Series are flattened: the batch axes of the returns become one list of
   series, in C order, each with a label. Every series of values is a list
   over the series, then over the dates (or the windows of a backtest).
@@ -52,10 +52,10 @@ if TYPE_CHECKING:
 
     from tail_lib._typing import DateArray1D
     from tail_lib.backtests.kupiec import KupiecResult
-    from tail_lib.graph import Cache
+    from tail_lib.context import Context
+    from tail_lib.context import Results
     from tail_lib.graph import Node
     from tail_lib.graph import Setting
-    from tail_lib.run import Run
 
 type NodeKind = Literal["preprocessor", "model", "overshootings", "backtest"]
 """The role of a node in a run, which sets its layer in the graph."""
@@ -167,7 +167,7 @@ class ReportData(_Data):
         series (list[str]): The label of each series.
         returns (Values): The returns.
         labels (dict[str, str]): The display name of each model and
-            backtest, see `Run.labels`.
+            backtest, see `Context.labels`.
         models (dict[str, str]): The node id of each model, by model name.
         nodes (list[NodeData]): Each node of the run's graph, once.
         edges (list[EdgeData]): The edges of the run's graph.
@@ -191,20 +191,21 @@ class ReportData(_Data):
 
 
 def build_report_data(
-    run: Run,
-    cache: Cache,
+    context: Context,
+    results: Results,
     *,
     title: str = "tail-lib report",
     series_labels: Sequence[str] | None = None,
 ) -> ReportData:
-    """Compute a run on a cache, and gather the data of its report.
+    """Gather the data of a report from a context and the results of its run.
 
-    The run is computed with `run.evaluate(cache)`, so every node of its
-    graph is in the cache, and is read from it without computing it again.
+    Nothing is computed: every node of the context's graph is read from the
+    results, so a run computed once can be reported (R19).
 
     Args:
-        run (Run): The run.
-        cache (Cache): The cache, holding the returns and the run inputs.
+        context (Context): The context.
+        results (Results): The results of `context.run`, on the returns the
+            report shows.
         title (str): The title of the report.
         series_labels (Sequence[str] | None): A label per series of the
             returns, in C order over the batch axes. By default, each series
@@ -215,15 +216,23 @@ def build_report_data(
         ReportData: The data of the report.
 
     Raises:
-        KeyError: If an input the run reads is missing from the cache.
-        ValueError: If there are not as many series labels as series.
+        ValueError: If the results don't hold every node of the context, e.g.
+            results of another context, or if there are not as many series
+            labels as series.
 
     """
-    result = run.evaluate(cache)
-    returns = cache.returns
+    graph = context.graph()
+    not_computed = [n.paths[0] for n in graph.nodes if n.node not in results.outputs]
+    if not_computed:
+        msg = (
+            f"The results don't hold the nodes at {not_computed}: report "
+            f"results of `context.run`, on the same context!"
+        )
+        raise ValueError(msg)
+    returns = results.returns
     batch_shape = returns.values.shape[1:]
 
-    ids = {graph_node.node: graph_node.paths[0] for graph_node in run.graph.nodes}
+    ids = {graph_node.node: graph_node.paths[0] for graph_node in graph.nodes}
     nodes = [
         NodeData(
             id=ids[graph_node.node],
@@ -236,21 +245,21 @@ def build_report_data(
             paths=list(graph_node.paths),
             input_name=_input_name(graph_node.node),
         )
-        for graph_node in run.graph.nodes
+        for graph_node in graph.nodes
     ]
     edges = [
         EdgeData(source=ids[edge.source], target=ids[edge.target], name=edge.name)
-        for edge in run.graph.edges
+        for edge in graph.edges
     ]
 
-    # Every node is already in the cache: `get` only reads it. A decay model
+    # Every node's output is in the results. A decay model
     # gives its decay factors with their refits: the page charts the factors.
     # A filter gives its standardized returns with the mean and volatility,
     # charted on their own nodes: the page charts the standardized returns.
     # Backtests don't give a time series: their results are in `backtests`.
     outputs: dict[str, Values] = {}
-    for graph_node in run.graph.nodes:
-        output = cache.get(graph_node.node)
+    for graph_node in graph.nodes:
+        output = results.outputs[graph_node.node]
         if isinstance(output, DecayFactors):
             output = output.values
         if isinstance(output, FilteredReturns):
@@ -261,9 +270,7 @@ def build_report_data(
     # Models and backtests are found by their paths, e.g. `models.gauss` and
     # `backtests.gauss.kupiec`.
     by_path = {
-        path: graph_node.node
-        for graph_node in run.graph.nodes
-        for path in graph_node.paths
+        path: graph_node.node for graph_node in graph.nodes for path in graph_node.paths
     }
     backtests = {
         model_name: {
@@ -273,7 +280,7 @@ def build_report_data(
             )
             for test_name, test_result in model_tests.items()
         }
-        for model_name, model_tests in result.backtests.items()
+        for model_name, model_tests in results.backtests.items()
     }
 
     return ReportData(
@@ -285,8 +292,8 @@ def build_report_data(
         dates=_dates(returns.dates),
         series=_series_labels(batch_shape, series_labels),
         returns=_values(returns.values),
-        labels=dict(run.labels),
-        models={name: ids[by_path[f"models.{name}"]] for name in result.models},
+        labels=dict(context.labels),
+        models={name: ids[by_path[f"models.{name}"]] for name in results.models},
         nodes=nodes,
         edges=edges,
         outputs=outputs,

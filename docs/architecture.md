@@ -392,10 +392,12 @@ raw returns (see "Returns as a node" in `docs/open-points.md`).
 
 In progress, see "Run report" in `docs/open-points.md`.
 
-`build_report_data(run, cache, title=..., series_labels=...)` calls
-`run.evaluate(cache)`, then reads every node of `run.graph` from the cache,
-already computed, into a `ReportData`: a pydantic model, the one contract
-with the report page. In it:
+`build_report_data(context, results, title=..., series_labels=...)`
+computes nothing: it reads every node of `context.graph()` from
+`results.outputs`, and the returns from `results.returns`, into a
+`ReportData`: a pydantic model, the one contract with the report page. It
+raises `ValueError` if the results lack a node of the graph, e.g. results
+of another context. In it:
 
 - a node is identified by its first path, e.g. `models.gauss.vol`;
   `models` maps each model name to its node id, and each backtest keeps the
@@ -410,8 +412,10 @@ with the report page. In it:
   results are by model, then backtest name;
 - `NaN` is written `null`, dates as ISO strings.
 
-`Report(run, returns, inputs, title=..., series_labels=...)` makes a
-`Cache`, calls `build_report_data`, and keeps the result as `report.data`.
+`Report(context, results, title=..., series_labels=...)` calls
+`build_report_data`, and keeps the result as `report.data`. So a run is
+computed once, then reported (risk-manager review, finding 2):
+`results = ctx.run(returns, inputs)`, then `Report(ctx, results)`.
 `report.save(path)` reads the page, `report/index.html` (package data,
 built ahead of time, so pip installs need no Node), and replaces the
 placeholder in its data slot, `<script id="report-data"

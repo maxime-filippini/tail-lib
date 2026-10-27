@@ -12,15 +12,15 @@ Working rules, from `CLAUDE.md` and the developer:
 - Commit only when the developer says so. Commits have no co-author trailer.
 
 State as of 2026-10-27: branch `feat/context-api`, from `develop`, not
-pushed. All checks green (ty, ruff, 657 tests).
+pushed. All checks green (ty, ruff, 658 tests).
 
 ## Next up
 
 1. **Context API**, plan agreed with the developer on 2026-10-26, see
    "Context API" under "Design questions". Steps 0 to 4 committed, with the
-   `var` rename. Step 5a is split in two: 5a-1, node names,
-   committed; 5a-2, `Context` and `Results`, done, awaiting review. Then
-   5b, 5c and 6, each reviewed on its own.
+   `var` rename. Steps 5a-1 (node names) and 5a-2
+   (`Context`, `Results`) committed. Step 5b (the report on a context)
+   done, awaiting review. Then 5c and 6, each reviewed on its own.
 2. **Run date range (R21–R23)**, agreed with the developer on 2026-10-25,
    see "Run date range" under "Design questions". Step 1 (docs) done,
    awaiting review. Steps 2 to 5 wait for the context API.
@@ -504,6 +504,22 @@ Done in step 5a-2 (2026-10-27), no output changed:
 - `tests/test_context.py` checks the binding (nesting, threads, asyncio
   tasks), the names, the graph, and that a context gives `Run`'s numbers.
 
+Done in step 5b (2026-10-27), no output changed:
+
+- `Report(context, results, title=..., series_labels=...)` and
+  `build_report_data(context, results, ...)`, chosen by the developer over
+  `Report(ctx, returns, results)` and over the report running the context
+  itself. The report computes nothing, so computing then reporting computes
+  once (risk-manager review, finding 2). It raises `ValueError` if the
+  results lack a node of the context's graph.
+- `Results.returns`: the returns the run computed on, so the report needs
+  nothing else.
+- `Run` no longer has a report. The report tests, the sample data script
+  (`report-app/scripts/export_sample.py`) and the guide's "Reports"
+  section use a context; the rest of the guide moves in 5c.
+- With one name per run input, the sample's and the tests' input model is
+  named `var_ext`, after its input (was `external` or `ext`).
+
 **Still open**
 
 - Whether `RunSpec` keeps its name.
@@ -599,7 +615,8 @@ Spec agreed with the developer on 2026-10-25.
 
 - `Report(run, returns, inputs=None)` computes the run itself, so it can
   read every node's output, not only `RunResult`. `report.save(path)`
-  writes the HTML file.
+  writes the HTML file. Replaced in step 5b of "Context API" by
+  `Report(context, results)`, which computes nothing.
 - `Run.evaluate(cache)` becomes public, like `Pool.evaluate`. `Run.run`
   turns into a thin wrapper around it. The report builds the `Cache`, calls
   `run.evaluate(cache)`, then reads each graph node from that same cache.
