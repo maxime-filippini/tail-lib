@@ -12,7 +12,6 @@ import numpy as np
 
 from tail_lib._checks import check_positive
 from tail_lib._checks import check_unit_interval
-from tail_lib.graph import Cache
 from tail_lib.graph import Node
 from tail_lib.graph import frozen_floats
 from tail_lib.time_series import TimeSeries
@@ -221,10 +220,7 @@ class ConstantDecay(DecayModel):
         check_unit_interval("Decay factor", self.value)
         super().__post_init__()
 
-    def evaluate(self, cache: Cache) -> DecayFactors:  # noqa: D102
-        return self.compute(cache.returns)
-
-    def compute(self, returns: TimeSeries) -> DecayFactors:
+    def compute(self, returns: TimeSeries, /) -> DecayFactors:
         """Repeat the decay factor on every date of the returns.
 
         Args:
@@ -354,10 +350,7 @@ class EwmaDecayCalibration(DecayModel):
     start: EwmaStart = field(default=DEFAULT_EWMA_START, kw_only=True)
     n_iter: int = field(default=DEFAULT_FIT_ITERATIONS, kw_only=True)
 
-    def evaluate(self, cache: Cache) -> DecayFactors:  # noqa: D102
-        return self.compute(cache.returns)
-
-    def compute(self, returns: TimeSeries) -> DecayFactors:
+    def compute(self, returns: TimeSeries, /) -> DecayFactors:
         """Fit the decay factor on every training window.
 
         Args:

@@ -85,8 +85,8 @@ can be hashed; `np.asarray` gives the array back.
   calls `super().__post_init__()` for it.
 - `evaluate(cache)` is written once, in `Node`: it gets each dependency's
   output with `cache.get(node)`, then calls `compute`. Until their step of
-  the migration, the EWMA nodes, the filter, the FHS and the input nodes
-  keep an `evaluate` of their own, and their `compute` isn't checked;
+  the migration, the filter, the FHS and the input nodes keep an
+  `evaluate` of their own, and their `compute` isn't checked;
   `tests/test_dependencies.py` lists them. The input nodes' `compute`
   refuses to run: their output is read from the run.
 - `dependencies()` lists the nodes `evaluate` reads: the fields holding

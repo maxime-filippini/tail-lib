@@ -176,11 +176,7 @@ class EwmaVolatility(VolatilityModel):
             raise ValueError(msg)
         super().__post_init__()
 
-    def evaluate(self, cache: Cache) -> TimeSeries:  # noqa: D102
-        decay = cache.get(self.decay)
-        return self.compute(cache.returns, decay=decay)
-
-    def compute(self, returns: TimeSeries, *, decay: DecayFactors) -> TimeSeries:
+    def compute(self, returns: TimeSeries, /, *, decay: DecayFactors) -> TimeSeries:
         """Compute the volatilities, with one run of the recursion per refit.
 
         Args:

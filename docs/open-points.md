@@ -12,15 +12,14 @@ Working rules, from `CLAUDE.md` and the developer:
 - Commit only when the developer says so. Commits have no co-author trailer.
 
 State as of 2026-10-27: branch `feat/context-api`, from `develop`, not
-pushed. All checks green (ty, ruff, 595 tests).
+pushed. All checks green (ty, ruff, 624 tests).
 
 ## Next up
 
 1. **Context API**, plan agreed with the developer on 2026-10-26, see
-   "Context API" under "Design questions". Steps 0 to 3 committed. Step 4a
-   (pure `compute` for means, constant volatility, HS, Gaussian,
-   overshootings, Kupiec) done, awaiting review. Then 4b to 4d and steps 5
-   and 6, each reviewed on its own.
+   "Context API" under "Design questions". Steps 0 to 4a committed. Step 4b
+   (pure `compute` for the decay models and the EWMA) done, awaiting
+   review. Then 4c and 4d and steps 5 and 6, each reviewed on its own.
 2. **Run date range (R21–R23)**, agreed with the developer on 2026-10-25,
    see "Run date range" under "Design questions". Step 1 (docs) done,
    awaiting review. Steps 2 to 5 wait for the context API.
@@ -361,6 +360,16 @@ Done in step 4a (2026-10-27), no output changed:
 - The input nodes' `compute` raises `TypeError`: they keep reading the
   run's inputs in `evaluate` until 4d.
 - `Backtest[T]` (in `graph.py`) is the base class of backtest nodes.
+
+Done in step 4b (2026-10-27), no output changed:
+
+- `ConstantDecay`, `EwmaDecayCalibration` and `EwmaVolatility` dropped their
+  own `evaluate`: the generic one passes the EWMA its `decay`'s
+  `DecayFactors`, and the decay models only the returns. Building them now
+  checks their `compute` (D11). Their `compute` takes the returns
+  positional-only (`returns, /`), like the nodes of 4a.
+- Nothing else had to change: step 3 had already made the EWMA read only its
+  decay's output, not its calibration's settings.
 
 **Still open**
 

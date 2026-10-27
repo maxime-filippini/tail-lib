@@ -145,9 +145,6 @@ def test_settings_and_dependencies_cover_the_constructor_arguments(
 # Nodes still gathering their inputs in their own `evaluate`, until their
 # step of the context API migration (see `docs/open-points.md`).
 _OWN_EVALUATE = {
-    "ConstantDecay",
-    "EwmaDecayCalibration",
-    "EwmaVolatility",
     "VolatilityFilter",
     "FilteredHistoricalSimulationsModel",
     "VolatilityInput",
