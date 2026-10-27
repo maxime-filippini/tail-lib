@@ -12,15 +12,15 @@ Working rules, from `CLAUDE.md` and the developer:
 - Commit only when the developer says so. Commits have no co-author trailer.
 
 State as of 2026-10-27: branch `feat/context-api`, from `develop`, not
-pushed. All checks green (ty, ruff, 630 tests).
+pushed. All checks green (ty, ruff, 657 tests).
 
 ## Next up
 
 1. **Context API**, plan agreed with the developer on 2026-10-26, see
    "Context API" under "Design questions". Steps 0 to 4 committed, with the
-   `var` rename. Step 5a is split in two: 5a-1, node names, done, awaiting
-   review; 5a-2, `Context` and `Results`. Then 5b, 5c and 6, each reviewed
-   on its own.
+   `var` rename. Step 5a is split in two: 5a-1, node names,
+   committed; 5a-2, `Context` and `Results`, done, awaiting review. Then
+   5b, 5c and 6, each reviewed on its own.
 2. **Run date range (R21–R23)**, agreed with the developer on 2026-10-25,
    see "Run date range" under "Design questions". Step 1 (docs) done,
    awaiting review. Steps 2 to 5 wait for the context API.
@@ -474,6 +474,35 @@ Done in step 5a-1 (2026-10-27), no output changed:
   `cf` on `ValueAtRiskInput`.
 - Nothing reads a node's name yet: `Run`, the report and the specs ignore
   it until the context.
+
+Done in step 5a-2 (2026-10-27), no output changed:
+
+- `tail_lib.context`: `Context` and `Results`, next to `Run`, as
+  described in `docs/architecture.md` ("Contexts"). `Node.__post_init__`
+  binds the node to the open context, through `graph.current_context`.
+  The run checks every output but a backtest's against the returns (R24),
+  and doesn't use the `Cache`.
+- The context reuses `run.py`'s private helpers (`_graph`, `_run_graph`,
+  `_check_names_and_labels`, `_check_no_last_window`, `_input_names`) and
+  `RunGraph`. They move into `context.py` when `Run` goes (5c).
+- Chosen here, to confirm:
+  - Bound nodes no model or backtest reaches are graph roots too, with
+    paths `nodes.<name>`, or `nodes.<class>` and `nodes.<class>_2`, ...
+    without a name, latest built first, so a node's inputs are reached
+    through it. Unnamed paths depend on the order nodes were built.
+  - `results["name"]` covers the nodes built in the block with a name:
+    a named node built outside the context isn't known by its name, as
+    value identity can't tell two equal instances' names apart.
+  - A node other than a backtest whose output holds no time series is a
+    `TypeError` at run time (R24). Known outputs: `TimeSeries`,
+    `DecayFactors` (its `values`), `FilteredReturns` (its `standardized`).
+  - Names are unique across every node and the backtests, not only the
+    models and backtests.
+  - The run has no cycle check: frozen nodes can't form a cycle (the
+    `Cache` kept its check, for the cycle test's mutable node).
+  - `Context` has no `input_names`, unlike `Run`: nothing needs it yet.
+- `tests/test_context.py` checks the binding (nesting, threads, asyncio
+  tasks), the names, the graph, and that a context gives `Run`'s numbers.
 
 **Still open**
 

@@ -21,6 +21,7 @@ from __future__ import annotations
 import inspect
 from abc import ABC
 from abc import abstractmethod
+from contextvars import ContextVar
 from dataclasses import dataclass
 from dataclasses import field
 from dataclasses import fields
@@ -38,9 +39,20 @@ if TYPE_CHECKING:
 
     from tail_lib._typing import FloatArray
     from tail_lib._typing import Floats
+    from tail_lib.context import Context
     from tail_lib.models.ewma import EwmaStart
     from tail_lib.windows import Last
     from tail_lib.windows import Trailing
+
+
+# The context of the innermost open `with Context():` block, which nodes built
+# in it bind to (D10), see `tail_lib.context`. A `ContextVar`, not a global:
+# each thread and asyncio task sees its own, so concurrent requests in a
+# service (R17) never mix their nodes. It lives here, not in `context.py`,
+# because `Node` reads it and `context.py` imports `Node`.
+current_context: ContextVar[Context | None] = ContextVar(
+    "tail_lib_context", default=None
+)
 
 
 @dataclass(frozen=True)
@@ -75,6 +87,10 @@ class Node[T](ABC):
     mid-run. Subclasses with a `__post_init__` call `super().__post_init__()`
     for this. Run inputs (`RunInput`) are read from the run, never computed.
 
+    A node built inside a `with Context():` block binds to that context, once
+    its checks pass (D10). One built outside any context belongs to none, and
+    can still be the input of a node in any context.
+
     Attributes:
         name (str | None): The node's name, keyword-only. `None` by default.
 
@@ -87,6 +103,9 @@ class Node[T](ABC):
         if self.name is not None:
             check_name("Node", self.name)
         self._check_compute()
+        context = current_context.get()
+        if context is not None:
+            context.bind(self)
 
     # Each node takes its own inputs, so `compute` has no common signature.
     # The typing spec reads `*args: Any, **kwargs: Any` like `...`: every

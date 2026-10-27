@@ -47,6 +47,7 @@ How tail-lib is organized, and how a call flows from a spec to the numbers
 | `specs.py` | Pydantic specs mirroring each node, with value ranges (R9, R9b). |
 | `build.py` | `Builder`: specs to nodes, one node per distinct spec (R9a, D3). |
 | `run.py` | `RunSpec`, `Run` (from nodes, or from a spec with `Run.from_spec`), `BacktestFunction`, `RunResult`: models and backtests in one run. |
+| `context.py` | `Context`, `Results`: models declared in a `with` block, their backtests, and their results (D10). Next to `Run` until step 5c of the migration. |
 
 ## User documentation
 
@@ -146,6 +147,52 @@ backtests = {
 }
 Pool(backtests).run(returns)  # the overshootings of `model` are computed once
 ```
+
+## Contexts (`context.py`)
+
+The context API's replacement for `Run`, built next to it (step 5a of the
+migration; the report and the guide still use `Run`):
+
+```python
+with Context(backtests={"kupiec": KupiecTest}, labels={"gauss": "Gaussian"}) as ctx:
+    vol = EwmaVolatility(ConstantDecay(0.94))
+    GaussianModel(cf=0.99, vol=vol, name="gauss")
+    HistoricalSimulationsModel(cf=0.99, window=Trailing(length=250), name="hs")
+
+results = ctx.run(returns, inputs)
+results["gauss"], results[vol], results.backtests["gauss"]["kupiec"]
+```
+
+- **Binding (D10).** `graph.current_context` is a `ContextVar` holding the
+  innermost open context of the thread or asyncio task. `__enter__` sets
+  it, `__exit__` resets it. `Node.__post_init__` ends by calling
+  `context.bind(node)` when one is open, so a node binds once its checks
+  pass. The variable lives in `graph.py` because `context.py` imports
+  `Node`.
+- **`bind`** keeps every distinct node, by value, in the order bound. A
+  value-at-risk model needs a `name` (else `ValueError`, raised where it is
+  built). Names are unique: two different nodes can't share one, and no
+  node can take a backtest's name; an equal node can take its name again.
+  Named models are the context's `models`.
+- **`graph()`** checks the names and labels, the `last` windows when there
+  are backtests, and that each run input name belongs to one node, then
+  returns a `RunGraph`, as `Run.graph` does. Roots: each model
+  (`models.gauss`), each backtest of each model
+  (`backtests.gauss.kupiec`), then the bound nodes not reached yet, latest
+  first (`nodes.<name>`, or `nodes.<class>`, `nodes.<class>_2`, ... without
+  a name). The backtest nodes are built from the backtest functions with
+  the context variable unset, so they never bind.
+- **`run(returns, inputs)`** reports missing inputs before computing, then
+  computes each node once, in one loop over the graph ordered inputs first
+  (`_inputs_first`): a `RunInput` gets its input, checked against the
+  returns; any other node gets `compute(returns, **outputs)` by field name.
+  After each node but a backtest, `_check_output` checks its time series
+  (a `TimeSeries`, a `DecayFactors`' `values`, `FilteredReturns`'
+  `standardized`) has the dates and shape of the returns (R24), and raises
+  `TypeError` for an output holding none. It doesn't use the `Cache`.
+- **`Results`** holds every node's output (`outputs`), the named nodes
+  (`named`), `models` (name to VaR) and `backtests` (model, then test, to
+  result). `results[node]` or `results["name"]` reads one output.
 
 ## From a spec to results
 

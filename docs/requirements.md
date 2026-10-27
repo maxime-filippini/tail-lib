@@ -171,8 +171,8 @@ The core developer needs to confirm them.
   burn-in; the variance recursions run on the residuals `r - mu`.
 
 Proposed for the context API (2026-10-26), see "Context API" in
-`docs/open-points.md`. D9 is built (step 2), D11 for every node (steps 4a to 4d); D10 is
-not yet:
+`docs/open-points.md`. D9 is built (step 2), D11 for every node (steps 4a to
+4d), and D10 in `Context` (step 5a):
 
 - **D9** — *Nodes identified by value.* Two nodes of the same class with
   equal constructor arguments, input nodes included, are one node, wherever
