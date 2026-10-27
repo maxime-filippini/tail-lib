@@ -17,6 +17,7 @@ build-backend = "setuptools.build_meta"
 
 [dependency-groups]
 dev = [
+    "ipykernel>=7.4.0",
     "pytest>=9.1.1",
     "ruff>=0.17.0",
     "ty>=0.0.90",
@@ -27,7 +28,7 @@ docs = [
 ]
 
 [tool.ruff]
-exclude = ["./.user"]
+exclude = ["./.user", "./.scratch"]
 line-length = 88
 indent-width = 4
 
