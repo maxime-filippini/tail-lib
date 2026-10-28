@@ -5,7 +5,7 @@ model's output easy to read.
 
 ## Returns are a `TimeSeries`
 
-Every input and output is a [`TimeSeries`][tail_lib.time_series.TimeSeries]:
+Every input and output is a [`TimeSeries`][tail_lib.time_series.time_series.TimeSeries]:
 an array of dates, and an array of values with **time on the first axis**.
 
 ```python
@@ -96,7 +96,7 @@ reads as constructor arguments, so a model is a small graph:
 ```python
 decay = ConstantDecay(0.94)
 vol = EwmaVolatility(decay)
-model = GaussianModel(cf=0.99, vol_model=vol)
+model = GaussianModel(cf=0.99, vol=vol)
 ```
 
 ```mermaid
@@ -119,40 +119,41 @@ Two rules decide what is a node and what is a plain setting:
 
 ### Sharing work
 
-A node is computed at most once per run. Pass **one instance** to several
-models to compute it once for all of them (D3):
+A node is computed at most once per run. Nodes are identified by value: two
+nodes of the same class with the same arguments are one node, so it is
+computed once for all the models that read it (D3, D9):
 
 ```python
-vol = EwmaVolatility(ConstantDecay(0.94))
 models = {
-    "gauss_99": GaussianModel(cf=0.99, vol_model=vol),
-    "gauss_975": GaussianModel(cf=0.975, vol_model=vol),  # same `vol`: computed once
+    "gauss_99": GaussianModel(cf=0.99, vol=EwmaVolatility(ConstantDecay(0.94))),
+    # An equal volatility: the same node, computed once
+    "gauss_975": GaussianModel(cf=0.975, vol=EwmaVolatility(ConstantDecay(0.94))),
 }
 ```
 
-Two separate `EwmaVolatility(ConstantDecay(0.94))` objects are computed
-twice. From [specs](specs.md), sharing is automatic: identical specs give one
-node.
+Nodes can't be changed once built (they are frozen dataclasses), so sharing
+one is always safe. From [specs](specs.md), it works the same way: identical
+specs give one node.
 
 ## Windows
 
 Models that work on a sample of past returns, such as historical simulation,
 take a window. There are two kinds:
 
-[`Trailing(length, step=1)`][tail_lib.windows.Trailing]
+[`Trailing(length, step=1)`][tail_lib.time_series.windows.Trailing]
 :   Rolling windows of `length` dates. The first ends on date `length - 1`,
     then one ends every `step` dates. Each result belongs to its window's last
     date, and is held until the next window ends. This gives a value on every
     date, so the model can be backtested.
 
-[`Last(length)`][tail_lib.windows.Last]
+[`Last(length)`][tail_lib.time_series.windows.Last]
 :   One window: the last `length` dates. The model gives one value, on the
     last date, e.g. today's VaR, without computing every past window. Such a
     model has nothing to backtest: its only value is the forecast for a date
     after the data.
 
 ```python
-from tail_lib.windows import Last, Trailing
+from tail_lib.time_series import Last, Trailing
 
 Trailing(length=250)  # a VaR on every date from date 249
 Trailing(length=250, step=5)  # refit every 5 dates, held in between

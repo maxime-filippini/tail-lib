@@ -4,8 +4,8 @@ import numpy as np
 import pytest
 
 from tail_lib._typing import FloatArrayAtLeast1D
-from tail_lib.backtests.kupiec import KupiecTest
-from tail_lib.graph import Cache
+from tail_lib.backtests.kupiec import Kupiec
+from tail_lib.context import Context
 from tail_lib.models.ewma import Backcast
 from tail_lib.models.ewma import ConstantDecay
 from tail_lib.models.ewma import EwmaDecayCalibration
@@ -16,14 +16,12 @@ from tail_lib.models.value_at_risk import HistoricalSimulationsModel
 from tail_lib.models.value_at_risk import ValueAtRiskInput
 from tail_lib.models.volatility import ConstantVolatility
 from tail_lib.models.volatility import EwmaVolatility
-from tail_lib.models.volatility import FittedEwmaVolatility
 from tail_lib.models.volatility import VolatilityFilter
 from tail_lib.report.data import ReportData
 from tail_lib.report.data import build_report_data
-from tail_lib.run import Run
-from tail_lib.time_series import TimeSeries
-from tail_lib.windows import Last
-from tail_lib.windows import Trailing
+from tail_lib.time_series.time_series import TimeSeries
+from tail_lib.time_series.windows import Last
+from tail_lib.time_series.windows import Trailing
 from tests.helpers import FIRST_DATE
 from tests.helpers import returns_series
 
@@ -31,25 +29,23 @@ _N_DATES = 300
 _N_SERIES = 2
 
 
-def _run() -> Run:
-    vol = EwmaVolatility(ConstantDecay(0.94), start=Backcast(window=20))
-    return Run(
-        {
-            "gauss": GaussianModel(cf=0.99, vol_model=vol),
-            "fhs": FilteredHistoricalSimulationsModel(
-                cf=0.99, filter=VolatilityFilter(vol), window=Trailing(length=100)
-            ),
-            "hs": HistoricalSimulationsModel(
-                cf=0.975, window=Trailing(length=100, step=5)
-            ),
-            "ext": ValueAtRiskInput("var_ext", cf=0.99),
-        },
-        {
-            "kupiec": KupiecTest,
-            "kupiec_50": lambda ovs: KupiecTest(ovs, window=Trailing(length=50)),
-        },
-        labels={"gauss": "Gaussian 99%"},
-    )
+def _context() -> Context:
+    with Context(labels={"gauss": "Gaussian 99%"}) as ctx:
+        Kupiec(name="kupiec")
+        Kupiec(name="kupiec_50", window=Trailing(length=50))
+        vol = EwmaVolatility(ConstantDecay(0.94), start=Backcast(window=20))
+        GaussianModel(cf=0.99, vol=vol, name="gauss")
+        FilteredHistoricalSimulationsModel(
+            cf=0.99,
+            filter=VolatilityFilter(vol),
+            window=Trailing(length=100),
+            name="fhs",
+        )
+        HistoricalSimulationsModel(
+            cf=0.975, window=Trailing(length=100, step=5), name="hs"
+        )
+        ValueAtRiskInput("var_ext", cf=0.99)
+    return ctx
 
 
 def _data(
@@ -57,22 +53,27 @@ def _data(
 ) -> ReportData:
     returns = returns_series(n=_N_DATES, n_assets=2)
     var_ext = TimeSeries(dates=returns.dates, values=np.full((_N_DATES, 2), -0.02))
-    cache = Cache(returns, {"var_ext": var_ext})
-    return build_report_data(_run(), cache, title=title, series_labels=series_labels)
+    ctx = _context()
+    results = ctx.run(returns, {"var_ext": var_ext})
+    return build_report_data(ctx, results, title=title, series_labels=series_labels)
+
+
+def _report_data(ctx: Context, returns: TimeSeries) -> ReportData:
+    return build_report_data(ctx, ctx.run(returns))
 
 
 def test_nodes_are_identified_by_their_first_path() -> None:
     data = _data()
     nodes = {node.id: node for node in data.nodes}
 
-    vol = nodes["models.gauss.vol_model"]
+    vol = nodes["models.gauss.vol"]
     assert vol.class_name == "EwmaVolatility"
-    assert vol.paths[1] == "models.fhs.filter.vol_model"
+    assert vol.paths[1] == "models.fhs.filter.vol"
     assert data.models == {
         "gauss": "models.gauss",
         "fhs": "models.fhs",
         "hs": "models.hs",
-        "ext": "models.ext",
+        "var_ext": "models.var_ext",
     }
     assert len(nodes) == len(data.nodes)
 
@@ -81,10 +82,11 @@ def test_nodes_have_their_kind_and_input() -> None:
     nodes = {node.id: node for node in _data().nodes}
 
     assert nodes["models.gauss"].kind == "model"
-    assert nodes["models.gauss.vol_model"].kind == "preprocessor"
+    assert nodes["models.gauss.vol"].kind == "preprocessor"
     assert nodes["backtests.gauss.kupiec.overshootings"].kind == "overshootings"
     assert nodes["backtests.gauss.kupiec"].kind == "backtest"
-    assert nodes["models.ext"].input_name == "var_ext"
+    assert nodes["backtests.gauss.kupiec"].class_name == "Kupiec"
+    assert nodes["models.var_ext"].input_name == "var_ext"
     assert nodes["models.gauss"].input_name is None
 
 
@@ -96,10 +98,10 @@ def test_settings_are_written_like_the_specs() -> None:
         "window": {"type": "trailing", "length": 100, "step": 5},
         "interpolation": "linear",
     }
-    assert nodes["models.gauss.vol_model"].settings == {
+    assert nodes["models.gauss.vol"].settings == {
         "start": {"type": "backcast", "window": 20}
     }
-    assert nodes["models.gauss.vol_model.decay"].settings == {"decay_factor": 0.94}
+    assert nodes["models.gauss.vol.decay"].settings == {"value": 0.94}
     assert nodes["backtests.gauss.kupiec"].settings == {"window": None}
 
 
@@ -110,7 +112,7 @@ def test_edges_link_node_ids() -> None:
     assert all(edge.source in ids and edge.target in ids for edge in data.edges)
     assert any(
         (edge.source, edge.target, edge.name)
-        == ("models.gauss.vol_model", "models.gauss", "vol_model")
+        == ("models.gauss.vol", "models.gauss", "vol")
         for edge in data.edges
     )
 
@@ -120,7 +122,7 @@ def test_outputs_hold_every_time_series_node_by_series_then_date() -> None:
 
     time_series_nodes = {node.id for node in data.nodes if node.kind != "backtest"}
     assert set(data.outputs) == time_series_nodes
-    vol = data.outputs["models.gauss.vol_model"]
+    vol = data.outputs["models.gauss.vol"]
     assert len(vol) == _N_SERIES
     assert len(vol[0]) == _N_DATES
     # The backcast's warm-up is NaN, written as None.
@@ -177,9 +179,10 @@ def test_series_are_labelled_by_their_index(
     values: FloatArrayAtLeast1D, labels: list[str]
 ) -> None:
     returns = TimeSeries.from_first_date(FIRST_DATE, values=values)
-    run = Run({"vol": GaussianModel(cf=0.99, vol_model=ConstantVolatility(0.01))})
+    with Context() as ctx:
+        GaussianModel(cf=0.99, vol=ConstantVolatility(0.01), name="vol")
 
-    data = build_report_data(run, Cache(returns))
+    data = _report_data(ctx, returns)
 
     assert data.series == labels
     assert len(data.returns) == len(labels)
@@ -191,7 +194,7 @@ def test_the_json_has_null_for_nan_and_reads_back() -> None:
     text = data.model_dump_json()
 
     assert "NaN" not in text
-    assert json.loads(text)["outputs"]["models.gauss.vol_model"][0][0] is None
+    assert json.loads(text)["outputs"]["models.gauss.vol"][0][0] is None
     assert ReportData.model_validate_json(text) == data
 
 
@@ -200,24 +203,57 @@ def test_bounds_starts_and_arrays_are_written_as_json() -> None:
         Last(length=100), bounds=(0.9, 0.99), start=StartingVol(np.array([0.01, 0.02]))
     )
     decay = ConstantDecay(np.array([0.94, 0.97]))
-    run = Run(
-        {
-            "fitted": GaussianModel(
-                cf=0.99, vol_model=FittedEwmaVolatility(calibration)
-            ),
-            "ewma": GaussianModel(cf=0.99, vol_model=EwmaVolatility(decay)),
-        }
-    )
+    with Context() as ctx:
+        GaussianModel(
+            cf=0.99,
+            vol=EwmaVolatility(calibration, start=calibration.start),
+            name="fitted",
+        )
+        GaussianModel(cf=0.99, vol=EwmaVolatility(decay), name="ewma")
 
-    data = build_report_data(run, Cache(returns_series(n=150, n_assets=2)))
+    data = _report_data(ctx, returns_series(n=150, n_assets=2))
     nodes = {node.id: node for node in data.nodes}
 
-    assert nodes["models.fitted.vol_model.calibration"].settings == {
+    assert nodes["models.fitted.vol.decay"].settings == {
         "window": {"type": "last", "length": 100},
         "bounds": [0.9, 0.99],
         "start": {"type": "starting_vol", "vol": [0.01, 0.02]},
         "n_iter": 40,
     }
-    assert nodes["models.ewma.vol_model.decay"].settings == {
-        "decay_factor": [0.94, 0.97]
-    }
+    assert nodes["models.ewma.vol.decay"].settings == {"value": [0.94, 0.97]}
+
+
+def test_report_bounds_are_separate_from_the_available_trimmed_history() -> None:
+    returns = returns_series(n=100, n_assets=2)
+    returns.values[:5, 1] = np.nan
+    with Context() as ctx:
+        vol = ConstantVolatility(0.01)
+        GaussianModel(cf=0.99, vol=vol, name="gauss")
+        Kupiec(name="whole")
+    results = ctx.run(returns, lower=returns.dates[20], upper=returns.dates[60])
+
+    data = build_report_data(ctx, results)
+
+    assert data.metadata.lower == str(returns.dates[20])
+    assert data.metadata.upper == str(returns.dates[60])
+    assert data.dates == [str(date) for date in returns.dates[5:]]
+    assert data.outputs["models.gauss"][0][:15] == [None] * 15
+    assert data.outputs["models.gauss"][0][56:] == [None] * 39
+    assert data.outputs["models.gauss.vol"][0][0] == pytest.approx(0.01)
+    assert data.backtests["gauss"]["whole"].result.end_dates == [data.metadata.upper]
+    assert ReportData.model_validate_json(data.model_dump_json()) == data
+
+
+def test_unbounded_and_older_report_data_have_no_selected_bounds() -> None:
+    data = _data()
+    assert data.metadata.lower is None
+    assert data.metadata.upper is None
+    older = json.loads(data.model_dump_json())
+    del older["metadata"]["lower"]
+    del older["metadata"]["upper"]
+
+    restored = ReportData.model_validate(older)
+
+    assert restored.metadata.lower is None
+    assert restored.metadata.upper is None
+    assert restored.dates == data.dates

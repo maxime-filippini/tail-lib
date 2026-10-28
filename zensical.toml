@@ -25,6 +25,7 @@ nav = [
   { "API reference" = [
     "reference/index.md",
     "reference/run.md",
+    "reference/context.md",
     "reference/specs.md",
     "reference/value-at-risk.md",
     "reference/volatility.md",
@@ -40,6 +41,7 @@ nav = [
   { "Development" = [
     "requirements.md",
     "architecture.md",
+    "public-contracts.md",
     "open-points.md",
   ] },
 ]

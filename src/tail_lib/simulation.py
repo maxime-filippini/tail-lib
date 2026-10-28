@@ -1,14 +1,27 @@
-"""Simulated returns, from an AR mean, an EWMA or GARCH volatility and shocks.
+"""Simulated returns, from a mean process, a volatility process and shocks.
 
 The returns of date `t` are its mean plus a residual, the volatility times a
 shock:
 
     r[t] = mu[t] + eps[t],    eps[t] = sigma[t] * z[t]
 
-The mean `mu[t]` comes from an `ArProcess`, the variance `sigma[t] ** 2` from
-an `EwmaProcess` or a `GarchProcess`, both updated with the returns up to
-`t - 1`. The shocks `z[t]` are independent draws from a `Distribution`, with
-zero mean and unit variance, e.g. `Gaussian` or `StudentT`.
+The mean `mu[t]` comes from a `MeanProcess` (`ConstantMeanProcess`,
+`ArProcess`), the volatility `sigma[t]` from a `VolatilityProcess`
+(`ConstantVolProcess`, `EwmaProcess`, `GarchProcess`), both updated with the
+returns up to `t - 1`. The shocks `z[t]` are independent draws from a
+`Distribution`, with zero mean and unit variance, e.g. `Gaussian` or
+`StudentT`.
+
+Each process owns its recursion. It holds its parameters, and its state is
+an array passed in and out of its methods:
+
+- `start(batch_shape)` gives the state before the first date;
+- `value(state)` reads the mean (or volatility) of the next date from it;
+- `update(state, x)` moves it forward one date, with the return `r[t]` for a
+  mean process and the residual `eps[t]` for a volatility process.
+
+The `Simulator` only chains these calls; it knows nothing of lags or
+variances.
 
 These are plain classes with set parameters, not nodes: a simulation reads no
 returns. The recursions are the ones the volatility models use
@@ -22,6 +35,8 @@ array broadcastable to the batch shape, e.g. one decay per series.
 
 from __future__ import annotations
 
+from abc import ABC
+from abc import abstractmethod
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -35,7 +50,7 @@ from tail_lib.distributions import Distribution
 from tail_lib.distributions import Gaussian
 from tail_lib.models.ewma import ewma_update
 from tail_lib.models.garch import garch_update
-from tail_lib.time_series import TimeSeries
+from tail_lib.time_series.time_series import TimeSeries
 
 if TYPE_CHECKING:
     import datetime
@@ -43,8 +58,146 @@ if TYPE_CHECKING:
     from tail_lib._typing import FloatArray
 
 
+class MeanProcess(ABC):
+    """How the mean of the simulated returns moves from date to date.
+
+    The state is an array, whose layout each process chooses. `value` reads
+    the mean of the next return from it, and `update` adds one return.
+    """
+
+    @abstractmethod
+    def start(self, batch_shape: tuple[int, ...]) -> FloatArray:
+        """Give the state before the first date.
+
+        Args:
+            batch_shape (tuple[int, ...]): The shape of each date's returns.
+
+        Returns:
+            FloatArray: The state, whose `value` is the mean of the first
+                date.
+
+        """
+
+    @abstractmethod
+    def value(self, state: FloatArray) -> FloatArray:
+        """Read the mean of the next return from the state.
+
+        Args:
+            state (FloatArray): The state, from `start` or `update`.
+
+        Returns:
+            FloatArray: The mean, with the batch shape.
+
+        """
+
+    @abstractmethod
+    def update(self, state: FloatArray, r: FloatArray) -> FloatArray:
+        """Move the state forward one date, with that date's return.
+
+        Args:
+            state (FloatArray): The state, whose `value` is the mean of `r`.
+            r (FloatArray): The return of one date.
+
+        Returns:
+            FloatArray: The state, whose `value` is the mean of the next date.
+
+        """
+
+    @abstractmethod
+    def check_shape(self, batch_shape: tuple[int, ...]) -> None:
+        """Check every parameter broadcasts to the batch shape."""
+
+
+class VolatilityProcess(ABC):
+    """How the volatility of the simulated returns moves from date to date.
+
+    The state is an array, whose layout each process chooses. `value` reads
+    the volatility of the next return from it, and `update` adds one
+    residual, the return minus its mean.
+    """
+
+    @abstractmethod
+    def start(self, batch_shape: tuple[int, ...]) -> FloatArray:
+        """Give the state before the first date.
+
+        Args:
+            batch_shape (tuple[int, ...]): The shape of each date's returns.
+
+        Returns:
+            FloatArray: The state, whose `value` is the volatility of the
+                first date.
+
+        """
+
+    @abstractmethod
+    def value(self, state: FloatArray) -> FloatArray:
+        """Read the volatility of the next return from the state.
+
+        Args:
+            state (FloatArray): The state, from `start` or `update`.
+
+        Returns:
+            FloatArray: The volatility, with the batch shape.
+
+        """
+
+    @abstractmethod
+    def update(self, state: FloatArray, eps: FloatArray) -> FloatArray:
+        """Move the state forward one date, with that date's residual.
+
+        Args:
+            state (FloatArray): The state, whose `value` is the volatility of
+                `eps`.
+            eps (FloatArray): The residual of one date: its return minus its
+                mean.
+
+        Returns:
+            FloatArray: The state, whose `value` is the volatility of the
+                next date.
+
+        """
+
+    @abstractmethod
+    def check_shape(self, batch_shape: tuple[int, ...]) -> None:
+        """Check every parameter broadcasts to the batch shape."""
+
+
 @dataclass(frozen=True)
-class ArProcess:
+class ConstantMeanProcess(MeanProcess):
+    """The same mean on every date.
+
+    The mean of the return of every date `t` is
+
+        mu[t] = mean
+
+    The state is the mean, broadcast to the batch shape, and never changes.
+
+    Args:
+        mean (FloatArray | float): The mean.
+
+    """
+
+    mean: FloatArray | float = 0.0
+
+    def start(self, batch_shape: tuple[int, ...]) -> FloatArray:
+        """Give the mean, broadcast to the batch shape."""
+        return np.broadcast_to(np.asarray(self.mean, dtype=float), batch_shape)
+
+    def value(self, state: FloatArray) -> FloatArray:
+        """Give the mean: the state itself."""
+        return state
+
+    def update(self, state: FloatArray, r: FloatArray) -> FloatArray:  # noqa: ARG002
+        """Keep the state: the mean doesn't depend on the returns."""
+        return state
+
+    def check_shape(self, batch_shape: tuple[int, ...]) -> None:
+        """Check every parameter broadcasts to the batch shape."""
+        check_broadcasts("ConstantMeanProcess", "mean", self.mean, batch_shape)
+
+
+@dataclass(frozen=True)
+class ArProcess(MeanProcess):
     """An autoregressive (AR) mean of order `p`, the number of coefficients.
 
     The mean of the return of date `t` uses the returns of the `p` dates
@@ -52,26 +205,33 @@ class ArProcess:
 
         mu[t] = const + ar[0] * r[t - 1] + ... + ar[p - 1] * r[t - p]
 
-    Before the first date, the returns are at the long-run mean
-    `const / (1 - sum(ar))`. With no coefficients (the default), the mean is
-    `const` on every date. The process is only stationary if the roots of
-    `1 - ar[0] x - ... - ar[p - 1] x ** p` lie outside the unit circle, which is
-    not checked.
+    The state is the last `p` returns, the latest first, stacked on a first
+    axis of length `p`. Before the first date, they are at the long-run mean
+    `const / (1 - sum(ar))`. The order is at least 1: for a mean that doesn't
+    move, use `ConstantMeanProcess`. The process is only stationary if the
+    roots of `1 - ar[0] x - ... - ar[p - 1] x ** p` lie outside the unit
+    circle, which is not checked.
 
     Reference: Box and Jenkins, *Time Series Analysis: Forecasting and
     Control*, 1970.
 
     Args:
-        const (FloatArray | float): The constant of the mean.
         ar (tuple[FloatArray | float, ...]): The coefficients, from lag 1 to
-            lag `p`.
+            lag `p`, at least one.
+        const (FloatArray | float): The constant of the mean.
 
     """
 
+    ar: tuple[FloatArray | float, ...]
     const: FloatArray | float = 0.0
-    ar: tuple[FloatArray | float, ...] = ()
 
     def __post_init__(self) -> None:
+        if not self.ar:
+            msg = (
+                "ArProcess needs at least one AR coefficient: for a constant "
+                "mean, use ConstantMeanProcess!"
+            )
+            raise ValueError(msg)
         if np.any(self._ar_sum() == 1):
             msg = "AR coefficients sum to 1: the mean has no long-run value!"
             raise ValueError(msg)
@@ -91,21 +251,21 @@ class ArProcess:
         """Compute the long-run mean, `const / (1 - sum(ar))`."""
         return np.asarray(self.const) / (1 - self._ar_sum())
 
-    def forecast(self, past: list[FloatArray]) -> FloatArray:
-        """Compute the mean of the next return.
+    def start(self, batch_shape: tuple[int, ...]) -> FloatArray:
+        """Give `order` past returns, all at the long-run mean."""
+        long_run = np.broadcast_to(self.long_run_mean(), batch_shape)
+        return np.stack([long_run] * self.order)
 
-        Args:
-            past (list[FloatArray]): The last `order` returns, the latest
-                first.
-
-        Returns:
-            FloatArray: The mean of the next return.
-
-        """
+    def value(self, state: FloatArray) -> FloatArray:
+        """Compute the mean, `const + sum(ar[k] * state[k])`."""
         mean = np.asarray(self.const)
-        for phi, r in zip(self.ar, past, strict=True):
+        for phi, r in zip(self.ar, state, strict=True):
             mean = mean + phi * r
         return mean
+
+    def update(self, state: FloatArray, r: FloatArray) -> FloatArray:
+        """Put the return first and drop the oldest one."""
+        return np.concatenate([r[np.newaxis], state[:-1]])
 
     def check_shape(self, batch_shape: tuple[int, ...]) -> None:
         """Check every parameter broadcasts to the batch shape."""
@@ -115,7 +275,45 @@ class ArProcess:
 
 
 @dataclass(frozen=True)
-class EwmaProcess:
+class ConstantVolProcess(VolatilityProcess):
+    """The same volatility on every date.
+
+    The volatility of the return of every date `t` is
+
+        sigma[t] = vol
+
+    The state is the volatility, broadcast to the batch shape, and never
+    changes. With Gaussian shocks, the returns are i.i.d. Gaussian.
+
+    Args:
+        vol (FloatArray | float): The volatility, positive.
+
+    """
+
+    vol: FloatArray | float
+
+    def __post_init__(self) -> None:
+        check_positive("Volatility", self.vol)
+
+    def start(self, batch_shape: tuple[int, ...]) -> FloatArray:
+        """Give the volatility, broadcast to the batch shape."""
+        return np.broadcast_to(np.asarray(self.vol, dtype=float), batch_shape)
+
+    def value(self, state: FloatArray) -> FloatArray:
+        """Give the volatility: the state itself."""
+        return state
+
+    def update(self, state: FloatArray, eps: FloatArray) -> FloatArray:  # noqa: ARG002
+        """Keep the state: the volatility doesn't depend on the residuals."""
+        return state
+
+    def check_shape(self, batch_shape: tuple[int, ...]) -> None:
+        """Check every parameter broadcasts to the batch shape."""
+        check_broadcasts("ConstantVolProcess", "vol", self.vol, batch_shape)
+
+
+@dataclass(frozen=True)
+class EwmaProcess(VolatilityProcess):
     """An EWMA variance, from a starting volatility.
 
     The variance of the return of date `t + 1` follows the RiskMetrics
@@ -124,9 +322,10 @@ class EwmaProcess:
 
         sigma[t + 1] ** 2 = decay * sigma[t] ** 2 + (1 - decay) * eps[t] ** 2
 
-    The variance of the first date is `start_vol ** 2`. The EWMA has no
-    long-run variance, and simulated variances can drift to zero or explode
-    on long paths: check the paths it gives.
+    The state is the variance; the variance of the first date is
+    `start_vol ** 2`. The EWMA has no long-run variance, and simulated
+    variances can drift to zero or explode on long paths: check the paths it
+    gives.
 
     Args:
         decay (FloatArray | float): The decay factor, in [0, 1].
@@ -141,13 +340,17 @@ class EwmaProcess:
         check_unit_interval("Decay factor", self.decay)
         check_positive("Starting volatility", self.start_vol)
 
-    def first_variance(self) -> FloatArray:
+    def start(self, batch_shape: tuple[int, ...]) -> FloatArray:
         """Give the variance of the first date, `start_vol ** 2`."""
-        return np.square(self.start_vol)
+        return np.broadcast_to(np.square(self.start_vol), batch_shape)
 
-    def update(self, var: FloatArray, eps: FloatArray) -> FloatArray:
+    def value(self, state: FloatArray) -> FloatArray:
+        """Give the volatility, the square root of the variance."""
+        return np.sqrt(state)
+
+    def update(self, state: FloatArray, eps: FloatArray) -> FloatArray:
         """Update the variance with a residual, see `ewma_update`."""
-        return ewma_update(var, self.decay, eps)
+        return ewma_update(state, self.decay, eps)
 
     def check_shape(self, batch_shape: tuple[int, ...]) -> None:
         """Check every parameter broadcasts to the batch shape."""
@@ -156,7 +359,7 @@ class EwmaProcess:
 
 
 @dataclass(frozen=True)
-class GarchProcess:
+class GarchProcess(VolatilityProcess):
     """A GARCH(1, 1) variance, from its long-run value.
 
     The variance of the return of date `t + 1` follows the recursion of
@@ -165,9 +368,9 @@ class GarchProcess:
 
         sigma[t + 1] ** 2 = omega + alpha * eps[t] ** 2 + beta * sigma[t] ** 2
 
-    The variance of the first date is the long-run variance
-    `omega / (1 - alpha - beta)`, so `alpha + beta` has to be below 1. To
-    give the long-run variance instead of `omega`, see
+    The state is the variance; the variance of the first date is the
+    long-run variance `omega / (1 - alpha - beta)`, so `alpha + beta` has to
+    be below 1. To give the long-run variance instead of `omega`, see
     `from_long_run_variance`.
 
     Args:
@@ -235,14 +438,18 @@ class GarchProcess:
         """Compute the long-run variance, `omega / (1 - alpha - beta)`."""
         return np.asarray(self.omega) / (1 - np.asarray(self.alpha) - self.beta)
 
-    def first_variance(self) -> FloatArray:
+    def start(self, batch_shape: tuple[int, ...]) -> FloatArray:
         """Give the variance of the first date, the long-run variance."""
-        return self.long_run_variance()
+        return np.broadcast_to(self.long_run_variance(), batch_shape)
 
-    def update(self, var: FloatArray, eps: FloatArray) -> FloatArray:
+    def value(self, state: FloatArray) -> FloatArray:
+        """Give the volatility, the square root of the variance."""
+        return np.sqrt(state)
+
+    def update(self, state: FloatArray, eps: FloatArray) -> FloatArray:
         """Update the variance with a residual, see `garch_update`."""
         return garch_update(
-            var, eps, omega=self.omega, alpha=self.alpha, beta=self.beta
+            state, eps, omega=self.omega, alpha=self.alpha, beta=self.beta
         )
 
     def check_shape(self, batch_shape: tuple[int, ...]) -> None:
@@ -250,10 +457,6 @@ class GarchProcess:
         check_broadcasts("GarchProcess", "omega", self.omega, batch_shape)
         check_broadcasts("GarchProcess", "alpha", self.alpha, batch_shape)
         check_broadcasts("GarchProcess", "beta", self.beta, batch_shape)
-
-
-type VolatilityProcess = EwmaProcess | GarchProcess
-"""How the variance of the simulated returns moves from date to date."""
 
 
 @dataclass(frozen=True)
@@ -278,33 +481,32 @@ class Simulator:
 
     1. the residual is `eps[t] = sigma[t] * z[t]`, and the return
        `r[t] = mu[t] + eps[t]`;
-    2. the variance of `t + 1` is updated with `eps[t]`, and the mean of
-       `t + 1` with `r[t]`.
+    2. the mean process is updated with `r[t]` and the volatility process
+       with `eps[t]`, giving `mu[t + 1]` and `sigma[t + 1]`.
 
-    Before the first date, the past returns are at the mean's long-run value,
-    and the variance starts as the volatility process says. A burn-in
-    simulates extra dates first and drops them, so the paths start away from
-    these values.
+    The processes start as they say (`start`). A burn-in simulates extra
+    dates first and drops them, so the paths start away from these values.
     """
 
     def __init__(
         self,
         *,
         vol: VolatilityProcess,
-        mean: ArProcess | None = None,
+        mean: MeanProcess | None = None,
         shocks: Distribution | None = None,
     ) -> None:
         """Build the simulator.
 
         Args:
             vol (VolatilityProcess): The volatility of the returns.
-            mean (ArProcess | None): The mean of the returns. Defaults to zero.
+            mean (MeanProcess | None): The mean of the returns. Defaults to
+                a zero `ConstantMeanProcess`.
             shocks (Distribution | None): The distribution of the shocks.
                 Defaults to `Gaussian`.
 
         """
         self._vol = vol
-        self._mean = ArProcess() if mean is None else mean
+        self._mean = ConstantMeanProcess() if mean is None else mean
         self._shocks = Gaussian() if shocks is None else shocks
 
     # All arguments but `n_dates` are keyword-only, with defaults.
@@ -359,22 +561,16 @@ class Simulator:
         means = np.empty(shape)
         vols = np.empty(shape)
 
-        # The state before the first date: the past returns, the latest first,
-        # and the mean and variance of the first date.
-        long_run = np.broadcast_to(self._mean.long_run_mean(), batch_shape)
-        past = [long_run] * self._mean.order
-        mean = self._mean.forecast(past)
-        var = np.broadcast_to(self._vol.first_variance(), batch_shape)
-
+        mean_state = self._mean.start(batch_shape)
+        vol_state = self._vol.start(batch_shape)
         for t in range(n):
-            eps = np.sqrt(var) * z[t]
-            returns[t] = mean + eps
-            past = [returns[t], *past][: self._mean.order]
-            var = self._vol.update(var, eps)
-            mean = self._mean.forecast(past)
+            eps = self._vol.value(vol_state) * z[t]
+            returns[t] = self._mean.value(mean_state) + eps
+            mean_state = self._mean.update(mean_state, returns[t])
+            vol_state = self._vol.update(vol_state, eps)
             # The forecasts for `t + 1`, stored on `t` (D1).
-            vols[t] = np.sqrt(var)
-            means[t] = mean
+            means[t] = self._mean.value(mean_state)
+            vols[t] = self._vol.value(vol_state)
 
         dates = (Calendar() if calendar is None else calendar).dates_from(
             first_date, n_dates

@@ -120,13 +120,13 @@ with \(\Phi^{-1}\) the standard normal quantile.
 | Setting | Meaning |
 |---|---|
 | `cf` | Confidence level, in (0, 1). |
-| `vol_model` | A [volatility model](#volatility-models). Volatilities must be positive, or `NaN` during a warm-up. |
-| `mean_model` | A [mean model](#mean-models). Defaults to `ZeroMean()`. |
+| `vol` | A [volatility model](#volatility-models). Volatilities must be positive, or `NaN` during a warm-up. |
+| `mean` | A [mean model](#mean-models). Defaults to `ZeroMean()`. |
 
 === "Python"
 
     ```python
-    GaussianModel(cf=0.99, vol_model=EwmaVolatility(ConstantDecay(0.94)))
+    GaussianModel(cf=0.99, vol=EwmaVolatility(ConstantDecay(0.94)))
     ```
 
 === "Spec"
@@ -181,8 +181,8 @@ the same volatility on every date, a number or one per series.
 ### EWMA volatility
 
 [`EwmaVolatility`][tail_lib.models.volatility.EwmaVolatility] follows the
-RiskMetrics recursion (J.P. Morgan/Reuters, 1996) over the whole series, with
-decay factor \(\lambda\):
+RiskMetrics recursion (J.P. Morgan/Reuters, 1996), with decay factor
+\(\lambda\):
 
 \[
 \sigma^2_t = \lambda \, \sigma^2_{t-1} + (1 - \lambda) \, r_t^2
@@ -190,8 +190,10 @@ decay factor \(\lambda\):
 
 | Setting | Meaning |
 |---|---|
-| `decay` | A `ConstantDecay` node: \(\lambda\), in [0, 1]. |
-| `start` | How the recursion gets its first variance: `Backcast(window=20)` (default) or `StartingVol(vol)`, see [EWMA starts](#ewma-starts). |
+| `decay` | A decay node: a `ConstantDecay`, \(\lambda\) in [0, 1], or an `EwmaDecayCalibration`, see [decay models](#decay-models). |
+| `start` | How the recursion gets its first variance: `Backcast(window=20)` (default) or `StartingVol(vol)`, see [EWMA starts](#ewma-starts). With a calibration, it has to be the calibration's `start`. |
+
+With a constant decay, the recursion runs once, over the whole series.
 
 === "Python"
 
@@ -206,28 +208,25 @@ decay factor \(\lambda\):
     {"type": "ewma", "decay": {"type": "constant", "value": 0.94}}
     ```
 
-### Fitted EWMA volatility
-
-[`FittedEwmaVolatility`][tail_lib.models.volatility.FittedEwmaVolatility]
-uses a decay factor calibrated on trailing training windows
-([`EwmaDecayCalibration`](#calibrated-decay)). After each calibration, the
-EWMA recursion is re-run over the training window with the new decay,
-starting from its own start, then continued with that decay until the next
-calibration (D7). This is how `rugarch` and `arch` forecast after a refit.
-
-The first volatility is on the last date of the first training window.
+With a decay calibrated on trailing training windows
+([`EwmaDecayCalibration`](#calibrated-decay)), the recursion is re-run over
+each training window with the new decay, from `start`, then continued with
+that decay until the next calibration (D7). This is how `rugarch` and `arch`
+forecast after a refit. The first volatility is on the last date of the
+first training window.
 
 === "Python"
 
     ```python
-    FittedEwmaVolatility(EwmaDecayCalibration(Trailing(length=250, step=20)))
+    EwmaVolatility(EwmaDecayCalibration(Trailing(length=250, step=20)))
     ```
 
 === "Spec"
 
     ```json
-    {"type": "fitted_ewma",
-     "calibration": {"window": {"type": "trailing", "length": 250, "step": 20}}}
+    {"type": "ewma",
+     "decay": {"type": "ewma_calibration",
+               "window": {"type": "trailing", "length": 250, "step": 20}}}
     ```
 
 ### External volatilities
@@ -258,16 +257,20 @@ z_t = \frac{r_t - \mu_{t-1}}{\sigma_{t-1}}
 
 | Setting | Meaning |
 |---|---|
-| `vol_model` | A [volatility model](#volatility-models). |
-| `mean_model` | A [mean model](#mean-models). Defaults to `ZeroMean()`. |
+| `vol` | A [volatility model](#volatility-models). |
+| `mean` | A [mean model](#mean-models). Defaults to `ZeroMean()`. |
 
-It is the `filter` of a filtered historical simulation. The first date is
-`NaN`, as are the dates before the first volatility.
+It is the `filter` of a filtered historical simulation. It outputs
+[`FilteredReturns`][tail_lib.models.volatility.FilteredReturns]: the
+standardized returns (`standardized`), with the mean (`mean`) and volatility
+(`vol`) that standardized them, which the simulation rescales its quantiles
+with. The first standardized return is `NaN`, as are those before the first
+volatility.
 
 === "Python"
 
     ```python
-    VolatilityFilter(EwmaVolatility(ConstantDecay(0.94)), mean_model=ConstantMean(0.0002))
+    VolatilityFilter(EwmaVolatility(ConstantDecay(0.94)), mean=ConstantMean(0.0002))
     ```
 
 === "Spec"
@@ -289,12 +292,17 @@ A mean model gives \(\mu_t\), the forecast of the mean of \(r_{t+1}\).
 ## Decay models
 
 The decay factor of an EWMA is a node, so a constant decay and a calibrated
-one are interchangeable inputs.
+one are interchangeable inputs. A decay model outputs
+[`DecayFactors`][tail_lib.models.ewma.DecayFactors]: the decay in force on
+each date (`values`), the dates a new decay comes into force (`refits`), and,
+for each, the first date of the returns it was fitted on (`fit_starts`). The
+EWMA re-filters from there at each refit.
 
 ### Constant decay
 
-[`ConstantDecay(decay_factor)`][tail_lib.models.ewma.ConstantDecay]: the same
-decay on every date, in [0, 1], a number or one per series. It is the
+[`ConstantDecay(value)`][tail_lib.models.ewma.ConstantDecay]: the same
+decay on every date, in [0, 1], a number or one per series. It has one refit,
+on the first date. It is the
 `decay` of an `EwmaVolatility`.
 
 === "Python"
@@ -321,7 +329,8 @@ Gaussian negative log-likelihood of the zero-mean EWMA variance forecasts,
 
 with a golden-section search on `bounds`, vectorized over the series. The
 decay on a date is the fit of the last window ending on or before it. It is
-the `calibration` of a `FittedEwmaVolatility`.
+the `decay` of an `EwmaVolatility`, which re-filters each window with its
+fit.
 
 | Setting | Meaning |
 |---|---|
@@ -389,9 +398,8 @@ from tail_lib.models.value_at_risk import (
 from tail_lib.models.volatility import (
     ConstantVolatility,
     EwmaVolatility,
-    FittedEwmaVolatility,
     VolatilityFilter,
     VolatilityInput,
 )
-from tail_lib.windows import Last, Trailing
+from tail_lib.time_series import Last, Trailing
 ```

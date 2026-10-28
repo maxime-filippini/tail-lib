@@ -3,10 +3,10 @@ import datetime
 import numpy as np
 import pytest
 
-from tail_lib.time_series import TimeSeries
-from tail_lib.windows import Last
-from tail_lib.windows import Trailing
-from tail_lib.windows import Windows
+from tail_lib.time_series.time_series import TimeSeries
+from tail_lib.time_series.windows import Last
+from tail_lib.time_series.windows import Trailing
+from tail_lib.time_series.windows import Windows
 
 FIRST_DATE = datetime.date(2020, 1, 1)
 

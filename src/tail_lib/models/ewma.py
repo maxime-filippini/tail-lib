@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from dataclasses import field
 from functools import partial
 from typing import TYPE_CHECKING
 from typing import assert_never
@@ -11,17 +12,17 @@ import numpy as np
 
 from tail_lib._checks import check_positive
 from tail_lib._checks import check_unit_interval
-from tail_lib.graph import Cache
-from tail_lib.graph import Preprocessor
-from tail_lib.time_series import TimeSeries
-from tail_lib.windows import Last
-from tail_lib.windows import Trailing
-from tail_lib.windows import Windows
+from tail_lib.graph import Node
+from tail_lib.graph import frozen_floats
+from tail_lib.time_series.time_series import TimeSeries
+from tail_lib.time_series.windows import Last
+from tail_lib.time_series.windows import Trailing
+from tail_lib.time_series.windows import Windows
 
 if TYPE_CHECKING:
     from tail_lib._typing import FloatArray
-    from tail_lib.graph import Dependencies
-    from tail_lib.graph import Settings
+    from tail_lib._typing import Floats
+    from tail_lib._typing import IntArray
 
 
 @dataclass(frozen=True)
@@ -46,12 +47,15 @@ class StartingVol:
     """Start the EWMA from a given volatility, the forecast for the first date.
 
     The first variance as of a date is then the update of `vol ** 2` with the
-    return of date `0`, on date `0`.
+    return of date `0`, on date `0`. An array of volatilities, one per
+    series, is stored as nested tuples, see `frozen_floats`, so EWMA nodes
+    starting from it can be identified by value.
     """
 
-    vol: FloatArray | float
+    vol: FloatArray | Floats | float
 
     def __post_init__(self) -> None:
+        object.__setattr__(self, "vol", frozen_floats(self.vol))
         check_positive("Starting volatility", self.vol)
 
 
@@ -149,51 +153,91 @@ def ewma_variance(r: FloatArray, d: FloatArray, start: EwmaStart) -> FloatArray:
     return var
 
 
-class DecayModel(Preprocessor):
-    """A model of the EWMA decay factor, as of each date."""
+@dataclass(frozen=True, eq=False)
+class DecayFactors:
+    """The output of a decay model: the decay factor on each date, and its fits.
+
+    A decay factor comes into force on a refit date, and stays in force until
+    the next one. It was fitted on the returns from its fit's first date up to
+    and including the refit date, so `EwmaVolatility` re-filters each one
+    from that first date (D7). A constant decay has one refit, on the first
+    date, fitted from it.
+
+    Attributes:
+        values (TimeSeries): The decay factor in force on each date, with the
+            dates and shape of the returns. `NaN` before the first refit.
+        refits (IntArray): The index of each refit date, in increasing order,
+            shape (n_refits,). The same dates for every series.
+        fit_starts (IntArray): For each refit, the index of the first date of
+            the returns its fit used, shape (n_refits,).
+
+    """
+
+    values: TimeSeries
+    refits: IntArray
+    fit_starts: IntArray
+
+    def __post_init__(self) -> None:
+        n = self.values.n_dates
+        if self.refits.ndim != 1 or self.refits.shape != self.fit_starts.shape:
+            msg = (
+                "Refits and fit starts have to be two arrays of one index per "
+                f"refit, got shapes {self.refits.shape} and {self.fit_starts.shape}!"
+            )
+            raise ValueError(msg)
+        if np.any(np.diff(self.refits) <= 0) or np.any(
+            (self.refits < 0) | (self.refits >= n)
+        ):
+            msg = f"Refits have to be increasing dates of the {n} dates of values!"
+            raise ValueError(msg)
+        if np.any((self.fit_starts < 0) | (self.fit_starts > self.refits)):
+            msg = "Each fit has to start on or before its refit date!"
+            raise ValueError(msg)
 
 
+class DecayModel(Node[DecayFactors]):
+    """A model of the EWMA decay factor, as of each date, with its refits."""
+
+
+@dataclass(frozen=True)
 class ConstantDecay(DecayModel):
-    """The same decay factor on every date."""
+    """The same decay factor on every date.
 
-    def __init__(self, decay_factor: FloatArray | float) -> None:
-        """Build the model.
+    Building it raises `ValueError` if the decay factor is not in [0,1].
 
-        Args:
-            decay_factor (FloatArray | float): The decay factor, a single value
-                or an array broadcastable to the batch shape of the returns,
-                e.g. the output of `fit_ewma_decay`.
+    Attributes:
+        value (FloatArray | Floats | float): The decay factor, a single value
+            or an array broadcastable to the batch shape of the returns, e.g.
+            the output of `fit_ewma_decay`. An array is stored as nested
+            tuples, see `frozen_floats`.
 
-        Raises:
-            ValueError: If the decay factor is not in [0,1].
+    """
 
-        """
-        self._decay_factor = np.asarray(decay_factor)
-        check_unit_interval("Decay factor", self._decay_factor)
+    value: FloatArray | Floats | float
 
-    def dependencies(self) -> Dependencies:  # noqa: D102
-        return {}
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "value", frozen_floats(self.value))
+        check_unit_interval("Decay factor", self.value)
+        super().__post_init__()
 
-    def settings(self) -> Settings:  # noqa: D102
-        return {"decay_factor": self._decay_factor}
-
-    def evaluate(self, cache: Cache) -> TimeSeries:  # noqa: D102
-        return self.compute(cache.returns)
-
-    def compute(self, returns: TimeSeries) -> TimeSeries:
+    def compute(self, returns: TimeSeries, /) -> DecayFactors:
         """Repeat the decay factor on every date of the returns.
 
         Args:
-            returns (TimeSeries): The returns time series.
+            returns (TimeSeries): The returns time series. Only its dates and
+                shape are used.
 
         Returns:
-            TimeSeries: The decay factor, with the dates and shape of `returns`.
+            DecayFactors: The decay factor, with the dates and shape of
+                `returns`, and one refit, on the first date, fitted from it.
 
         """
-        return TimeSeries(
+        values = TimeSeries(
             dates=returns.dates,
-            values=np.broadcast_to(self._decay_factor, returns.values.shape).copy(),
+            values=np.broadcast_to(np.asarray(self.value), returns.values.shape).copy(),
         )
+        first = np.zeros(1, dtype=np.int64)
+        return DecayFactors(values=values, refits=first, fit_starts=first)
 
 
 def ewma_neg_log_likelihood(
@@ -278,80 +322,55 @@ def fit_ewma_decay(
     return (a + b) / 2
 
 
+@dataclass(frozen=True)
 class EwmaDecayCalibration(DecayModel):
     """EWMA decay factors calibrated by maximum likelihood on trailing windows.
 
     Each window of returns, see `Windows`, is fitted with `fit_ewma_decay`. The
     decay factor on a date is the fit of the last window ending on or before
     it, so it only uses returns up to and including that date, and is `NaN`
-    before the first window ends. With a `Last` window, there is one fit, on
-    the last date. Share one instance between the models that
-    should use the same calibration, so it is only fitted once.
+    before the first window ends. Each window's last date is a refit, and its
+    first date the start of that fit (see `DecayFactors`). With a `Last`
+    window, there is one fit, on the last date. Models given equal
+    calibrations share one, so it is only fitted once (D9).
+
+    Attributes:
+        window (Trailing | Last): The training windows: how many dates each
+            fit uses, and how many dates apart the fits are. `Last` fits
+            once, on the last dates.
+        bounds (tuple[float, float]): The search interval for the decay.
+        start (EwmaStart): How the variance recursion of each fit gets its
+            first value. A backcast uses the first dates of each window.
+        n_iter (int): The number of golden-section iterations of each fit.
+
     """
 
-    def __init__(
-        self,
-        window: Trailing | Last,
-        *,
-        bounds: tuple[float, float] = DEFAULT_DECAY_BOUNDS,
-        start: EwmaStart = DEFAULT_EWMA_START,
-        n_iter: int = DEFAULT_FIT_ITERATIONS,
-    ) -> None:
-        """Build the calibration.
+    window: Trailing | Last
+    bounds: tuple[float, float] = field(default=DEFAULT_DECAY_BOUNDS, kw_only=True)
+    start: EwmaStart = field(default=DEFAULT_EWMA_START, kw_only=True)
+    n_iter: int = field(default=DEFAULT_FIT_ITERATIONS, kw_only=True)
 
-        Args:
-            window (Trailing | Last): The training windows: how many dates
-                each fit uses, and how many dates apart the fits are. `Last`
-                fits once, on the last dates.
-            bounds (tuple[float, float]): The search interval for the decay.
-            start (EwmaStart): How the variance recursion of each fit gets its
-                first value. A backcast uses the first dates of each window.
-            n_iter (int): The number of golden-section iterations of each fit.
-
-        """
-        self._window = window
-        self._bounds = bounds
-        self._start = start
-        self._n_iter = n_iter
-
-    @property
-    def window(self) -> Trailing | Last:
-        """The training windows of the fits."""
-        return self._window
-
-    @property
-    def start(self) -> EwmaStart:
-        """How the variance recursion of each fit gets its first value."""
-        return self._start
-
-    def dependencies(self) -> Dependencies:  # noqa: D102
-        return {}
-
-    def settings(self) -> Settings:  # noqa: D102
-        return {
-            "window": self._window,
-            "bounds": self._bounds,
-            "start": self._start,
-            "n_iter": self._n_iter,
-        }
-
-    def evaluate(self, cache: Cache) -> TimeSeries:  # noqa: D102
-        return self.compute(cache.returns)
-
-    def compute(self, returns: TimeSeries) -> TimeSeries:
+    def compute(self, returns: TimeSeries, /) -> DecayFactors:
         """Fit the decay factor on every training window.
 
         Args:
             returns (TimeSeries): The returns time series.
 
         Returns:
-            TimeSeries: The decay factor as of each date of `returns`.
+            DecayFactors: The decay factor as of each date of `returns`, with a
+                refit on the last date of each window, fitted from its first.
 
         """
         fit = partial(
             fit_ewma_decay,
-            bounds=self._bounds,
-            start=self._start,
-            n_iter=self._n_iter,
+            bounds=self.bounds,
+            start=self.start,
+            n_iter=self.n_iter,
         )
-        return Windows(returns, self._window).apply(fit)
+        windows = Windows(returns, self.window)
+        ends = windows.end_indices
+        return DecayFactors(
+            values=windows.apply(fit),
+            refits=ends,
+            fit_starts=ends - (self.window.length - 1),
+        )

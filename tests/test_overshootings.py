@@ -7,9 +7,10 @@ from tail_lib.backtests.overshootings import Overshootings
 from tail_lib.backtests.overshootings import overshootings
 from tail_lib.models.value_at_risk import GaussianModel
 from tail_lib.models.volatility import ConstantVolatility
-from tail_lib.time_series import TimeSeries
+from tail_lib.time_series.time_series import TimeSeries
 from tests.helpers import FIRST_DATE
 from tests.helpers import returns_series
+from tests.helpers import run_node
 
 
 def _series(values: list[float] | np.ndarray) -> TimeSeries:
@@ -44,7 +45,7 @@ def test_dates_without_previous_var_or_return_are_nan() -> None:
 
 def test_overshootings_per_series() -> None:
     returns = returns_series(n=100, n_assets=3)
-    var = GaussianModel(cf=0.95, vol_model=ConstantVolatility(0.01)).run(returns)
+    var = run_node(GaussianModel(cf=0.95, vol=ConstantVolatility(0.01)), returns)
 
     hits = overshootings(var, returns)
 
@@ -63,9 +64,9 @@ def test_overshootings_reject_var_on_other_dates() -> None:
 
 def test_overshootings_node_flags_the_model_var() -> None:
     returns = returns_series(n=100, n_assets=2)
-    model = GaussianModel(cf=0.95, vol_model=ConstantVolatility(0.01))
+    model = GaussianModel(cf=0.95, vol=ConstantVolatility(0.01))
 
-    hits = Overshootings(model).run(returns)
+    hits = run_node(Overshootings(model), returns)
 
-    expected = overshootings(model.run(returns), returns)
+    expected = overshootings(run_node(model, returns), returns)
     np.testing.assert_array_equal(hits.values, expected.values)

@@ -26,18 +26,50 @@ Requirements are numbered so changes and reviews can cite them (e.g. "R4").
   results.
 - **R15** — Backtests may need their own computation windows, e.g. a Kupiec
   test on rolling 250 days and on rolling 500 days, side by side in one run.
-- **R16** — Windows don't start where the series being windowed is still
-  `NaN`. A node's warm-up (e.g. an EWMA backcast, a VaR's first window) shows
-  up as leading `NaN` in its output, and the first window of the next node
-  starts on the first available value. For example, filtered historical
-  simulation on 500 days, filtered by an EWMA volatility with a 20-day
-  backcast, has its first window on filtered returns 20 to 519.
+- **R16** — *Superseded by R21–R23 (2026-10-25). Kept as decision history;
+  full-history computation still skips leading warm-up `NaN`s internally.*
+  Windows don't start where the series
+  being windowed is still `NaN`. A node's warm-up (e.g. an EWMA backcast, a
+  VaR's first window) shows up as leading `NaN` in its output, and the first
+  window of the next node starts on the first available value. For example,
+  filtered historical simulation on 500 days, filtered by an EWMA volatility
+  with a 20-day backcast, has its first window on filtered returns 20 to 519.
+
+### Runs
+
+- **R21** — A run treats all its portfolios uniformly, so its results are
+  comparable across portfolios. Its returns are trimmed at the first date
+  where every portfolio has a value: a late-starting portfolio makes every
+  portfolio of the run start on its first date. Users who want portfolios
+  treated differently split them into several runs.
+- **R22** — A run returns its VaR models between a lower and an upper date,
+  so every model's VaR covers the same dates. Before computing, the run
+  checks that every VaR model can be computed over the whole range from the
+  trimmed returns, and fails otherwise. VaR models are computed on every
+  date of the range, not on a schedule. Backtests run on the VaRs of the
+  range.
+- **R23** — Nodes compute from the common trimmed start of the returns,
+  and the requested range selects the results afterward (2026-10-27,
+  replacing per-node spans and start rules). Calibrations count their step
+  from the first complete training window of that history, independently
+  of the requested range. A one-date run uses the latest calibration; it
+  need not recalibrate on that date. The extra historical computation is
+  accepted for simplicity. Callers can trim the history themselves to
+  choose a different calibration anchor.
+- **R24** — Nodes compute on time series, which keep track of the dates.
+  Every node's time series output has the same dates and shape as the
+  run's returns, throughout the graph (2026-10-26). Backtest results are
+  not time series: they have one value per window. With explicit run bounds,
+  VaR is `NaN` outside the requested range, while upstream outputs retain
+  their historical values (2026-10-27).
 
 ### Simulation
 
 - **R18** — Simulate returns easily, from a basic AR mean with an EWMA or a
   GARCH volatility. EWMA simulations can explode: that is accepted, and left
-  to the user to watch for.
+  to the user to watch for. A constant mean and a constant volatility are
+  also available (2026-10-27). Each process owns its update logic; the
+  simulator only chains the processes (2026-10-27).
 
 ### Performance
 
@@ -110,10 +142,9 @@ The core developer needs to confirm them.
   too give one forecast per date.
 - **D3** — *Shared preprocessors.* Identical preprocessor specs share one
   computation within a run, even across separately written model specs (R6,
-  R9a). Implemented two ways: in Python, nodes given the same instance share
-  its computation (e.g. backtests given one `Overshootings`); from specs, one
-  `Builder` gives one node per distinct spec value, so identical parts of
-  separately written specs are computed once.
+  R9a). Implemented by value identity (D9): equal nodes share one
+  computation in a context, whether built in Python or from specs. The
+  backtests of a model share its `Overshootings` node.
 - **D4** — *Reusing saved results.* Results saved from earlier runs (R12) can
   be loaded back to skip work. Loading them never changes a result, only the
   time a run takes. Wanted, but the design needs fleshing out before
@@ -124,7 +155,10 @@ The core developer needs to confirm them.
   dates inside each window and the date each result belongs to, the window's
   last date. Results go back onto the series' dates, each date holding the
   latest result available on it.
-- **D6** — *Independent schedules.* Each node has its own window and step. A
+- **D6** — *Independent schedules.* For VaR models, superseded by R22: they
+  are computed on every date of the run's range. Calibrations keep their
+  step, anchored to the common trimmed history (R23). Each node has its own
+  window and step. A
   node reads its inputs as of its own calculation date, i.e. their latest
   values on that date. A windowed model gets, for each window, the returns in
   the window and its inputs as of the window's last date.
@@ -142,7 +176,29 @@ The core developer needs to confirm them.
   with zero mean and unit variance, Gaussian or Student-t for now; GARCH
   starts from its long-run variance (`alpha + beta < 1`), EWMA from a given
   starting volatility, the AR lags from the long-run mean, with an optional
-  burn-in; the variance recursions run on the residuals `r - mu`.
+  burn-in; the variance recursions run on the residuals `r - mu`. Constant
+  processes start at, and keep, their value. An AR process has at least one
+  coefficient; a mean that doesn't move is a `ConstantMeanProcess`
+  (2026-10-27).
+
+Proposed for the context API (2026-10-26), see "Context API" in
+`docs/open-points.md`. D9 is built (step 2), D11 for every node (steps 4a to
+4d), and D10 in `Context` (step 5a):
+
+- **D9** — *Nodes identified by value.* Two nodes of the same class with
+  equal constructor arguments, input nodes included, are one node, wherever
+  they were built. A node's name is not part of it. This replaces the two
+  ways of D3: sharing no longer depends on passing one instance or on a
+  `Builder`.
+- **D10** — *Nodes bind to their context.* A node built inside a
+  `with Context():` block belongs to that context, the innermost one of its
+  thread or asyncio task, so concurrent requests in a service (R17) never
+  mix their nodes. A node built outside any context belongs to none, and can
+  still be the input of a node in any context.
+- **D11** — *Inputs checked when a node is built.* A node's inputs are its
+  constructor arguments that are nodes, and its `compute` takes one keyword
+  argument per input, named after it. Building a node checks this, so a
+  mismatch fails where the model is declared, not mid-run.
 
 ## Open questions
 

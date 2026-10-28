@@ -9,7 +9,7 @@ it is (R17).
 Conventions in the data:
 
 - A node is identified by its first path in the run's graph, e.g.
-  `models.gauss.vol_model` (see `Run.graph`).
+  `models.gauss.vol` (see `Context.graph`).
 - Series are flattened: the batch axes of the returns become one list of
   series, in C order, each with a label. Every series of values is a list
   over the series, then over the dates (or the windows of a backtest).
@@ -32,25 +32,31 @@ from pydantic import ConfigDict
 from pydantic import JsonValue
 
 import tail_lib
+from tail_lib.backtests.kupiec import _KupiecTest
 from tail_lib.backtests.overshootings import Overshootings
+from tail_lib.context import _input_name
+from tail_lib.graph import Backtest
 from tail_lib.graph import Preprocessor
 from tail_lib.models.ewma import Backcast
+from tail_lib.models.ewma import DecayFactors
+from tail_lib.models.ewma import DecayModel
 from tail_lib.models.ewma import StartingVol
 from tail_lib.models.value_at_risk import ValueAtRiskModel
-from tail_lib.run import _input_name
-from tail_lib.time_series import TimeSeries
-from tail_lib.windows import Last
-from tail_lib.windows import Trailing
+from tail_lib.models.volatility import FilteredReturns
+from tail_lib.models.volatility import VolatilityFilter
+from tail_lib.time_series.time_series import TimeSeries
+from tail_lib.time_series.windows import Last
+from tail_lib.time_series.windows import Trailing
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
     from tail_lib._typing import DateArray1D
     from tail_lib.backtests.kupiec import KupiecResult
-    from tail_lib.graph import Cache
+    from tail_lib.context import Context
+    from tail_lib.context import Results
     from tail_lib.graph import Node
     from tail_lib.graph import Setting
-    from tail_lib.run import Run
 
 type NodeKind = Literal["preprocessor", "model", "overshootings", "backtest"]
 """The role of a node in a run, which sets its layer in the graph."""
@@ -70,12 +76,19 @@ class Metadata(_Data):
         title (str): The title of the report.
         created (datetime.datetime): When the report data was built.
         version (str): The version of tail-lib that built it.
+        lower (str | None): The first selected forecast observation, as an
+            ISO date. `None` for runs without bounds.
+        upper (str | None): The last selected forecast observation, as an
+            ISO date. `dates` in `ReportData` still holds all available
+            history, including the warm-up before `lower`.
 
     """
 
     title: str
     created: datetime.datetime
     version: str
+    lower: str | None = None
+    upper: str | None = None
 
 
 class NodeData(_Data):
@@ -106,7 +119,7 @@ class EdgeData(_Data):
     Attributes:
         source (str): The id of the node read.
         target (str): The id of the node reading it.
-        name (str): The name it is read under, e.g. `vol_model`.
+        name (str): The name it is read under, e.g. `vol`.
 
     """
 
@@ -157,12 +170,13 @@ class ReportData(_Data):
     """Everything a run report shows, as one JSON document.
 
     Attributes:
-        metadata (Metadata): The title, creation time and version.
+        metadata (Metadata): The title, creation time, version and selected
+            forecast bounds.
         dates (list[str]): The dates of the returns.
         series (list[str]): The label of each series.
         returns (Values): The returns.
         labels (dict[str, str]): The display name of each model and
-            backtest, see `Run.labels`.
+            backtest, see `Context.labels`.
         models (dict[str, str]): The node id of each model, by model name.
         nodes (list[NodeData]): Each node of the run's graph, once.
         edges (list[EdgeData]): The edges of the run's graph.
@@ -186,20 +200,21 @@ class ReportData(_Data):
 
 
 def build_report_data(
-    run: Run,
-    cache: Cache,
+    context: Context,
+    results: Results,
     *,
     title: str = "tail-lib report",
     series_labels: Sequence[str] | None = None,
 ) -> ReportData:
-    """Compute a run on a cache, and gather the data of its report.
+    """Gather the data of a report from a context and the results of its run.
 
-    The run is computed with `run.evaluate(cache)`, so every node of its
-    graph is in the cache, and is read from it without computing it again.
+    Nothing is computed: every node of the context's graph is read from the
+    results, so a run computed once can be reported (R19).
 
     Args:
-        run (Run): The run.
-        cache (Cache): The cache, holding the returns and the run inputs.
+        context (Context): The context.
+        results (Results): The results of `context.run`, on the returns the
+            report shows.
         title (str): The title of the report.
         series_labels (Sequence[str] | None): A label per series of the
             returns, in C order over the batch axes. By default, each series
@@ -210,20 +225,33 @@ def build_report_data(
         ReportData: The data of the report.
 
     Raises:
-        KeyError: If an input the run reads is missing from the cache.
-        ValueError: If there are not as many series labels as series.
+        ValueError: If the results don't hold every node of the context, e.g.
+            results of another context, or if there are not as many series
+            labels as series.
 
     """
-    result = run.evaluate(cache)
-    returns = cache.returns
+    graph = context.graph()
+    not_computed = [n.paths[0] for n in graph.nodes if n.node not in results.outputs]
+    if not_computed:
+        msg = (
+            f"The results don't hold the nodes at {not_computed}: report "
+            f"results of `context.run`, on the same context!"
+        )
+        raise ValueError(msg)
+    returns = results.returns
     batch_shape = returns.values.shape[1:]
 
-    ids = {graph_node.node: graph_node.paths[0] for graph_node in run.graph.nodes}
+    ids = {graph_node.node: graph_node.paths[0] for graph_node in graph.nodes}
     nodes = [
         NodeData(
             id=ids[graph_node.node],
             kind=_kind(graph_node.node),
-            class_name=type(graph_node.node).__name__,
+            # Display the public declaration, not its internal node class.
+            class_name=(
+                "Kupiec"
+                if isinstance(graph_node.node, _KupiecTest)
+                else type(graph_node.node).__name__
+            ),
             settings={
                 name: _setting_json(value)
                 for name, value in graph_node.node.settings().items()
@@ -231,27 +259,32 @@ def build_report_data(
             paths=list(graph_node.paths),
             input_name=_input_name(graph_node.node),
         )
-        for graph_node in run.graph.nodes
+        for graph_node in graph.nodes
     ]
     edges = [
         EdgeData(source=ids[edge.source], target=ids[edge.target], name=edge.name)
-        for edge in run.graph.edges
+        for edge in graph.edges
     ]
 
-    # Every node is already in the cache: `get` only reads it. Backtests
-    # don't give a time series: their results are in `backtests`.
+    # Every node's output is in the results. A decay model
+    # gives its decay factors with their refits: the page charts the factors.
+    # A filter gives its standardized returns with the mean and volatility,
+    # charted on their own nodes: the page charts the standardized returns.
+    # Backtests don't give a time series: their results are in `backtests`.
     outputs: dict[str, Values] = {}
-    for graph_node in run.graph.nodes:
-        output = cache.get(graph_node.node)
+    for graph_node in graph.nodes:
+        output = results.outputs[graph_node.node]
+        if isinstance(output, DecayFactors):
+            output = output.values
+        if isinstance(output, FilteredReturns):
+            output = output.standardized
         if isinstance(output, TimeSeries):
             outputs[ids[graph_node.node]] = _values(output.values)
 
     # Models and backtests are found by their paths, e.g. `models.gauss` and
     # `backtests.gauss.kupiec`.
     by_path = {
-        path: graph_node.node
-        for graph_node in run.graph.nodes
-        for path in graph_node.paths
+        path: graph_node.node for graph_node in graph.nodes for path in graph_node.paths
     }
     backtests = {
         model_name: {
@@ -261,7 +294,7 @@ def build_report_data(
             )
             for test_name, test_result in model_tests.items()
         }
-        for model_name, model_tests in result.backtests.items()
+        for model_name, model_tests in results.backtests.items()
     }
 
     return ReportData(
@@ -269,12 +302,22 @@ def build_report_data(
             title=title,
             created=datetime.datetime.now(tz=datetime.UTC),
             version=tail_lib.__version__,
+            lower=(
+                str(np.datetime_as_string(results.lower, unit="D"))
+                if results.lower is not None
+                else None
+            ),
+            upper=(
+                str(np.datetime_as_string(results.upper, unit="D"))
+                if results.upper is not None
+                else None
+            ),
         ),
         dates=_dates(returns.dates),
         series=_series_labels(batch_shape, series_labels),
         returns=_values(returns.values),
-        labels=dict(run.labels),
-        models={name: ids[by_path[f"models.{name}"]] for name in result.models},
+        labels=dict(context.labels),
+        models={name: ids[by_path[f"models.{name}"]] for name in results.models},
         nodes=nodes,
         edges=edges,
         outputs=outputs,
@@ -290,14 +333,16 @@ def _kind(node: Node[Any]) -> NodeKind:
             return "overshootings"
         case ValueAtRiskModel():
             return "model"
-        case Preprocessor():
+        case Preprocessor() | DecayModel() | VolatilityFilter():
             return "preprocessor"
-        case _:
-            # A run's other nodes are its backtests.
+        case Backtest():
             return "backtest"
+        case _:
+            msg = f"{type(node).__name__} isn't a node type a run holds!"
+            raise TypeError(msg)
 
 
-def _setting_json(value: Setting) -> JsonValue:  # noqa: PLR0911 - a case per kind.
+def _setting_json(value: Setting) -> JsonValue:
     """Write a setting as JSON, in the form the specs use."""
     match value:
         case Trailing(length=length, step=step):
@@ -309,8 +354,7 @@ def _setting_json(value: Setting) -> JsonValue:  # noqa: PLR0911 - a case per ki
         case StartingVol(vol=vol):
             return {"type": "starting_vol", "vol": _array_json(vol)}
         case tuple():
-            return list(value)
-        case np.ndarray():
+            # Bounds, or an array of values per series as nested tuples.
             return _array_json(value)
         case None | str() | float() | int():
             return value

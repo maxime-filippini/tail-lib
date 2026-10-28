@@ -1,15 +1,18 @@
+import dataclasses
 import inspect
 from collections.abc import Iterator
-from collections.abc import Mapping
 from typing import Any
 
 import numpy as np
 import pytest
 
-from tail_lib.backtests.kupiec import KupiecTest
+from tail_lib.backtests.kupiec import _KupiecTest
 from tail_lib.backtests.overshootings import Overshootings
-from tail_lib.graph import Cache
+from tail_lib.context import Context
+from tail_lib.context import _input_name
+from tail_lib.context import _window
 from tail_lib.graph import Node
+from tail_lib.graph import RunInput
 from tail_lib.models.ewma import ConstantDecay
 from tail_lib.models.ewma import EwmaDecayCalibration
 from tail_lib.models.mean import ConstantMean
@@ -18,37 +21,21 @@ from tail_lib.models.value_at_risk import FilteredHistoricalSimulationsModel
 from tail_lib.models.value_at_risk import GaussianModel
 from tail_lib.models.value_at_risk import HistoricalSimulationsModel
 from tail_lib.models.value_at_risk import ValueAtRiskInput
+from tail_lib.models.value_at_risk import ValueAtRiskModel
 from tail_lib.models.volatility import ConstantVolatility
 from tail_lib.models.volatility import EwmaVolatility
-from tail_lib.models.volatility import FittedEwmaVolatility
 from tail_lib.models.volatility import VolatilityFilter
 from tail_lib.models.volatility import VolatilityInput
-from tail_lib.run import _input_name
-from tail_lib.run import _window
-from tail_lib.time_series import TimeSeries
-from tail_lib.windows import Trailing
+from tail_lib.time_series.time_series import TimeSeries
+from tail_lib.time_series.windows import Trailing
 from tests.helpers import simulated_returns
-
-
-class _RecordingCache(Cache):
-    """A cache that records every node asked for."""
-
-    def __init__(
-        self, returns: TimeSeries, inputs: Mapping[str, TimeSeries] | None = None
-    ) -> None:
-        super().__init__(returns, inputs)
-        self.requested: list[Node[Any]] = []
-
-    def get[T](self, node: Node[T]) -> T:
-        self.requested.append(node)
-        return super().get(node)
 
 
 def _one_node_of_each_type() -> list[Node[Any]]:
     vol = EwmaVolatility(ConstantDecay(0.94))
     calibration = EwmaDecayCalibration(Trailing(length=100))
-    vol_filter = VolatilityFilter(vol, mean_model=ConstantMean(1e-4))
-    gaussian = GaussianModel(cf=0.99, vol_model=vol, mean_model=ConstantMean(1e-4))
+    vol_filter = VolatilityFilter(vol, mean=ConstantMean(1e-4))
+    gaussian = GaussianModel(cf=0.99, vol=vol, mean=ConstantMean(1e-4))
     return [
         ZeroMean(),
         ConstantMean(1e-4),
@@ -57,7 +44,7 @@ def _one_node_of_each_type() -> list[Node[Any]]:
         VolatilityInput("vol"),
         ConstantVolatility(0.01),
         vol,
-        FittedEwmaVolatility(calibration),
+        EwmaVolatility(calibration),
         vol_filter,
         ValueAtRiskInput("var", cf=0.99),
         HistoricalSimulationsModel(cf=0.99, window=Trailing(length=100)),
@@ -66,14 +53,20 @@ def _one_node_of_each_type() -> list[Node[Any]]:
         ),
         gaussian,
         Overshootings(gaussian),
-        KupiecTest(Overshootings(gaussian)),
+        _KupiecTest(Overshootings(gaussian)),
     ]
+
+
+# Base classes that aren't abstract, but aren't node types a run holds either.
+_BASE_CLASSES = {RunInput}
 
 
 def _library_node_types(cls: type[Node[Any]] = Node) -> Iterator[type[Node[Any]]]:
     for subclass in cls.__subclasses__():
-        if subclass.__module__.startswith("tail_lib.") and not inspect.isabstract(
-            subclass
+        if (
+            subclass.__module__.startswith("tail_lib.")
+            and not inspect.isabstract(subclass)
+            and subclass not in _BASE_CLASSES
         ):
             yield subclass
         yield from _library_node_types(subclass)
@@ -88,22 +81,40 @@ def test_every_node_type_is_checked() -> None:
 @pytest.mark.parametrize(
     "node", _one_node_of_each_type(), ids=lambda node: type(node).__name__
 )
-def test_dependencies_are_the_nodes_evaluate_reads(node: Node[Any]) -> None:
+def test_context_passes_each_declared_inputs_output_to_compute(
+    node: Node[Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
     returns = simulated_returns(n=300)
     run_input = TimeSeries(
         dates=returns.dates, values=np.full(returns.values.shape, -0.02)
     )
-    cache = _RecordingCache(returns, inputs={"vol": run_input, "var": run_input})
-    # Compute the dependencies first, so that only the nodes `evaluate` itself
-    # asks for are recorded. An undeclared node would also record its own.
-    dependencies = list(node.dependencies().values())
-    for dependency in dependencies:
-        cache.get(dependency)
-    cache.requested.clear()
+    bound = (
+        dataclasses.replace(node, name="model")
+        if isinstance(node, ValueAtRiskModel) and node.name is None
+        else node
+    )
+    ctx = Context()
+    ctx.bind(bound)
+    # Outputs differ by node type. Record their identities at the compute
+    # boundary, after node construction has checked its real signature (D11).
+    calls: list[dict[str, object]] = []
+    compute = type(node).compute
 
-    node.evaluate(cache)
+    def recording(self: Node[Any], returns: TimeSeries, /, **inputs: object) -> object:
+        calls.append(inputs)
+        return compute(self, returns, **inputs)
 
-    assert set(cache.requested) == set(dependencies)
+    monkeypatch.setattr(type(node), "compute", recording)
+    results = ctx.run(returns, {"vol": run_input, "var": run_input})
+
+    if isinstance(node, RunInput):
+        assert not calls
+        assert results[node] is run_input
+    else:
+        assert len(calls) == 1
+        assert calls[0].keys() == node.dependencies().keys()
+        for name, dependency in node.dependencies().items():
+            assert calls[0][name] is results[dependency]
 
 
 @pytest.mark.parametrize(
@@ -123,9 +134,9 @@ def test_run_sees_the_inputs_and_windows_of_every_node(node: Node[Any]) -> None:
 def test_settings_and_dependencies_cover_the_constructor_arguments(
     node: Node[Any],
 ) -> None:
-    # Every constructor argument is either a setting or a dependency. A
-    # dependency may also be a node read through another one, e.g. the
-    # `vol_model` of a filtered historical simulation's filter.
+    # Every constructor argument is either a setting or a dependency, and
+    # nothing else is, but a node's `name`, which isn't part of its identity
+    # (a run input's is, and is a setting).
     # A node without its own `__init__` shows `object`'s `*args, **kwargs`.
     parameters = inspect.signature(type(node).__init__).parameters.values()
     arguments = {
@@ -134,9 +145,31 @@ def test_settings_and_dependencies_cover_the_constructor_arguments(
         if parameter.name != "self"
         and parameter.kind not in {parameter.VAR_POSITIONAL, parameter.VAR_KEYWORD}
     }
+    if not isinstance(node, RunInput):
+        arguments.remove("name")
     settings = set(node.settings())
     dependencies = set(node.dependencies())
 
-    assert settings <= arguments
     assert not settings & dependencies
-    assert arguments <= settings | dependencies
+    assert settings | dependencies == arguments
+
+
+@pytest.mark.parametrize(
+    "node", _one_node_of_each_type(), ids=lambda node: type(node).__name__
+)
+def test_building_a_node_checks_its_compute(
+    node: Node[Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Every `__post_init__` has to reach `Node.__post_init__`, which checks
+    # `compute` against the inputs (D11).
+    checked: list[Node[Any]] = []
+    check = Node._check_compute  # noqa: SLF001
+
+    def recording(self: Node[Any]) -> None:
+        checked.append(self)
+        check(self)
+
+    monkeypatch.setattr(Node, "_check_compute", recording)
+    copy = dataclasses.replace(node)
+
+    assert checked == [copy]

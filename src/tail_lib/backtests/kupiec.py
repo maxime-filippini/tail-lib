@@ -3,27 +3,28 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from dataclasses import field
 from typing import TYPE_CHECKING
 
 import numpy as np
 from scipy import special
 from scipy import stats
 
+from tail_lib._checks import check_name
 from tail_lib._checks import check_probability
-from tail_lib.graph import Node
-from tail_lib.windows import Windows
+from tail_lib.backtests.overshootings import Overshootings
+from tail_lib.graph import Backtest
+from tail_lib.graph import current_context
+from tail_lib.time_series.windows import Windows
 
 if TYPE_CHECKING:
     from tail_lib._typing import DateArray1D
     from tail_lib._typing import FloatArray
     from tail_lib._typing import IntArray
-    from tail_lib.backtests.overshootings import Overshootings
-    from tail_lib.graph import Cache
-    from tail_lib.graph import Dependencies
-    from tail_lib.graph import Settings
-    from tail_lib.time_series import TimeSeries
-    from tail_lib.windows import Last
-    from tail_lib.windows import Trailing
+    from tail_lib.models.value_at_risk import ValueAtRiskModel
+    from tail_lib.time_series.time_series import TimeSeries
+    from tail_lib.time_series.windows import Last
+    from tail_lib.time_series.windows import Trailing
 
 
 @dataclass(frozen=True)
@@ -138,49 +139,97 @@ def kupiec_pof(
     )
 
 
-class KupiecTest(Node[KupiecResult]):
-    """Kupiec's proportion-of-failures test of a value-at-risk model, as a node.
+@dataclass(frozen=True, kw_only=True)
+class Kupiec:
+    """Declare a Kupiec test to apply to every model of a context (R4).
 
-    Gets the model's overshootings from the cache, then tests them with
-    `kupiec_pof` at the model's confidence level, on the whole sample, on
-    trailing windows or on the last dates.
+    Inside `with Context():`, building `Kupiec(name="kupiec")` registers
+    it on the innermost context (D10). A name is required there. Outside
+    a context, it can be unnamed and reused through the context's
+    `add_backtest` method.
+
+    When the context builds its graph, it creates an internal test node
+    for each model, reading that model's overshootings and confidence
+    level. Equal nodes share computation by value (D9). The test's formula
+    and timing are those of `kupiec_pof`.
+
+    Attributes:
+        name (str | None): Registration name, a Python identifier (R20).
+            Required inside a context, optional outside. Not part of the
+            declaration's value identity.
+        window (Trailing | Last | None): Test the whole sample (`None`,
+            the default), trailing windows, or the last dates only.
+
     """
 
-    def __init__(
-        self, overshootings: Overshootings, *, window: Trailing | Last | None = None
-    ) -> None:
-        """Build the test of a model.
+    name: str | None = field(default=None, compare=False, repr=False)
+    window: Trailing | Last | None = None
 
-        Args:
-            overshootings (Overshootings): The overshootings of the model to
-                test. Their confidence level `cf_var` sets the overshooting
-                rate expected under the model.
-            window (Trailing | Last | None): The windows to test on, see
-                `kupiec_pof`.
-                `None`, the default, tests the whole sample.
+    def __post_init__(self) -> None:
+        if self.name is not None:
+            check_name("Backtest", self.name)
+        context = current_context.get()
+        if context is not None:
+            if self.name is None:
+                msg = (
+                    "Kupiec is built in a context, so it needs a name, "
+                    'e.g. `name="kupiec"`!'
+                )
+                raise ValueError(msg)
+            context.add_backtest(self.name, self)
 
-        """
-        self._overshootings = overshootings
-        self._cf_var = overshootings.cf_var
-        self._window = window
+    def _bind(self, model: ValueAtRiskModel) -> _KupiecTest:
+        """Build the executable node for one model, inside the context's walk."""
+        return _KupiecTest(Overshootings(model), window=self.window)
 
-    def dependencies(self) -> Dependencies:  # noqa: D102
-        return {"overshootings": self._overshootings}
 
-    def settings(self) -> Settings:  # noqa: D102
-        return {"window": self._window}
+@dataclass(frozen=True)
+class _KupiecTest(Backtest[KupiecResult]):
+    """Kupiec's proportion-of-failures test of a value-at-risk model, as a node.
 
-    def evaluate(self, cache: Cache) -> KupiecResult:  # noqa: D102
-        return self.compute(cache.get(self._overshootings))
+    Gets the model's overshootings from the context, then tests them with
+    `kupiec_pof` at the model's confidence level, on the whole sample, on
+    trailing windows or on the last dates.
 
-    def compute(self, overshootings: TimeSeries) -> KupiecResult:
+    Attributes:
+        overshootings (Overshootings): The overshootings of the model to
+            test. Their confidence level `cf_var` sets the overshooting rate
+            expected under the model.
+        window (Trailing | Last | None): The windows to test on, see
+            `kupiec_pof`. `None`, the default, tests the whole sample.
+        cf_var (float): The model's confidence level, read from
+            `overshootings` when the test is built, not a constructor
+            argument.
+
+    """
+
+    overshootings: Overshootings
+    window: Trailing | Last | None = field(default=None, kw_only=True)
+    # Kept on the test, so `compute` reads its own settings only. It follows
+    # from `overshootings`, so it isn't part of the test's identity.
+    cf_var: float = field(init=False, compare=False, repr=False)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "cf_var", self.overshootings.cf_var)
+        super().__post_init__()
+
+    # Every `compute` takes the returns first, even when it doesn't use them.
+    def compute(
+        self,
+        returns: TimeSeries,  # noqa: ARG002
+        /,
+        *,
+        overshootings: TimeSeries,
+    ) -> KupiecResult:
         """Run the test on overshooting flags, see `kupiec_pof`.
 
         Args:
-            overshootings (TimeSeries): The overshooting flags of the model.
+            returns (TimeSeries): The returns, unused: the flags hold them.
+            overshootings (TimeSeries): The overshooting flags of the model,
+                the output of the `overshootings` node.
 
         Returns:
             KupiecResult: The test outcome on each window, see `kupiec_pof`.
 
         """
-        return kupiec_pof(overshootings, cf_var=self._cf_var, window=self._window)
+        return kupiec_pof(overshootings, cf_var=self.cf_var, window=self.window)

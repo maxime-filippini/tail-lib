@@ -4,11 +4,14 @@ from numpy.lib.stride_tricks import sliding_window_view
 
 from tail_lib.models.ewma import Backcast
 from tail_lib.models.ewma import ConstantDecay
+from tail_lib.models.ewma import DecayFactors
 from tail_lib.models.ewma import EwmaDecayCalibration
 from tail_lib.models.ewma import StartingVol
 from tail_lib.models.ewma import fit_ewma_decay
-from tail_lib.windows import Last
-from tail_lib.windows import Trailing
+from tail_lib.time_series.time_series import TimeSeries
+from tail_lib.time_series.windows import Last
+from tail_lib.time_series.windows import Trailing
+from tests.helpers import run_node
 from tests.helpers import simulate_ewma
 from tests.helpers import simulated_returns
 
@@ -85,7 +88,9 @@ def test_decay_calibration_fits_trailing_windows() -> None:
     returns = simulated_returns()
     r = returns.values
 
-    decay = EwmaDecayCalibration(Trailing(length=100, step=20)).run(returns)
+    decay = run_node(
+        EwmaDecayCalibration(Trailing(length=100, step=20)), returns
+    ).values
 
     np.testing.assert_array_equal(decay.dates, returns.dates)
     assert np.isnan(decay.values[:99]).all()
@@ -97,14 +102,57 @@ def test_decay_calibration_fits_trailing_windows() -> None:
 
 def test_decay_calibration_rejects_window_longer_than_returns() -> None:
     with pytest.raises(ValueError, match="longer"):
-        EwmaDecayCalibration(Trailing(length=200)).run(simulated_returns())
+        run_node(EwmaDecayCalibration(Trailing(length=200)), simulated_returns())
 
 
 def test_calibration_on_last_window_fits_once_on_the_last_dates() -> None:
     returns = simulated_returns(n=160)
 
-    last = EwmaDecayCalibration(Last(length=100)).run(returns)
-    rolling = EwmaDecayCalibration(Trailing(length=100)).run(returns)
+    last = run_node(EwmaDecayCalibration(Last(length=100)), returns).values
+    rolling = run_node(EwmaDecayCalibration(Trailing(length=100)), returns).values
 
     assert np.isnan(last.values[:-1]).all()
     np.testing.assert_array_equal(last.values[-1], rolling.values[-1])
+
+
+def test_a_constant_decay_has_one_refit_fitted_from_the_first_date() -> None:
+    returns = simulated_returns()
+
+    decay = run_node(ConstantDecay(np.array([0.9, 0.97])), returns)
+
+    np.testing.assert_array_equal(decay.refits, [0])
+    np.testing.assert_array_equal(decay.fit_starts, [0])
+    np.testing.assert_array_equal(decay.values.values[-1], [0.9, 0.97])
+
+
+def test_a_calibration_refits_on_each_window_end_fitted_from_its_start() -> None:
+    returns = simulated_returns(n=160)
+
+    rolling = run_node(EwmaDecayCalibration(Trailing(length=100, step=20)), returns)
+    last = run_node(EwmaDecayCalibration(Last(length=100)), returns)
+
+    np.testing.assert_array_equal(rolling.refits, [99, 119, 139, 159])
+    np.testing.assert_array_equal(rolling.fit_starts, [0, 20, 40, 60])
+    np.testing.assert_array_equal(last.refits, [159])
+    np.testing.assert_array_equal(last.fit_starts, [60])
+
+
+@pytest.mark.parametrize(
+    ("refits", "fit_starts", "match"),
+    [
+        ([0, 5], [0], "one index per refit"),
+        ([5, 5], [0, 0], "increasing dates"),
+        ([10], [0], "increasing dates of the 10 dates"),
+        ([5], [6], "on or before its refit"),
+    ],
+)
+def test_decay_factors_check_their_refits(
+    refits: list[int], fit_starts: list[int], match: str
+) -> None:
+    values = simulated_returns(n=10)
+    values = TimeSeries(dates=values.dates, values=np.full(values.values.shape, 0.9))
+
+    with pytest.raises(ValueError, match=match):
+        DecayFactors(
+            values=values, refits=np.array(refits), fit_starts=np.array(fit_starts)
+        )

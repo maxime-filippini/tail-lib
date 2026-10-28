@@ -29,16 +29,16 @@ with Kupiec's test, and read the results.
 ```python
 import datetime
 
-from tail_lib.backtests.kupiec import KupiecTest
+from tail_lib.backtests.kupiec import Kupiec
+from tail_lib.context import Context
 from tail_lib.distributions import StudentT
 from tail_lib.models.ewma import ConstantDecay
 from tail_lib.models.value_at_risk import GaussianModel
 from tail_lib.models.value_at_risk import HistoricalSimulationsModel
 from tail_lib.models.volatility import EwmaVolatility
-from tail_lib.run import Run
 from tail_lib.simulation import GarchProcess
 from tail_lib.simulation import Simulator
-from tail_lib.windows import Trailing
+from tail_lib.time_series import Trailing
 
 # 1. Returns: 1000 dates of GARCH returns with fat-tailed shocks.
 simulator = Simulator(
@@ -49,19 +49,16 @@ simulator = Simulator(
 )
 returns = simulator.simulate(1000, first_date=datetime.date(2020, 1, 1), rng=1).returns
 
-# 2. Models.
-models = {
-    "hs_99": HistoricalSimulationsModel(cf=0.99, window=Trailing(length=250)),
-    "gauss_99": GaussianModel(cf=0.99, vol_model=EwmaVolatility(ConstantDecay(0.94))),
-}
+# 2. Models, in a context: every backtest runs on every model.
+with Context() as ctx:
+    Kupiec(name="kupiec")
+    HistoricalSimulationsModel(cf=0.99, window=Trailing(length=250), name="hs_99")
+    GaussianModel(cf=0.99, vol=EwmaVolatility(ConstantDecay(0.94)), name="gauss_99")
 
-# 3. A run: every backtest runs on every model.
-run = Run(models, backtests={"kupiec": KupiecTest})
-
-# 4. Results.
-result = run.run(returns)
-result.models["hs_99"]  # the VaR, a TimeSeries
-result.backtests["hs_99"]["kupiec"].p_value[0]  # 0.853
+# 3. Results.
+results = ctx.run(returns)
+results.models["hs_99"]  # the VaR, a TimeSeries
+results.backtests["hs_99"]["kupiec"].p_value[0]  # 0.853
 ```
 
 The same run, written as a JSON spec:
@@ -80,10 +77,11 @@ The same run, written as a JSON spec:
 ```
 
 ```python
-from tail_lib.run import Run, RunSpec
+from tail_lib.context import Context
+from tail_lib.run import RunSpec
 
-run = Run.from_spec(RunSpec.model_validate_json(text))
-result = run.run(returns)
+ctx = Context.from_spec(RunSpec.model_validate_json(text))
+results = ctx.run(returns)
 ```
 
 ## Where to go next

@@ -52,9 +52,25 @@
     <h1>{data.metadata.title}</h1>
     <p class="meta">
       {Object.keys(data.models).length} models · {data.series.length} series ·
-      {data.dates[0]} to {data.dates.at(-1)} · tail-lib {data.metadata.version} ·
+      tail-lib {data.metadata.version} ·
       {new Date(data.metadata.created).toLocaleString()}
     </p>
+    <dl class="ranges">
+      <div>
+        <dt>Forecast range</dt>
+        <dd>
+          {#if data.metadata.lower != null && data.metadata.upper != null}
+            {data.metadata.lower} to {data.metadata.upper}
+          {:else}
+            Full history
+          {/if}
+        </dd>
+      </div>
+      <div>
+        <dt>Available history</dt>
+        <dd>{data.dates[0]} to {data.dates.at(-1)}</dd>
+      </div>
+    </dl>
   </header>
   <nav>
     {#each tabs as tab (tab)}
@@ -102,9 +118,28 @@
     font-size: 1.4rem;
   }
   .meta {
-    margin: 0 0 1rem;
+    margin: 0 0 0.5rem;
     color: #59636e;
     font-size: 0.9rem;
+  }
+  .ranges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 2rem;
+    margin: 0 0 1rem;
+    font-size: 0.9rem;
+  }
+  .ranges div {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+  }
+  .ranges dt {
+    font-weight: 600;
+  }
+  .ranges dd {
+    margin: 0;
+    color: #59636e;
   }
   nav {
     display: flex;

@@ -1,3 +1,3 @@
 # Windows
 
-::: tail_lib.windows
+::: tail_lib.time_series.windows

@@ -90,6 +90,42 @@ jobs:
       - name: Run tox environment
         run: uv tool run tox -e py${{ matrix.tox-version }}-numpy_${{ matrix.numpy }}
 
+  coverage:
+    name: Test coverage
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version-file: .python-version
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Run tests with coverage
+        run: uv run --locked coverage run -m pytest
+
+      - name: Generate coverage reports
+        run: |
+          uv run --locked coverage report
+          uv run --locked coverage html
+          uv run --locked coverage json -o htmlcov/coverage.json
+
+      - name: Upload coverage reports
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-report
+          path: htmlcov/
+          if-no-files-found: error
+
   build:
     name: Build wheel with Python ${{ matrix.python-version }}
     runs-on: ubuntu-latest
@@ -168,6 +204,7 @@ jobs:
 
   docs:
     name: Build docs
+    needs: [coverage]
     runs-on: ubuntu-latest
 
     steps:
@@ -189,6 +226,14 @@ jobs:
       # Strict: a warning, e.g. a broken link, fails the build.
       - name: Build the docs site
         run: uv run --locked --group docs zensical build --strict
+
+      # Publish the HTML report and the JSON read by the README badge
+      # alongside the docs, using the existing Pages deployment.
+      - name: Include coverage reports
+        uses: actions/download-artifact@v8
+        with:
+          name: coverage-report
+          path: site/coverage/
 
       # Uploaded on every run, as the `github-pages` artifact, to inspect a
       # build. Only pushes to `develop` deploy it.

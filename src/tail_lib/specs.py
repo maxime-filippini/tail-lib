@@ -1,8 +1,9 @@
 """Specs: models written as data, e.g. parsed from JSON (R9).
 
-A spec describes a node and its settings, and nothing more: `build` turns
-specs into nodes. Each spec class mirrors one node class, and its fields
-mirror the node's constructor arguments. A node input is a nested spec, e.g.
+A spec describes a model node or a backtest declaration as data: `build`
+turns model specs into nodes and backtest specs into declarations. Model
+spec fields mirror the node's constructor arguments; a backtest spec
+mirrors the declaration's settings. A node input is a nested spec, e.g.
 the volatility model of a Gaussian model.
 
 Specs are frozen and compare by value, so identical specs, even written
@@ -27,6 +28,7 @@ from pydantic import Discriminator
 from pydantic import Field
 from pydantic import Tag
 from pydantic import field_validator
+from pydantic import model_validator
 
 from tail_lib._checks import check_name
 from tail_lib.models.ewma import DEFAULT_DECAY_BOUNDS
@@ -215,26 +217,38 @@ class ConstantVolatilitySpec(Spec):
     vol: Values[Positive]
 
 
+type DecaySpec = Annotated[
+    ConstantDecaySpec | EwmaDecayCalibrationSpec, Field(discriminator="type")
+]
+"""A constant decay factor, or one calibrated on the returns."""
+
+
 class EwmaVolatilitySpec(Spec):
-    """Spec of an `EwmaVolatility` model."""
+    """Spec of an `EwmaVolatility` model.
+
+    With a calibrated decay, `start` has to be the calibration's, as in the
+    node: the volatility is re-filtered the way the decay was fitted.
+    """
 
     type: Literal["ewma"] = "ewma"
-    decay: ConstantDecaySpec
+    decay: DecaySpec
     start: EwmaStartSpec = BackcastSpec()
 
-
-class FittedEwmaVolatilitySpec(Spec):
-    """Spec of a `FittedEwmaVolatility` model."""
-
-    type: Literal["fitted_ewma"] = "fitted_ewma"
-    calibration: EwmaDecayCalibrationSpec
+    @model_validator(mode="after")
+    def _check_start_matches_calibration(self) -> EwmaVolatilitySpec:
+        if isinstance(self.decay, EwmaDecayCalibrationSpec) and (
+            self.decay.start != self.start
+        ):
+            msg = (
+                f"`start` is {self.start!r}, but the calibration in `decay` "
+                f"starts with {self.decay.start!r}: give both the same start"
+            )
+            raise ValueError(msg)
+        return self
 
 
 type VolatilitySpec = Annotated[
-    VolatilityInputSpec
-    | ConstantVolatilitySpec
-    | EwmaVolatilitySpec
-    | FittedEwmaVolatilitySpec,
+    VolatilityInputSpec | ConstantVolatilitySpec | EwmaVolatilitySpec,
     Field(discriminator="type"),
 ]
 
@@ -299,7 +313,7 @@ type ValueAtRiskSpec = Annotated[
 
 
 class KupiecSpec(Spec):
-    """Spec of a `KupiecTest`, run on the overshootings of a model.
+    """Spec of a `Kupiec` declaration, registered on a context.
 
     Without a `window`, the test runs on the whole sample.
     """

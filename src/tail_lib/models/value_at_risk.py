@@ -2,32 +2,32 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+from dataclasses import field
 from typing import TYPE_CHECKING
 from typing import Literal
 from typing import assert_never
 
 import numpy as np
 
-from tail_lib._checks import check_name
 from tail_lib._checks import check_positive
 from tail_lib._checks import check_probability
 from tail_lib.distributions import Gaussian
-from tail_lib.graph import Cache
 from tail_lib.graph import Node
+from tail_lib.graph import RunInput
 from tail_lib.models.mean import MeanModel
 from tail_lib.models.mean import ZeroMean
-from tail_lib.time_series import TimeSeries
-from tail_lib.windows import Last
-from tail_lib.windows import Trailing
-from tail_lib.windows import Windows
+from tail_lib.time_series.time_series import TimeSeries
+from tail_lib.time_series.windows import Last
+from tail_lib.time_series.windows import Trailing
+from tail_lib.time_series.windows import Windows
 
 if TYPE_CHECKING:
     from numpy.lib._function_base_impl import (
         _InterpolationMethod as NumpyInterpolationMethod,
     )
 
-    from tail_lib.graph import Dependencies
-    from tail_lib.graph import Settings
+    from tail_lib.models.volatility import FilteredReturns
     from tail_lib.models.volatility import VolatilityFilter
     from tail_lib.models.volatility import VolatilityModel
 
@@ -49,70 +49,50 @@ def _interp_to_numpy_quantile_method(
             assert_never(interp)
 
 
+@dataclass(frozen=True)
 class ValueAtRiskModel(Node[TimeSeries]):
     """Base class for value-at-risk models.
 
     A value-at-risk model is a node whose output is the value-at-risk on each
-    date. Subclasses implement `evaluate`, which gets the inputs of the model
-    from a `Cache`, then computes the value-at-risk. The computation itself
-    usually lives in a `compute` method, whose arguments are the inputs.
+    date. Subclasses implement `compute`, from the returns and the outputs of
+    their inputs, see `Node`.
+
+    Building one raises `ValueError` if the confidence level isn't in (0, 1).
+
+    Attributes:
+        cf (float): The confidence level of the value-at-risk, keyword-only.
+
     """
 
-    _cf: float
+    cf: float = field(kw_only=True)
 
-    def __init__(self, cf: float) -> None:
-        check_probability("Confidence level", cf)
-        self._cf = cf
-
-    @property
-    def cf(self) -> float:
-        """The confidence level of the value-at-risk."""
-        return self._cf
+    def __post_init__(self) -> None:
+        check_probability("Confidence level", self.cf)
+        super().__post_init__()
 
 
-class ValueAtRiskInput(ValueAtRiskModel):
+@dataclass(frozen=True)
+class ValueAtRiskInput(RunInput, ValueAtRiskModel):
     """Value-at-risk forecasts passed in at run time, under a name (R13).
 
     The value-at-risk on date `t` is the input's value on date `t`. Like every
     value-at-risk model's, it should be the forecast for date `t + 1`, using
     data up to and including `t`, at confidence level `cf`: the library cannot
-    check this. Backtests read `cf` from here.
+    check this. Backtests read `cf` from here. The cache reads it from the run
+    inputs, see `RunInput`.
+
+    Building it raises `ValueError` if the name isn't a Python identifier, or
+    the confidence level isn't in (0, 1).
+
+    Attributes:
+        name (str): The name of the input, as passed to `run`: a Python
+            identifier.
+        cf (float): The confidence level the forecasts were computed at.
+
     """
 
-    _name: str
 
-    def __init__(self, name: str, *, cf: float) -> None:
-        """Build the model.
-
-        Args:
-            name (str): The name of the input, as passed to `run`: a Python
-                identifier.
-            cf (float): The confidence level the forecasts were computed at.
-
-        Raises:
-            ValueError: If the name isn't a Python identifier, or the
-                confidence level isn't in (0, 1).
-
-        """
-        super().__init__(cf=cf)
-        check_name("Input", name)
-        self._name = name
-
-    @property
-    def name(self) -> str:
-        """The name of the input."""
-        return self._name
-
-    def dependencies(self) -> Dependencies:  # noqa: D102
-        return {}
-
-    def settings(self) -> Settings:  # noqa: D102
-        return {"name": self._name, "cf": self._cf}
-
-    def evaluate(self, cache: Cache) -> TimeSeries:  # noqa: D102
-        return cache.input(self._name)
-
-
+@dataclass(frozen=True, kw_only=True)
 class HistoricalSimulationsModel(ValueAtRiskModel):
     """Value-at-risk as an empirical quantile of the returns in a trailing window.
 
@@ -133,41 +113,19 @@ class HistoricalSimulationsModel(ValueAtRiskModel):
 
     Reference: Jorion, *Value at Risk: The New Benchmark for Managing Financial
     Risk*, 3rd edition, McGraw-Hill, 2007.
+
+    Attributes:
+        cf (float): The confidence level, in (0, 1).
+        window (Trailing | Last): The windows the quantiles are taken on.
+        interpolation (InterpolationMethod): How the quantile interpolates
+            between order statistics.
+
     """
 
-    _window: Trailing | Last
-    _interpolation: InterpolationMethod
+    window: Trailing | Last
+    interpolation: InterpolationMethod = "linear"
 
-    def __init__(
-        self,
-        *,
-        cf: float,
-        window: Trailing | Last,
-        interpolation: InterpolationMethod = "linear",
-    ) -> None:
-        super().__init__(cf=cf)
-        self._window = window
-        self._interpolation = interpolation
-
-    @property
-    def window(self) -> Trailing | Last:
-        """The windows the quantiles are taken on."""
-        return self._window
-
-    def dependencies(self) -> Dependencies:  # noqa: D102
-        return {}
-
-    def settings(self) -> Settings:  # noqa: D102
-        return {
-            "cf": self._cf,
-            "window": self._window,
-            "interpolation": self._interpolation,
-        }
-
-    def evaluate(self, cache: Cache) -> TimeSeries:  # noqa: D102
-        return self.compute(cache.returns)
-
-    def compute(self, returns: TimeSeries) -> TimeSeries:
+    def compute(self, returns: TimeSeries, /) -> TimeSeries:
         """Compute the value-at-risk on each window.
 
         Args:
@@ -177,12 +135,13 @@ class HistoricalSimulationsModel(ValueAtRiskModel):
             TimeSeries: The value-at-risk, on the dates of the returns.
 
         """
-        method = _interp_to_numpy_quantile_method(self._interpolation)
-        return Windows(returns, self._window).apply(
-            lambda w: np.quantile(w, q=1 - self._cf, method=method, axis=0)
+        method = _interp_to_numpy_quantile_method(self.interpolation)
+        return Windows(returns, self.window).apply(
+            lambda w: np.quantile(w, q=1 - self.cf, method=method, axis=0)
         )
 
 
+@dataclass(frozen=True, kw_only=True)
 class FilteredHistoricalSimulationsModel(ValueAtRiskModel):
     """Historical simulation on returns standardized by their mean and volatility.
 
@@ -214,88 +173,57 @@ class FilteredHistoricalSimulationsModel(ValueAtRiskModel):
     historical simulation method for value-at-risk", Journal of Risk, 1998;
     Barone-Adesi, Giannopoulos and Vosper, "VaR without correlations for
     portfolios of derivative securities", Journal of Futures Markets, 1999.
+
+    Attributes:
+        cf (float): The confidence level, in (0, 1).
+        filter (VolatilityFilter): Standardizes the returns. Its mean and
+            volatility also rescale the quantile.
+        window (Trailing | Last): The windows of standardized returns.
+        interpolation (InterpolationMethod): How the quantile interpolates
+            between order statistics.
+
     """
 
-    _filter: VolatilityFilter
-    _window: Trailing | Last
-    _interpolation: InterpolationMethod
+    filter: VolatilityFilter
+    window: Trailing | Last
+    interpolation: InterpolationMethod = "linear"
 
-    def __init__(
-        self,
-        *,
-        cf: float,
-        filter: VolatilityFilter,  # noqa: A002 - the method's own term.
-        window: Trailing | Last,
-        interpolation: InterpolationMethod = "linear",
-    ) -> None:
-        """Build the model.
-
-        Args:
-            cf (float): The confidence level, in (0, 1).
-            filter (VolatilityFilter): Standardizes the returns. Its mean and
-                volatility also rescale the quantile.
-            window (Trailing | Last): The windows of standardized returns.
-            interpolation (InterpolationMethod): How the quantile interpolates
-                between order statistics.
-
-        """
-        super().__init__(cf=cf)
-        self._filter = filter
-        self._window = window
-        self._interpolation = interpolation
-
-    @property
-    def window(self) -> Trailing | Last:
-        """The windows the quantiles are taken on."""
-        return self._window
-
-    def dependencies(self) -> Dependencies:  # noqa: D102
-        return {
-            "filter": self._filter,
-            "vol_model": self._filter.vol_model,
-            "mean_model": self._filter.mean_model,
-        }
-
-    def settings(self) -> Settings:  # noqa: D102
-        return {
-            "cf": self._cf,
-            "window": self._window,
-            "interpolation": self._interpolation,
-        }
-
-    def evaluate(self, cache: Cache) -> TimeSeries:  # noqa: D102
-        filtered = cache.get(self._filter)
-        means = cache.get(self._filter.mean_model)
-        vols = cache.get(self._filter.vol_model)
-        return self.compute(filtered=filtered, means=means, vols=vols)
-
+    # The field is named after the spec's `filter`, so its keyword is too.
     def compute(
-        self, *, filtered: TimeSeries, means: TimeSeries, vols: TimeSeries
+        self,
+        returns: TimeSeries,
+        /,
+        *,
+        filter: FilteredReturns,  # noqa: A002
     ) -> TimeSeries:
         """Compute the value-at-risk on each window.
 
         Args:
-            filtered (TimeSeries): The standardized returns.
-            means (TimeSeries): The means of the returns, with the same dates
-                and shape as `filtered`.
-            vols (TimeSeries): The volatilities of the returns, with the same
-                dates and shape as `filtered`.
+            returns (TimeSeries): The returns. Only their dates and shape are
+                used, to check the filter's output.
+            filter (FilteredReturns): The output of the `filter` node: the
+                standardized returns, with the means and volatilities that
+                rescale the quantiles.
 
         Returns:
-            TimeSeries: The value-at-risk, on the dates of `filtered`.
+            TimeSeries: The value-at-risk, on the dates of the returns.
+
+        Raises:
+            ValueError: If the filter's output does not match the returns.
 
         """
-        filtered.check_aligned(means)
-        filtered.check_aligned(vols)
+        returns.check_aligned(filter.standardized)
 
-        windows = Windows(filtered, self._window, skip_leading_nan=True)
-        method = _interp_to_numpy_quantile_method(self._interpolation)
-        quantiles = np.quantile(windows.values, q=1 - self._cf, method=method, axis=0)
+        windows = Windows(filter.standardized, self.window, skip_leading_nan=True)
+        method = _interp_to_numpy_quantile_method(self.interpolation)
+        quantiles = np.quantile(windows.values, q=1 - self.cf, method=method, axis=0)
         # Each window is rescaled with the mean and volatility of its last date.
         ends = windows.end_indices
-        return windows.to_series(means.values[ends] + vols.values[ends] * quantiles)
+        mean, vol = filter.mean.values[ends], filter.vol.values[ends]
+        return windows.to_series(mean + vol * quantiles)
 
 
+@dataclass(frozen=True, kw_only=True)
 class GaussianModel(ValueAtRiskModel):
     """Value-at-risk of normally distributed returns.
 
@@ -311,51 +239,43 @@ class GaussianModel(ValueAtRiskModel):
 
     It is the forecast for the return of date `t + 1`, using data up to and
     including `t`, like its inputs.
+
+    Attributes:
+        cf (float): The confidence level, in (0, 1).
+        vol (VolatilityModel): The volatility, the scale of the
+            distribution.
+        mean (MeanModel): The mean of the distribution. Defaults to
+            zero.
+
     """
 
-    _mean_model: MeanModel
-    _vol_model: VolatilityModel
+    vol: VolatilityModel
+    mean: MeanModel = field(default_factory=ZeroMean)
 
-    def __init__(
-        self,
-        *,
-        cf: float,
-        vol_model: VolatilityModel,
-        mean_model: MeanModel | None = None,
-    ) -> None:
-        super().__init__(cf=cf)
-        self._vol_model = vol_model
-        self._mean_model = ZeroMean() if mean_model is None else mean_model
-
-    def dependencies(self) -> Dependencies:  # noqa: D102
-        return {"vol_model": self._vol_model, "mean_model": self._mean_model}
-
-    def settings(self) -> Settings:  # noqa: D102
-        return {"cf": self._cf}
-
-    def evaluate(self, cache: Cache) -> TimeSeries:  # noqa: D102
-        means = cache.get(self._mean_model)
-        vols = cache.get(self._vol_model)
-        return self.compute(means=means, vols=vols)
-
-    def compute(self, *, means: TimeSeries, vols: TimeSeries) -> TimeSeries:
+    def compute(
+        self, returns: TimeSeries, /, *, vol: TimeSeries, mean: TimeSeries
+    ) -> TimeSeries:
         """Compute the value-at-risk on each date.
 
         Args:
-            means (TimeSeries): The means of the returns.
-            vols (TimeSeries): The volatilities of the returns, with the same
-                dates and shape as `means`.
+            returns (TimeSeries): The returns. Only their dates and shape are
+                used, to check the inputs.
+            vol (TimeSeries): The volatilities of the returns, the output of
+                the `vol` node.
+            mean (TimeSeries): The means of the returns, the output of the
+                `mean` node.
 
         Returns:
-            TimeSeries: The value-at-risk, on the dates of `means` and `vols`.
+            TimeSeries: The value-at-risk, on the dates of the returns.
 
         Raises:
-            ValueError: If the means and volatilities don't match, or if a
-                volatility is zero or negative.
+            ValueError: If the means or volatilities don't match the returns,
+                or if a volatility is zero or negative.
 
         """
-        means.check_aligned(vols)
-        check_positive("Volatility", vols.values)
+        returns.check_aligned(vol)
+        returns.check_aligned(mean)
+        check_positive("Volatility", vol.values)
 
-        values = means.values + vols.values * Gaussian().quantile(1 - self._cf)
-        return TimeSeries(dates=means.dates, values=values)
+        values = mean.values + vol.values * Gaussian().quantile(1 - self.cf)
+        return TimeSeries(dates=returns.dates, values=values)

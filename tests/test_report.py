@@ -4,15 +4,15 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from tail_lib.backtests.kupiec import KupiecTest
+from tail_lib.backtests.kupiec import Kupiec
+from tail_lib.context import Context
 from tail_lib.models.value_at_risk import GaussianModel
 from tail_lib.models.value_at_risk import ValueAtRiskInput
 from tail_lib.models.volatility import ConstantVolatility
 from tail_lib.report.data import ReportData
 from tail_lib.report.report import DATA_PLACEHOLDER
 from tail_lib.report.report import Report
-from tail_lib.run import Run
-from tail_lib.time_series import TimeSeries
+from tail_lib.time_series.time_series import TimeSeries
 from tests.helpers import returns_series
 
 _SLOT = re.compile(
@@ -20,11 +20,11 @@ _SLOT = re.compile(
 )
 
 
-def _run() -> Run:
-    return Run(
-        {"gauss": GaussianModel(cf=0.99, vol_model=ConstantVolatility(0.01))},
-        {"kupiec": KupiecTest},
-    )
+def _report(title: str = "tail-lib report") -> Report:
+    with Context() as ctx:
+        Kupiec(name="kupiec")
+        GaussianModel(cf=0.99, vol=ConstantVolatility(0.01), name="gauss")
+    return Report(ctx, ctx.run(returns_series(n=100)), title=title)
 
 
 def _saved_data(path: Path) -> ReportData:
@@ -34,7 +34,7 @@ def _saved_data(path: Path) -> ReportData:
 
 
 def test_a_saved_report_holds_its_data(tmp_path: Path) -> None:
-    report = Report(_run(), returns_series(n=100), title="Daily VaR")
+    report = _report(title="Daily VaR")
     path = tmp_path / "report.html"
 
     report.save(path)
@@ -46,7 +46,7 @@ def test_a_saved_report_holds_its_data(tmp_path: Path) -> None:
 
 def test_text_in_the_data_can_not_close_the_script(tmp_path: Path) -> None:
     title = "</script><script>alert(1)</script>"
-    report = Report(_run(), returns_series(n=100), title=title)
+    report = _report(title=title)
     path = tmp_path / "report.html"
 
     report.save(path)
@@ -58,7 +58,7 @@ def test_text_in_the_data_can_not_close_the_script(tmp_path: Path) -> None:
 def test_a_saved_report_loads_nothing_from_outside(tmp_path: Path) -> None:
     path = tmp_path / "report.html"
 
-    Report(_run(), returns_series(n=100)).save(path)
+    _report().save(path)
 
     page = path.read_text(encoding="utf-8")
     assert not re.search(r"""\b(src|href)\s*=\s*["']?(https?:)?//""", page)
@@ -67,16 +67,48 @@ def test_a_saved_report_loads_nothing_from_outside(tmp_path: Path) -> None:
 def test_a_report_takes_run_inputs_and_series_labels() -> None:
     returns = returns_series(n=100, n_assets=2)
     var_ext = TimeSeries(dates=returns.dates, values=np.full((100, 2), -0.02))
-    run = Run({"ext": ValueAtRiskInput("var_ext", cf=0.99)})
+    with Context() as ctx:
+        ValueAtRiskInput("var_ext", cf=0.99)
+    results = ctx.run(returns, {"var_ext": var_ext})
 
-    report = Report(run, returns, {"var_ext": var_ext}, series_labels=["a", "b"])
+    report = Report(ctx, results, series_labels=["a", "b"])
 
     assert report.data.series == ["a", "b"]
-    assert report.data.outputs["models.ext"][0][0] == pytest.approx(-0.02)
+    assert report.data.outputs["models.var_ext"][0][0] == pytest.approx(-0.02)
 
 
-def test_a_report_needs_the_run_inputs() -> None:
-    run = Run({"ext": ValueAtRiskInput("var_ext", cf=0.99)})
+def test_a_report_reads_the_results_and_bounds_without_computing(
+    tmp_path: Path,
+) -> None:
+    n_calls = 0
 
-    with pytest.raises(KeyError, match="Missing inputs"):
-        Report(run, returns_series(n=100))
+    class _Counting(ConstantVolatility):
+        def compute(self, returns: TimeSeries, /) -> TimeSeries:
+            nonlocal n_calls
+            n_calls += 1
+            return super().compute(returns)
+
+    with Context() as ctx:
+        GaussianModel(cf=0.99, vol=_Counting(0.01), name="gauss")
+    returns = returns_series(n=100)
+    results = ctx.run(returns, lower=returns.dates[20], upper=returns.dates[60])
+
+    report = Report(ctx, results)
+    path = tmp_path / "bounded.html"
+    report.save(path)
+
+    assert n_calls == 1
+    saved = _saved_data(path)
+    assert saved.metadata.lower == str(returns.dates[20])
+    assert saved.metadata.upper == str(returns.dates[60])
+    assert saved == report.data
+
+
+def test_a_report_rejects_results_of_another_context() -> None:
+    with Context() as ctx:
+        GaussianModel(cf=0.99, vol=ConstantVolatility(0.01), name="gauss")
+    with Context() as other:
+        GaussianModel(cf=0.95, vol=ConstantVolatility(0.01), name="gauss")
+
+    with pytest.raises(ValueError, match="results don't hold the nodes"):
+        Report(ctx, other.run(returns_series(n=100)))

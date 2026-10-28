@@ -17,6 +17,9 @@ build-backend = "setuptools.build_meta"
 
 [dependency-groups]
 dev = [
+    "coverage>=7.17.0",
+    "ipykernel>=7.4.0",
+    "matplotlib>=3.11.2",
     "pytest>=9.1.1",
     "ruff>=0.17.0",
     "ty>=0.0.90",
@@ -26,8 +29,16 @@ docs = [
     "zensical>=0.0.72",
 ]
 
+[tool.coverage.run]
+branch = true
+source = ["src/tail_lib"]
+
+[tool.coverage.report]
+precision = 1
+show_missing = true
+
 [tool.ruff]
-exclude = ["./.user"]
+exclude = ["./.user", "./.scratch"]
 line-length = 88
 indent-width = 4
 
