@@ -34,20 +34,26 @@ of \(t + 1\) with \(r_t\). `sim.means` and `sim.vols` hold, on date \(t\), the
 mean and volatility of \(t + 1\): the [library's timing](concepts.md#timing-the-value-on-t-is-the-forecast-for-t-1),
 so they compare directly with a model's output.
 
-### Mean: `ArProcess`
+### Mean: `ConstantMeanProcess` or `ArProcess`
 
-[`ArProcess(const=0.0, ar=())`][tail_lib.simulation.ArProcess], an AR(p)
-mean:
+[`ConstantMeanProcess(mean=0.0)`][tail_lib.simulation.ConstantMeanProcess],
+the same mean on every date. It is the default, with a zero mean.
+
+[`ArProcess(ar, const=0.0)`][tail_lib.simulation.ArProcess], an AR(p)
+mean, with at least one coefficient:
 
 \[
 \mu_t = \text{const} + \phi_1 r_{t-1} + \cdots + \phi_p r_{t-p}
 \]
 
 Before the first date, past returns are at the long-run mean
-\(\text{const} / (1 - \sum \phi)\). The default is a zero mean. Stationarity
-is not checked.
+\(\text{const} / (1 - \sum \phi)\). Stationarity is not checked.
 
-### Volatility: `GarchProcess` or `EwmaProcess`
+### Volatility: `ConstantVolProcess`, `GarchProcess` or `EwmaProcess`
+
+[`ConstantVolProcess(vol)`][tail_lib.simulation.ConstantVolProcess], the
+same positive volatility on every date. With Gaussian shocks and a constant
+mean, the returns are i.i.d. Gaussian.
 
 [`GarchProcess(omega, alpha, beta)`][tail_lib.simulation.GarchProcess], a
 GARCH(1, 1) variance (Bollerslev, 1986):
@@ -81,6 +87,16 @@ Shocks are drawn from a distribution with zero mean and unit variance:
 - [`Gaussian()`][tail_lib.distributions.Gaussian], the default;
 - [`StudentT(df)`][tail_lib.distributions.StudentT], scaled to unit variance,
   with `df` above 2. The lower `df`, the fatter the tails.
+
+### Your own process
+
+Subclass [`MeanProcess`][tail_lib.simulation.MeanProcess] or
+[`VolatilityProcess`][tail_lib.simulation.VolatilityProcess]. A process
+holds its parameters, and its state is an array it passes in and out:
+`start(batch_shape)` gives the state before the first date, `value(state)`
+the mean or volatility of the next date, and `update(state, x)` moves one
+date forward, with the return for a mean and the residual for a volatility.
+`check_shape(batch_shape)` checks the parameters broadcast to the batch.
 
 ## `simulate` settings
 

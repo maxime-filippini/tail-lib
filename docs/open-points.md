@@ -1055,6 +1055,16 @@ volatility models run on the raw returns. A model only filters back the
 simulated volatilities with a zero mean, until the volatility models can
 read demeaned returns: see "Returns as a node".
 
+Each process owns its recursion (developer request, 2026-10-27, option A
+chosen over mutable per-simulation "path" objects): `start`, `value` and
+`update` pass an array state in and out, and `Simulator.simulate` only
+chains them. The state is typed `FloatArray` rather than a generic type per
+process, since every state so far is an array, and a generic state would
+need `Any` in the `Simulator` signature (R11). `ConstantMeanProcess` and
+`ConstantVolProcess` were added; `ArProcess` now needs at least one
+coefficient (developer's choice). A process whose update needs both the
+return and the volatility (e.g. GARCH-in-mean) doesn't fit yet.
+
 ### Runs without VaR models (declined for now)
 
 A `Run` only takes VaR models, since each gets an `Overshootings` node.

@@ -7,6 +7,8 @@ from tail_lib.models.ewma import ConstantDecay
 from tail_lib.models.ewma import StartingVol
 from tail_lib.models.volatility import EwmaVolatility
 from tail_lib.simulation import ArProcess
+from tail_lib.simulation import ConstantMeanProcess
+from tail_lib.simulation import ConstantVolProcess
 from tail_lib.simulation import EwmaProcess
 from tail_lib.simulation import GarchProcess
 from tail_lib.simulation import Simulator
@@ -196,3 +198,55 @@ def test_simulate_rejects_parameter_not_matching_batch_shape() -> None:
 def test_simulate_rejects_invalid_lengths(n_dates: int, burn_in: int) -> None:
     with pytest.raises(ValueError, match="at least"):
         Simulator(vol=GARCH).simulate(n_dates, first_date=FIRST_DATE, burn_in=burn_in)
+
+
+def test_ar_rejects_no_coefficients() -> None:
+    with pytest.raises(ValueError, match="ConstantMeanProcess"):
+        ArProcess(ar=())
+
+
+def test_constant_processes_give_constant_means_and_vols() -> None:
+    mean = np.array([1e-4, -2e-4])
+    vol = np.array([0.01, 0.02])
+    sim = Simulator(
+        mean=ConstantMeanProcess(mean), vol=ConstantVolProcess(vol)
+    ).simulate(300, first_date=FIRST_DATE, batch_shape=(2,), rng=10)
+
+    np.testing.assert_array_equal(sim.means.values, np.broadcast_to(mean, (300, 2)))
+    np.testing.assert_array_equal(sim.vols.values, np.broadcast_to(vol, (300, 2)))
+
+
+def test_constant_processes_scale_the_shocks() -> None:
+    # With a constant mean and volatility, the returns are `mean + vol * z`.
+    sim = Simulator(
+        mean=ConstantMeanProcess(1e-3), vol=ConstantVolProcess(0.02)
+    ).simulate(100, first_date=FIRST_DATE, rng=11)
+    z = np.random.default_rng(11).standard_normal(100)
+
+    np.testing.assert_allclose(sim.returns.values, 1e-3 + 0.02 * z, rtol=1e-12)
+
+
+def test_constant_vol_rejects_non_positive_vol() -> None:
+    with pytest.raises(ValueError, match="positive"):
+        ConstantVolProcess(0.0)
+
+
+def test_ar_update_shifts_the_lags() -> None:
+    ar = ArProcess(ar=(0.3, -0.1), const=1e-4)
+    state = ar.start(())
+    np.testing.assert_allclose(state, [ar.long_run_mean()] * 2)
+
+    state = ar.update(state, np.asarray(0.02))
+    state = ar.update(state, np.asarray(-0.01))
+
+    np.testing.assert_allclose(state, [-0.01, 0.02])
+    np.testing.assert_allclose(ar.value(state), 1e-4 + 0.3 * -0.01 - 0.1 * 0.02)
+
+
+def test_simulate_rejects_mean_not_matching_batch_shape() -> None:
+    mean = ConstantMeanProcess(np.array([0.0, 1e-4, 2e-4]))
+
+    with pytest.raises(ValueError, match=r"ConstantMeanProcess.mean"):
+        Simulator(mean=mean, vol=GARCH).simulate(
+            10, first_date=FIRST_DATE, batch_shape=(2,)
+        )

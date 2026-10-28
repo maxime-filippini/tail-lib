@@ -67,7 +67,9 @@ Requirements are numbered so changes and reviews can cite them (e.g. "R4").
 
 - **R18** — Simulate returns easily, from a basic AR mean with an EWMA or a
   GARCH volatility. EWMA simulations can explode: that is accepted, and left
-  to the user to watch for.
+  to the user to watch for. A constant mean and a constant volatility are
+  also available (2026-10-27). Each process owns its update logic; the
+  simulator only chains the processes (2026-10-27).
 
 ### Performance
 
@@ -174,7 +176,10 @@ The core developer needs to confirm them.
   with zero mean and unit variance, Gaussian or Student-t for now; GARCH
   starts from its long-run variance (`alpha + beta < 1`), EWMA from a given
   starting volatility, the AR lags from the long-run mean, with an optional
-  burn-in; the variance recursions run on the residuals `r - mu`.
+  burn-in; the variance recursions run on the residuals `r - mu`. Constant
+  processes start at, and keep, their value. An AR process has at least one
+  coefficient; a mean that doesn't move is a `ConstantMeanProcess`
+  (2026-10-27).
 
 Proposed for the context API (2026-10-26), see "Context API" in
 `docs/open-points.md`. D9 is built (step 2), D11 for every node (steps 4a to

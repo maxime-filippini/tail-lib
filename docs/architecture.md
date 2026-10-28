@@ -43,7 +43,7 @@ How tail-lib is organized, and how a call flows from a spec to the numbers
 | `report/data.py` | `ReportData`, the JSON contract with the report page, and `build_report_data` (R19). |
 | `report/report.py`, `report/index.html` | `Report`: reads results and saves their data in the report page, package data built from `report-app/` (R19). |
 | `distributions.py` | `Distribution`, the base class of distributions with zero mean and unit variance, and `Gaussian`, `StudentT`. Each draws values (`draw`) and gives its quantiles (`quantile`): the simulator draws its shocks from them, and `GaussianModel` reads the Gaussian quantile. |
-| `simulation.py` | `Simulator` and its processes `ArProcess`, `EwmaProcess`, `GarchProcess`; the output `Simulation` (R18). |
+| `simulation.py` | `Simulator`; the base classes `MeanProcess` (`ConstantMeanProcess`, `ArProcess`) and `VolatilityProcess` (`ConstantVolProcess`, `EwmaProcess`, `GarchProcess`); the output `Simulation` (R18). |
 | `specs.py` | Pydantic specs for model nodes and backtest declarations, with value ranges (R9, R9b). |
 | `build.py` | Plain functions from specs to nodes and backtest declarations (R9a), with node sharing by value (D9). |
 | `run.py` | `RunSpec`: named model and backtest specs, labels, and their validation (R9, R9b). |
@@ -419,12 +419,22 @@ sim.returns, sim.means, sim.vols  # TimeSeries of shape (2520, 100)
 long_run_variance=...)` builds the same process from its long-run variance,
 with `omega = long_run_variance * (1 - alpha - beta)`.
 
-`Simulator.simulate` is one loop over the dates, vectorized over the batch.
-On date `t`: `eps[t] = sigma[t] * z[t]`, `r[t] = mu[t] + eps[t]`, then the
-volatility process updates the variance with `eps[t]` and the AR process
-updates the mean with `r[t]`. `means` and `vols` hold, on `t`, the mean and
-volatility of `t + 1` (D1, D8), so they compare directly with a model's
-output.
+Each process owns its recursion and its state, an array passed in and out
+of three methods: `start(batch_shape)` gives the state before the first
+date, `value(state)` reads the next mean or volatility, and
+`update(state, x)` moves one date forward. The state is the stacked past
+returns for `ArProcess`, the variance for `EwmaProcess` and `GarchProcess`,
+and the value itself for `ConstantMeanProcess` and `ConstantVolProcess`.
+The processes stay frozen dataclasses, so one simulator can run many
+simulations.
+
+`Simulator.simulate` is one loop over the dates, vectorized over the batch,
+and only chains these calls. On date `t`:
+`eps[t] = vol.value(vol_state) * z[t]`,
+`r[t] = mean.value(mean_state) + eps[t]`, then the mean state is updated
+with `r[t]` and the volatility state with `eps[t]`. `means` and `vols` hold,
+on `t`, the mean and volatility of `t + 1` (D1, D8), so they compare
+directly with a model's output.
 
 The processes call the same one-step recursions as the models
 (`ewma_update`, `garch_update`), so the formulas are written once. A test
