@@ -42,8 +42,8 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
+from tail_lib._checks import check_array_positive
 from tail_lib._checks import check_broadcasts
-from tail_lib._checks import check_positive
 from tail_lib._checks import check_unit_interval
 from tail_lib.calendar import Calendar
 from tail_lib.distributions import Distribution
@@ -293,7 +293,7 @@ class ConstantVolProcess(VolatilityProcess):
     vol: FloatArray | float
 
     def __post_init__(self) -> None:
-        check_positive("Volatility", self.vol)
+        check_array_positive("Volatility", self.vol)
 
     def start(self, batch_shape: tuple[int, ...]) -> FloatArray:
         """Give the volatility, broadcast to the batch shape."""
@@ -338,7 +338,7 @@ class EwmaProcess(VolatilityProcess):
 
     def __post_init__(self) -> None:
         check_unit_interval("Decay factor", self.decay)
-        check_positive("Starting volatility", self.start_vol)
+        check_array_positive("Starting volatility", self.start_vol)
 
     def start(self, batch_shape: tuple[int, ...]) -> FloatArray:
         """Give the variance of the first date, `start_vol ** 2`."""
@@ -397,7 +397,7 @@ class GarchProcess(VolatilityProcess):
         if np.any(alpha + beta >= 1):
             msg = "GARCH alpha + beta has to be below 1, for a long-run variance!"
             raise ValueError(msg)
-        check_positive("GARCH omega", self.omega)
+        check_array_positive("GARCH omega", self.omega)
 
     @classmethod
     def from_long_run_variance(
@@ -430,7 +430,7 @@ class GarchProcess(VolatilityProcess):
             ValueError: If a parameter is outside its bounds.
 
         """
-        check_positive("GARCH long-run variance", long_run_variance)
+        check_array_positive("GARCH long-run variance", long_run_variance)
         omega = np.asarray(long_run_variance) * (1 - np.asarray(alpha) - beta)
         return cls(omega=omega, alpha=alpha, beta=beta)
 

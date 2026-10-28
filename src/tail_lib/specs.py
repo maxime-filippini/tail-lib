@@ -30,7 +30,7 @@ from pydantic import Tag
 from pydantic import field_validator
 from pydantic import model_validator
 
-from tail_lib._checks import check_name
+from tail_lib._checks import check_name_is_identifier
 from tail_lib.models.ewma import DEFAULT_DECAY_BOUNDS
 from tail_lib.models.ewma import DEFAULT_FIT_ITERATIONS
 from tail_lib.models.value_at_risk import InterpolationMethod  # noqa: TC001
@@ -51,7 +51,7 @@ type Count = Annotated[int, Field(ge=1)]
 
 
 def _identifier(name: str) -> str:
-    check_name("A", name)
+    check_name_is_identifier("A", name)
     return name
 
 

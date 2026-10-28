@@ -33,7 +33,7 @@ from uuid import uuid4
 
 import numpy as np
 
-from tail_lib._checks import check_name
+from tail_lib._checks import check_name_is_identifier
 from tail_lib._range import _check_model_history
 from tail_lib._range import _range_slice
 from tail_lib.backtests.kupiec import Kupiec
@@ -197,7 +197,7 @@ class Context:
             TypeError: If `backtest` isn't a declaration.
 
         """
-        check_name("Backtest", name)
+        check_name_is_identifier("Backtest", name)
         if not isinstance(backtest, Kupiec):
             msg = f"Backtest {name!r} needs a Kupiec declaration, got {backtest!r}!"
             raise TypeError(msg)

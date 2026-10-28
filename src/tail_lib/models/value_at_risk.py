@@ -10,7 +10,7 @@ from typing import assert_never
 
 import numpy as np
 
-from tail_lib._checks import check_positive
+from tail_lib._checks import check_array_positive
 from tail_lib._checks import check_probability
 from tail_lib.distributions import Gaussian
 from tail_lib.graph import Node
@@ -275,7 +275,7 @@ class GaussianModel(ValueAtRiskModel):
         """
         returns.check_aligned(vol)
         returns.check_aligned(mean)
-        check_positive("Volatility", vol.values)
+        check_array_positive("Volatility", vol.values)
 
         values = mean.values + vol.values * Gaussian().quantile(1 - self.cf)
         return TimeSeries(dates=returns.dates, values=values)

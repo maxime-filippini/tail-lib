@@ -31,7 +31,7 @@ from typing import Any
 
 import numpy as np
 
-from tail_lib._checks import check_name
+from tail_lib._checks import check_name_is_identifier
 from tail_lib.time_series.time_series import TimeSeries
 
 if TYPE_CHECKING:
@@ -101,7 +101,7 @@ class Node[T](ABC):
 
     def __post_init__(self) -> None:
         if self.name is not None:
-            check_name("Node", self.name)
+            check_name_is_identifier("Node", self.name)
         self._check_compute()
         context = current_context.get()
         if context is not None:
@@ -311,7 +311,7 @@ class RunInput(Node[TimeSeries]):
     name: str = field()
 
     def __post_init__(self) -> None:
-        check_name("Input", self.name)
+        check_name_is_identifier("Input", self.name)
         super().__post_init__()
 
     # Every `compute` takes the returns first, even when it doesn't use them.

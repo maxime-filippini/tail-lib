@@ -10,7 +10,7 @@ import numpy as np
 from scipy import special
 from scipy import stats
 
-from tail_lib._checks import check_name
+from tail_lib._checks import check_name_is_identifier
 from tail_lib._checks import check_probability
 from tail_lib.backtests.overshootings import Overshootings
 from tail_lib.graph import Backtest
@@ -167,7 +167,7 @@ class Kupiec:
 
     def __post_init__(self) -> None:
         if self.name is not None:
-            check_name("Backtest", self.name)
+            check_name_is_identifier("Backtest", self.name)
         context = current_context.get()
         if context is not None:
             if self.name is None:

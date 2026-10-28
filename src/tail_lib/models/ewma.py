@@ -10,7 +10,7 @@ from typing import assert_never
 
 import numpy as np
 
-from tail_lib._checks import check_positive
+from tail_lib._checks import check_array_positive
 from tail_lib._checks import check_unit_interval
 from tail_lib.graph import Node
 from tail_lib.graph import frozen_floats
@@ -56,7 +56,7 @@ class StartingVol:
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "vol", frozen_floats(self.vol))
-        check_positive("Starting volatility", self.vol)
+        check_array_positive("Starting volatility", self.vol)
 
 
 type EwmaStart = Backcast | StartingVol
