@@ -27,7 +27,7 @@ def check_probability(name: str, value: float) -> None:
         raise ValueError(msg)
 
 
-def check_name(kind: str, name: str) -> None:
+def check_name_is_identifier(kind: str, name: str) -> None:
     """Check that a name, e.g. a model's, is a Python identifier.
 
     Names appear in dotted paths through a run's graph, e.g.
@@ -67,7 +67,7 @@ def check_unit_interval(name: str, value: FloatArray | Floats | float) -> None:
         raise ValueError(msg)
 
 
-def check_positive(name: str, value: FloatArray | Floats | float) -> None:
+def check_array_positive(name: str, value: FloatArray | Floats | float) -> None:
     """Check that a value, e.g. a volatility, is positive, every element of it.
 
     Args:
@@ -101,10 +101,12 @@ def check_broadcasts(
 
     """
     shape = np.shape(value)
+
     try:
         broadcast = np.broadcast_shapes(shape, batch_shape)
     except ValueError:
         broadcast = None
+
     if broadcast != batch_shape:
         msg = (
             f"{owner}.{name} of shape {shape} does not broadcast to the "

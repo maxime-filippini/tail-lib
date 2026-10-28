@@ -120,7 +120,7 @@ def test_filtered_historical_specs_build_equal_filters() -> None:
     gauss_model = _model(gauss)
 
     assert fhs_100.dependencies()["filter"] == fhs_150.dependencies()["filter"]
-    # The filter's volatility equals the Gaussian model's (D9).
+    # The filter's volatility equals the Gaussian model's.
     assert (
         fhs_100.dependencies()["filter"].dependencies()["vol"]
         == gauss_model.dependencies()["vol"]

@@ -1,6 +1,6 @@
 <script lang="ts">
   // Node outputs: the output of one node of the run, for one series, picked
-  // here or by clicking its box in the graph (R19).
+  // here or by clicking its box in the graph.
   import Chart from "../Chart.svelte";
   import type { ChartOption } from "../charts";
   import { boxTooltip, displayName, settingsLine } from "../graph/format";

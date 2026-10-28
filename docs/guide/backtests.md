@@ -1,8 +1,8 @@
 # Backtests
 
-A backtest checks a model's VaR forecasts against the returns that followed
-(R3). In a run, every backtest runs on every model (R4), so models compare on
-the same tests (R5).
+A backtest checks a model's VaR forecasts against the returns that followed.
+In a run, every backtest runs on every model, so models compare on
+the same tests.
 
 ## Overshootings
 
@@ -52,7 +52,7 @@ setting, `window`:
 | `Trailing(length, step)` | rolling windows of `length` flags | one result per window |
 | `Last(length)` | the last `length` flags only | one window, ending on the last date |
 
-Windows start on the first flag (R16), so no window holds a model's warm-up.
+Windows start on the first flag, so no window holds a model's warm-up.
 
 === "Python"
 
@@ -113,7 +113,7 @@ rolling.end_dates[rejected]  # when the model was rejected
 
 The window ending on date \(t\) holds the flags of dates
 \(t - \text{length} + 1\) to \(t\): it compares the VaR up to \(t - 1\) with
-the returns up to \(t\) (D1).
+the returns up to \(t\).
 
 ## Comparing models on the same windows
 

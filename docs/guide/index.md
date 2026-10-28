@@ -16,7 +16,3 @@ models.
    backtests.
 6. [Simulation](simulation.md): simulated returns with known volatilities,
    to test models on.
-
-Requirement IDs such as R13 or D1 refer to the
-[requirements](../requirements.md), for readers who want the reason behind a
-rule.

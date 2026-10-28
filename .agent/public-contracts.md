@@ -32,11 +32,11 @@ without re-exporting model classes.
   `InterpolationMethod`, `DEFAULT_EWMA_START`, `DEFAULT_DECAY_BOUNDS`,
   `DEFAULT_FIT_ITERATIONS`.
 - **Backtests:** `tail_lib.backtests.overshootings.overshootings`,
-  `Overshootings`; `tail_lib.backtests.kupiec.kupiec_pof`, `Kupiec`,
-  `KupiecResult`.
+  `Overshootings`; `tail_lib.backtests.base.BacktestDeclaration`;
+  `tail_lib.backtests.kupiec.kupiec_pof`, `Kupiec`, `KupiecResult`.
 - **Configuration:** spec classes, constrained value types, tagged unions,
   and `find_last_window` in `tail_lib.specs` (C28–C32).
-- **Extensions:** `Node`, `Preprocessor`, `Backtest`, `RunInput`,
+- **Extensions:** `Node`, `Backtest`, `RunInput`,
   `Dependencies`, `Setting`, `Settings`, `frozen_floats` in `tail_lib.graph`;
   `MeanModel`, `DecayModel`, `VolatilityModel`, `ValueAtRiskModel` in their
   model modules. `tail_lib.build.BacktestResult` aliases `KupiecResult`.
@@ -44,9 +44,6 @@ without re-exporting model classes.
   `StudentT`; `tail_lib.simulation.MeanProcess`, `ConstantMeanProcess`,
   `ArProcess`, `VolatilityProcess`, `ConstantVolProcess`, `EwmaProcess`,
   `GarchProcess`, `Simulator`, `Simulation`.
-- **Reporting:** `tail_lib.report.report.Report`;
-  `tail_lib.report.data.build_report_data`, `ReportData`, `Metadata`,
-  `NodeData`, `EdgeData`, `KupiecData`, `BacktestData`, `NodeKind`, `Values`.
 
 Underscored helpers, including all `_build_*` functions and `_KupiecTest`,
 are implementation. Their behavior can satisfy a public contract without
@@ -412,7 +409,11 @@ cases. A small seeded statistical smoke set can supplement formula checks.
 
 ## Reports and package compatibility
 
-Sources: `src/tail_lib/report/data.py`, `report/report.py`, `pyproject.toml`.
+Sources: `src/tail_lib/_report/data.py`, `_report/report.py`, `pyproject.toml`.
+
+The report package is internal for now (2026-10-28): `tail_lib._report`,
+undocumented. C45–C48 describe its behavior, but are not public contracts
+until it is exposed again; C49's shipped report HTML still holds.
 Requirements: R7, R11, R19.
 
 - **C45 — Report existing results.** `build_report_data(context,results,

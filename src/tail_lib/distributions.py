@@ -1,10 +1,4 @@
-"""Standardized distributions: zero mean and unit variance.
-
-A return with mean `mu` and volatility `sigma` is `mu + sigma * z`, with `z`
-drawn from one of these. The simulator draws its shocks from them, and
-parametric value-at-risk models read their quantiles: the `q` quantile of the
-return is `mu + sigma * quantile(q)`.
-"""
+"""Standardized distributions: zero mean and unit variance."""
 
 from __future__ import annotations
 
@@ -71,7 +65,7 @@ class Distribution(ABC):
 
 @dataclass(frozen=True)
 class Gaussian(Distribution):
-    """The standard normal distribution. It has no parameters."""
+    """Standard normal distribution."""
 
     def draw(self, rng: np.random.Generator, shape: tuple[int, ...]) -> FloatArray:  # noqa: D102
         return rng.standard_normal(shape)
@@ -86,15 +80,7 @@ class Gaussian(Distribution):
 
 @dataclass(frozen=True)
 class StudentT(Distribution):
-    """The Student-t distribution, scaled to unit variance.
-
-    A Student-t value with `df` degrees of freedom has variance
-    `df / (df - 2)`, so it is multiplied by `sqrt((df - 2) / df)`. The lower
-    `df`, the fatter the tails.
-
-    Reference: Bollerslev, "A conditionally heteroskedastic time series model
-    for speculative prices and rates of return", Review of Economics and
-    Statistics, 1987.
+    """Student-t distribution, scaled to unit variance.
 
     Args:
         df (FloatArray | float): The degrees of freedom, above 2.
@@ -104,8 +90,8 @@ class StudentT(Distribution):
     df: FloatArray | float
 
     def __post_init__(self) -> None:
-        if np.any(np.asarray(self.df) <= 2):  # noqa: PLR2004
-            msg = "Student-t degrees of freedom have to be above 2!"
+        if np.any(np.asarray(self.df) <= 2):
+            msg = "Student-t distribution must have at least dof of 3!"
             raise ValueError(msg)
 
     def draw(self, rng: np.random.Generator, shape: tuple[int, ...]) -> FloatArray:  # noqa: D102

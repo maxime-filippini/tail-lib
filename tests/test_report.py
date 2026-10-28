@@ -4,14 +4,14 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from tail_lib._report.data import ReportData
+from tail_lib._report.report import DATA_PLACEHOLDER
+from tail_lib._report.report import Report
 from tail_lib.backtests.kupiec import Kupiec
 from tail_lib.context import Context
 from tail_lib.models.value_at_risk import GaussianModel
 from tail_lib.models.value_at_risk import ValueAtRiskInput
 from tail_lib.models.volatility import ConstantVolatility
-from tail_lib.report.data import ReportData
-from tail_lib.report.report import DATA_PLACEHOLDER
-from tail_lib.report.report import Report
 from tail_lib.time_series.time_series import TimeSeries
 from tests.helpers import returns_series
 

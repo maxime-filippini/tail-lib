@@ -10,7 +10,7 @@ from typing import assert_never
 
 import numpy as np
 
-from tail_lib._checks import check_positive
+from tail_lib._checks import check_array_positive
 from tail_lib._checks import check_probability
 from tail_lib.distributions import Gaussian
 from tail_lib.graph import Node
@@ -73,7 +73,7 @@ class ValueAtRiskModel(Node[TimeSeries]):
 
 @dataclass(frozen=True)
 class ValueAtRiskInput(RunInput, ValueAtRiskModel):
-    """Value-at-risk forecasts passed in at run time, under a name (R13).
+    """Value-at-risk forecasts passed in at run time, under a name.
 
     The value-at-risk on date `t` is the input's value on date `t`. Like every
     value-at-risk model's, it should be the forecast for date `t + 1`, using
@@ -159,7 +159,7 @@ class FilteredHistoricalSimulationsModel(ValueAtRiskModel):
     It is the forecast for the return of date `t + 1`, using data up to and
     including `t`, like its inputs. The windows start on the first date where
     every series has a standardized return, after the warm-up of the
-    volatility (R16): with an EWMA volatility backcast on 20 dates, the first
+    volatility: with an EWMA volatility backcast on 20 dates, the first
     window of 500 dates holds the standardized returns of dates 20 to 519.
     With a `step` above 1, each value-at-risk is held until the next window
     ends. Dates before the first full window are `NaN`. With a `Last` window,
@@ -275,7 +275,7 @@ class GaussianModel(ValueAtRiskModel):
         """
         returns.check_aligned(vol)
         returns.check_aligned(mean)
-        check_positive("Volatility", vol.values)
+        check_array_positive("Volatility", vol.values)
 
         values = mean.values + vol.values * Gaussian().quantile(1 - self.cf)
         return TimeSeries(dates=returns.dates, values=values)

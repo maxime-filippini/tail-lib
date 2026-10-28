@@ -1,4 +1,4 @@
-"""Specs: models written as data, e.g. parsed from JSON (R9).
+"""Specs: models written as data, e.g. parsed from JSON.
 
 A spec describes a model node or a backtest declaration as data: `build`
 turns model specs into nodes and backtest specs into declarations. Model
@@ -7,7 +7,7 @@ mirrors the declaration's settings. A node input is a nested spec, e.g.
 the volatility model of a Gaussian model.
 
 Specs are frozen and compare by value, so identical specs, even written
-separately, can be built into one shared node (D3).
+separately, can be built into one shared node.
 
 Specs check everything they are given: the field names, the `type` tag
 choosing the spec class in each slot, and the range of each value, e.g. a
@@ -30,7 +30,7 @@ from pydantic import Tag
 from pydantic import field_validator
 from pydantic import model_validator
 
-from tail_lib._checks import check_name
+from tail_lib._checks import check_name_is_identifier
 from tail_lib.models.ewma import DEFAULT_DECAY_BOUNDS
 from tail_lib.models.ewma import DEFAULT_FIT_ITERATIONS
 from tail_lib.models.value_at_risk import InterpolationMethod  # noqa: TC001
@@ -51,7 +51,7 @@ type Count = Annotated[int, Field(ge=1)]
 
 
 def _identifier(name: str) -> str:
-    check_name("A", name)
+    check_name_is_identifier("A", name)
     return name
 
 

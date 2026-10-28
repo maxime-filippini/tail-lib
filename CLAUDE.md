@@ -1,9 +1,11 @@
 # tail-lib
 
-Read `docs/requirements.md` before designing, implementing or reviewing a
+Read `.agent/requirements.md` before designing, implementing or reviewing a
 feature. Cite requirement IDs (R1, D2, ...) in plans and hand-offs.
-`docs/architecture.md` explains how the code is orchestrated, and
-`docs/open-points.md` lists pending work: keep both up to date with each
+In files, refer to requirements only inside the `.agent` documents: never in
+code, docstrings, comments, tests or the library docs (`docs/`).
+`.agent/architecture.md` explains how the code is orchestrated, and
+`.agent/open-points.md` lists pending work: keep both up to date with each
 change.
 Stated requirements record only what the developer said. Anything proposed
 during design goes under Derived until the developer confirms it.

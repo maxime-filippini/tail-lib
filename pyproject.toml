@@ -4,11 +4,7 @@ description = "Risk measure computation library"
 readme = "README.md"
 authors = [{ name = "Maxime Filippini", email = "maxime.filippini@gmail.com" }]
 requires-python = ">=3.12"
-dependencies = [
-    "numpy>=2.2",
-    "pydantic>=2.13",
-    "scipy>=1.18.1",
-]
+dependencies = ["numpy>=2.2", "pydantic>=2.13", "scipy>=1.18.1"]
 dynamic = ["version"]
 
 [build-system]
@@ -24,10 +20,7 @@ dev = [
     "ruff>=0.17.0",
     "ty>=0.0.90",
 ]
-docs = [
-    "mkdocstrings-python>=2.0.10",
-    "zensical>=0.0.72",
-]
+docs = ["mkdocstrings-python>=2.0.10", "zensical>=0.0.72"]
 
 [tool.coverage.run]
 branch = true
@@ -54,6 +47,7 @@ ignore = [
     "D213",
     # Conflicts with the formatter, which handles trailing commas.
     "COM812",
+    "PLR2004",
 ]
 
 [tool.ruff.lint.per-file-ignores]

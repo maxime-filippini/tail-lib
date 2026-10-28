@@ -56,6 +56,23 @@ testing step is to choose the retained coverage using that inventory.
 
 Recorded so later changes don't undo them by accident.
 
+### Report kept internal (R19)
+
+Decided on 2026-10-28, by the developer, for now: the report package is
+renamed `tail_lib._report`, so it is private by the underscore convention,
+and is removed from the docs (its reference page, the index row, the
+"Reports" section of the Python-runs guide) and from the public API list.
+The code, its tests, the report app and the CI page check are kept, on the
+new path. Exposing it again means renaming it back and restoring the docs.
+
+### No `Preprocessor` base (R10, R19)
+
+Removed on 2026-10-28, by the developer's choice. `MeanModel`,
+`VolatilityModel` and `Overshootings` subclass `Node[TimeSeries]` directly.
+The report's `_kind` names the node classes it gives the "preprocessor"
+kind: `MeanModel`, `VolatilityModel`, `DecayModel`, `VolatilityFilter`. A
+custom node of another class still raises `TypeError` there.
+
 ### Backtest declarations (R4, R10, R11)
 
 Agreed on 2026-10-27, replacing the functions of overshootings used during
@@ -69,6 +86,12 @@ the context migration:
   excluded from equality.
   `KupiecSpec` remains its JSON form; the executable `_KupiecTest` is
   internal. The result type and the `kupiec_pof` function are unchanged.
+- `BacktestDeclaration` (`backtests/base.py`, agreed 2026-10-28) is the
+  abstract parent of declarations, e.g. `Kupiec` and later Christoffersen.
+  It holds only `name`, the registration in `__post_init__`, and the
+  abstract `_bind(model) -> Backtest[Any]`; settings such as `window` stay
+  on each subclass. It is not generic over the result type: `BacktestResult`
+  and the report's Kupiec-specific code are still to generalize.
 - `ctx.add_backtest(name, declaration)` records the declaration; the
   construction hook calls it for direct declarations in a block. The
   constructor's `backtests` mapping was removed (2026-10-28): declare in
@@ -876,7 +899,7 @@ in steps 5b and 5c-3 of "Context API". It is kept as decision history.
   everything into one `index.html`.
 - The source lives in `report-app/` at the repo root, with its own
   `package.json`. The built `index.html` is committed as package data under
-  `src/tail_lib/report/`. CI rebuilds it and fails if the committed file
+  `src/tail_lib/_report/`. CI rebuilds it and fails if the committed file
   differs, so pip installs never need Node.
 - The TypeScript types come from `ReportData`'s JSON Schema, so both sides
   are checked against one contract (R11).

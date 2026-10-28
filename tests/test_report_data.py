@@ -3,6 +3,8 @@ import json
 import numpy as np
 import pytest
 
+from tail_lib._report.data import ReportData
+from tail_lib._report.data import build_report_data
 from tail_lib._typing import FloatArrayAtLeast1D
 from tail_lib.backtests.kupiec import Kupiec
 from tail_lib.context import Context
@@ -17,8 +19,6 @@ from tail_lib.models.value_at_risk import ValueAtRiskInput
 from tail_lib.models.volatility import ConstantVolatility
 from tail_lib.models.volatility import EwmaVolatility
 from tail_lib.models.volatility import VolatilityFilter
-from tail_lib.report.data import ReportData
-from tail_lib.report.data import build_report_data
 from tail_lib.time_series.time_series import TimeSeries
 from tail_lib.time_series.windows import Last
 from tail_lib.time_series.windows import Trailing

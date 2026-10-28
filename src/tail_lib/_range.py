@@ -1,4 +1,4 @@
-"""Validation of a run's requested forecast range, before computing (R22)."""
+"""Validation of a run's requested forecast range, before computing."""
 
 from __future__ import annotations
 
@@ -84,7 +84,7 @@ def _check_model_history(
     """Check built-in models' warm-ups before any node computes.
 
     Only the first usable observation is propagated, inputs first. No node
-    spans or calibration schedules depend on the requested range (R23).
+    spans or calibration schedules depend on the requested range.
     Unknown custom nodes inherit their inputs' first usable date; their
     actual forecast coverage is checked after computing.
 

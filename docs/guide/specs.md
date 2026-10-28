@@ -1,7 +1,7 @@
 # Runs from specs
 
-A spec describes a run as data: JSON, or Python dicts (R9). It is the way in
-for a service that receives runs over HTTP (R17), and the form to keep a
+A spec describes a run as data: JSON, or Python dicts. It is the way in
+for a service that receives runs over HTTP, and the form to keep a
 record of what ran. A spec holds no logic: `Context.from_spec` turns it into
 the same nodes you would build [in Python](python-runs.md).
 
@@ -17,10 +17,10 @@ results = ctx.run(returns, inputs={"var_ext": var_ext})
 ```
 
 1. **Parse.** [`RunSpec`][tail_lib.run.RunSpec] checks every field name, type
-   and value range. An error gives the path to the faulty value (R9b).
+   and value range. An error gives the path to the faulty value.
 2. **Build.** `Context.from_spec` builds the nodes inside a context. Equal
    nodes share computation by value, so identical parts of separate models
-   are computed once (D9).
+   are computed once.
 3. **Run.** As for any context: see [results](python-runs.md#results).
 
 ## A run spec
@@ -56,7 +56,7 @@ results = ctx.run(returns, inputs={"var_ext": var_ext})
 :   The models by name: at least one.
 
 `backtests`
-:   The backtests by name, optional. Every backtest runs on every model (R4).
+:   The backtests by name, optional. Every backtest runs on every model.
 
 `labels`
 :   Display names by model or backtest name, optional, e.g.
@@ -186,7 +186,7 @@ walk; the JSON format is unchanged.
 ## Errors
 
 An invalid spec raises a pydantic `ValidationError` that names the faulty
-value and says what was expected (R9b). The path runs through the field
+value and says what was expected. The path runs through the field
 names and the `type` tags:
 
 ```text
@@ -232,7 +232,7 @@ Three more rules are checked on the whole run:
 
 Specs are frozen and compare by value. `Context.from_spec` builds equal
 nodes for identical parts of separately written models, and the context
-computes each once (D9). In the example above, writing the same `filter` in
+computes each once. In the example above, writing the same `filter` in
 two `filtered_historical` models on 500 and 750 dates gives one filter,
 computed once.
 

@@ -1,8 +1,8 @@
 # Report app
 
-The page of tail-lib's run reports (R19): a Svelte + TypeScript app, built
+The page of tail-lib's run reports: a Svelte + TypeScript app, built
 by Vite into one self-contained HTML file,
-`src/tail_lib/report/index.html`, which `Report.save` fills with a run's
+`src/tail_lib/_report/index.html`, which `Report.save` fills with a run's
 data. The built file is committed, so installing tail-lib never needs Node.
 
 ## Working on it
@@ -19,7 +19,7 @@ After a change:
 
 ```sh
 npm run check    # svelte-check: types, with no warnings
-npm run build    # rewrites src/tail_lib/report/index.html: commit it
+npm run build    # rewrites src/tail_lib/_report/index.html: commit it
 ```
 
 CI runs `npm ci`, `npm run check` and `npm run build` (job "Check the
@@ -29,7 +29,7 @@ The Node version is in `.nvmrc`.
 ## The data contract
 
 The page reads one JSON document, `ReportData`
-(`src/tail_lib/report/data.py`), from its data slot,
+(`src/tail_lib/_report/data.py`), from its data slot,
 `<script id="report-data" type="application/json">`. Keep that slot and its
 placeholder in `index.html`: `Report.save` replaces the placeholder.
 

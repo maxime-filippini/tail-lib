@@ -32,16 +32,17 @@ How tail-lib is organized, and how a call flows from a spec to the numbers
 |---|---|
 | `time_series/time_series.py`, `calendar.py` | `TimeSeries`, and the calendar behind its date helpers (R8a). |
 | `time_series/windows.py` | `Trailing` and `Last` window specs, and `Windows`: the windows over a series, `apply` and `to_series` (D5). With `skip_leading_nan=True`, the windows start on the first date where every series has a value (R16). |
-| `graph.py` | `Node`, `Preprocessor`, `Backtest`, `RunInput`: the value-identified nodes and their fields. |
+| `graph.py` | `Node`, `Backtest`, `RunInput`: the value-identified nodes and their fields. |
 | `models/mean.py` | `MeanModel`, `ZeroMean`, `ConstantMean`. |
 | `models/ewma.py` | EWMA start specs (`Backcast`, `StartingVol`), the recursion (`ewma_update`, `ewma_variance`), decay nodes (`ConstantDecay`, `EwmaDecayCalibration`), which output `DecayFactors` (the decay on each date, its refit dates and the first date of each fit), and the decay fit. |
 | `models/garch.py` | The GARCH(1, 1) recursion (`garch_update`), shared by the simulator and a future GARCH volatility model. |
 | `models/volatility.py` | `VolatilityModel`, `VolatilityInput`, `ConstantVolatility`, `EwmaVolatility` (constant or calibrated decay, D7), `VolatilityFilter`. |
 | `models/value_at_risk.py` | `ValueAtRiskModel`, `ValueAtRiskInput`, `HistoricalSimulationsModel` (D2), `FilteredHistoricalSimulationsModel`, `GaussianModel`. |
 | `backtests/overshootings.py` | `overshootings` (function) and `Overshootings` (node). |
+| `backtests/base.py` | `BacktestDeclaration`: the parent of backtest declarations, with their `name` and context registration. |
 | `backtests/kupiec.py` | `kupiec_pof` (function), `KupiecResult`, `Kupiec` (declaration), `_KupiecTest` (internal node). |
-| `report/data.py` | `ReportData`, the JSON contract with the report page, and `build_report_data` (R19). |
-| `report/report.py`, `report/index.html` | `Report`: reads results and saves their data in the report page, package data built from `report-app/` (R19). |
+| `_report/data.py` | `ReportData`, the JSON contract with the report page, and `build_report_data` (R19). |
+| `_report/report.py`, `_report/index.html` | `Report`: reads results and saves their data in the report page, package data built from `report-app/` (R19). |
 | `distributions.py` | `Distribution`, the base class of distributions with zero mean and unit variance, and `Gaussian`, `StudentT`. Each draws values (`draw`) and gives its quantiles (`quantile`): the simulator draws its shocks from them, and `GaussianModel` reads the Gaussian quantile. |
 | `simulation.py` | `Simulator`; the base classes `MeanProcess` (`ConstantMeanProcess`, `ArProcess`) and `VolatilityProcess` (`ConstantVolProcess`, `EwmaProcess`, `GarchProcess`); the output `Simulation` (R18). |
 | `specs.py` | Pydantic specs for model nodes and backtest declarations, with value ranges (R9, R9b). |
@@ -68,7 +69,7 @@ do not require tests (R10, R11).
 ## The node graph (`graph.py`)
 
 Every computation is a `Node[T]`: a preprocessor (a model input such as a
-volatility, a `Preprocessor`), a decay model (a `DecayModel`, giving
+volatility or a mean, a `Node[TimeSeries]`), a decay model (a `DecayModel`, giving
 `DecayFactors`), a volatility filter (a `VolatilityFilter`, giving
 `FilteredReturns`), a VaR model (a `ValueAtRiskModel`), or a backtest (a
 `Backtest`). Nodes are frozen
@@ -165,8 +166,8 @@ results["gauss"], results[vol], results.backtests["gauss"]["kupiec"]
   node can take a backtest's name; an equal node can take its name again.
   Named models are the context's `models`.
 - **Backtest declarations** built inside the block register themselves
-  through `Kupiec.__post_init__`, using the same `current_context` variable
-  as nodes (D10). They need a name inside the block; outside, unnamed
+  through `BacktestDeclaration.__post_init__`, the parent of `Kupiec`,
+  using the same `current_context` variable as nodes (D10). They need a name inside the block; outside, unnamed
   declarations can be reused. Their names are metadata, excluded from
   equality. A declaration registers settings only; executable nodes come
   later, during the graph walk.

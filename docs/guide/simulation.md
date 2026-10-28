@@ -1,7 +1,7 @@
 # Simulation
 
 The [`Simulator`][tail_lib.simulation.Simulator] draws returns from a mean,
-a volatility and shocks (R18). It also returns the true means and
+a volatility and shocks. It also returns the true means and
 volatilities, so you can check how well a model recovers them.
 
 ```python

@@ -2,7 +2,7 @@
   "name": "tail-lib-report-app",
   "private": true,
   "type": "module",
-  "description": "The page of tail-lib's run reports (R19), built into one HTML file.",
+  "description": "The page of tail-lib's run reports, built into one HTML file.",
   "scripts": {
     "dev": "vite",
     "build": "vite build",

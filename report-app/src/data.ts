@@ -1,4 +1,4 @@
-// Reads the report data that `Report.save` wrote into the page (R19).
+// Reads the report data that `Report.save` wrote into the page.
 import type { ReportData } from "./report-data";
 
 /**

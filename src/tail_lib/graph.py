@@ -6,12 +6,12 @@ computes each node at most once: first its inputs, the nodes in its fields,
 then the node's `compute` on their outputs.
 
 Nodes are frozen dataclasses, identified by value: two nodes of the same class
-with equal constructor arguments, their input nodes included, are one node
-(D9). A node's fields holding nodes are its dependencies, the others its
+with equal constructor arguments, their input nodes included, are one node.
+A node's fields holding nodes are its dependencies, the others its
 settings.
 
 Data from outside a run, e.g. value-at-risk forecasts computed earlier, enters
-it as named inputs (R13): the caller passes them to the context by name, and
+it as named inputs: the caller passes them to the context by name, and
 it gives each input node (a `RunInput`) the input of its name as its output,
 without computing it.
 """
@@ -31,7 +31,7 @@ from typing import Any
 
 import numpy as np
 
-from tail_lib._checks import check_name
+from tail_lib._checks import check_name_is_identifier
 from tail_lib.time_series.time_series import TimeSeries
 
 if TYPE_CHECKING:
@@ -46,9 +46,9 @@ if TYPE_CHECKING:
 
 
 # The context of the innermost open `with Context():` block, which nodes built
-# in it bind to (D10), see `tail_lib.context`. A `ContextVar`, not a global:
+# in it bind to, see `tail_lib.context`. A `ContextVar`, not a global:
 # each thread and asyncio task sees its own, so concurrent requests in a
-# service (R17) never mix their nodes. It lives here, not in `context.py`,
+# service never mix their nodes. It lives here, not in `context.py`,
 # because `Node` reads it and `context.py` imports `Node`.
 current_context: ContextVar[Context | None] = ContextVar(
     "tail_lib_context", default=None
@@ -60,16 +60,16 @@ class Node[T](ABC):
     """A computation on a returns time series, with an output of type `T`.
 
     Subclasses are frozen dataclasses, so a node is identified by value: its
-    class and its fields, which are its constructor arguments (D9). A field
+    class and its fields, which are its constructor arguments. A field
     excluded from comparison (`compare=False`) is not part of it, e.g. the
     node's `name`.
 
     The fields holding nodes are the node's `dependencies`, so a graph of
     nodes can be walked without computing it. The other constructor
     arguments that are part of its identity are its `settings`, so the graph
-    can be described, e.g. in a report (R19). Both are read from the fields.
+    can be described, e.g. in a report. Both are read from the fields.
 
-    Any node can be given a `name`, a Python identifier (R20), to be found
+    Any node can be given a `name`, a Python identifier, to be found
     by it, e.g. a value-at-risk model in a context. The name is not part of
     the node's identity: two equal nodes with different names are one node,
     computed once. A run input's name is the input it reads, and is part of
@@ -83,12 +83,12 @@ class Node[T](ABC):
     computes the dependencies first, then calls `compute` with their outputs.
 
     Building a node checks that `compute` takes exactly its dependencies, by
-    name (D11), so a mismatch fails where the model is declared, not
+    name, so a mismatch fails where the model is declared, not
     mid-run. Subclasses with a `__post_init__` call `super().__post_init__()`
     for this. Run inputs (`RunInput`) are read from the run, never computed.
 
     A node built inside a `with Context():` block binds to that context, once
-    its checks pass (D10). One built outside any context belongs to none, and
+    its checks pass. One built outside any context belongs to none, and
     can still be the input of a node in any context.
 
     Attributes:
@@ -101,7 +101,7 @@ class Node[T](ABC):
 
     def __post_init__(self) -> None:
         if self.name is not None:
-            check_name("Node", self.name)
+            check_name_is_identifier("Node", self.name)
         self._check_compute()
         context = current_context.get()
         if context is not None:
@@ -245,7 +245,7 @@ type Settings = Mapping[str, Setting]
 def frozen_floats(values: FloatArray | Floats | float) -> Floats | float:
     """Store values given to a node in a form that can be hashed.
 
-    Arrays can't be hashed, so a node identified by value (D9) stores them as
+    Arrays can't be hashed, so a node identified by value stores them as
     nested tuples, one level per axis, which compare equal when the values
     are. A single value stays a float. `np.asarray` gives the array back.
 
@@ -270,10 +270,6 @@ def _nested_tuples(values: list[Any]) -> Floats:
     )
 
 
-class Preprocessor(Node[TimeSeries]):
-    """A node turning the returns into a model input, as a time series."""
-
-
 class Backtest[T](Node[T]):
     """A node testing a value-at-risk model, e.g. on its overshootings.
 
@@ -284,7 +280,7 @@ class Backtest[T](Node[T]):
 
 @dataclass(frozen=True)
 class RunInput(Node[TimeSeries]):
-    """A node whose output is given to the run, by name, not computed (R13).
+    """A node whose output is given to the run, by name, not computed.
 
     E.g. volatilities or value-at-risk forecasts computed outside the library.
     The context gives it the run input of its name as its output, and never
@@ -311,7 +307,7 @@ class RunInput(Node[TimeSeries]):
     name: str = field()
 
     def __post_init__(self) -> None:
-        check_name("Input", self.name)
+        check_name_is_identifier("Input", self.name)
         super().__post_init__()
 
     # Every `compute` takes the returns first, even when it doesn't use them.

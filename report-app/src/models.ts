@@ -1,4 +1,4 @@
-// The models of a report, with what the tabs need to chart them (R19).
+// The models of a report, with what the tabs need to chart them.
 import type { ReportData } from "./report-data";
 
 export interface ModelEntry {

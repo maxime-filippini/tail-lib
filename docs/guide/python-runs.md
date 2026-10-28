@@ -1,7 +1,7 @@
 # Runs in Python
 
 In notebooks and scripts, build models as Python objects (nodes) inside a
-[`Context`][tail_lib.context.Context] (R17). A context collects the models
+[`Context`][tail_lib.context.Context]. A context collects the models
 built in its `with` block, runs every backtest you give it on each of them,
 and computes them on any returns series.
 
@@ -67,7 +67,7 @@ volatility shared by several contexts.
 
 ## Backtests
 
-Every registered backtest runs on every model (R4). Declare the test's
+Every registered backtest runs on every model. Declare the test's
 settings and its name inside the context block:
 
 ```python
@@ -99,7 +99,7 @@ builds the graph, the context binds each declaration to every VaR model,
 including models added after registration. The internal executable nodes
 read each model's overshootings and confidence level. Their shared
 [`Overshootings`][tail_lib.backtests.overshootings.Overshootings] node is
-computed once (D9).
+computed once.
 
 A backtest name must be a Python identifier, and cannot belong to a named
 node or an already registered backtest. Registering the same declaration
@@ -127,7 +127,7 @@ ctx.labels  # every model and backtest, by name; unlabelled names as they are
 
 Each execution starts at the first date where every portfolio has a return.
 An earlier-starting portfolio loses its earlier observations when grouped
-with a later-starting one, so all portfolios use the same history (R21).
+with a later-starting one, so all portfolios use the same history.
 To use different histories, put the portfolios in separate runs.
 
 Pass external inputs on the original dates and with the original shape of
@@ -158,7 +158,7 @@ An interval containing no observations is an error.
 
 All nodes compute on the full trimmed history. Calibrations keep their
 original refit dates, so changing the range does not change overlapping
-VaRs. Every output keeps the dates and shape of `results.returns` (R24).
+VaRs. Every output keeps the dates and shape of `results.returns`.
 VaR values outside the selected range are `NaN`; historical preprocessors
 remain available through `results[node]`. Reading a model through
 `results.models`, its name or its node gives the same masked series.
@@ -223,11 +223,11 @@ results[vol]  # the EWMA volatility, computed once for three models
 
 ## Run inputs
 
-To bring in data computed elsewhere, use an input node (R13):
+To bring in data computed elsewhere, use an input node:
 
 - [`ValueAtRiskInput(name, cf=...)`][tail_lib.models.value_at_risk.ValueAtRiskInput]:
   VaR forecasts, e.g. to backtest another system's VaR next to the library's
-  models (R3). It is a model, named after its input;
+  models. It is a model, named after its input;
 - [`VolatilityInput(name)`][tail_lib.models.volatility.VolatilityInput]:
   volatilities, e.g. from a data service, read by a Gaussian model or a
   filter.
@@ -323,38 +323,6 @@ for edge in graph.edges:
 
 Nodes no model reaches have paths from `nodes`: `nodes.<name>`, or
 `nodes.<class>` without a name.
-
-## Reports
-
-A [`Report`][tail_lib.report.report.Report] shows the results of a run as
-one HTML file that opens offline (R19). It reads the results without
-computing anything again. Its tabs:
-
-- **Graph:** every node of the context once, with its settings; click a box
-  to chart its output.
-- **Returns vs VaR:** the returns against each model's VaR, on the date it
-  forecasts, with the overshootings marked.
-- **Backtests:** every backtest of every model, coloured by rejection at a
-  level you set.
-- **Rolling backtests:** the observed rate and p-value of rolling backtests
-  over time.
-- **Node outputs:** the output of any node, e.g. a volatility.
-
-```python
-from tail_lib.report.report import Report
-
-results = ctx.run(returns, inputs)
-report = Report(ctx, results, title="Daily VaR", series_labels=["SPX", "SX5E"])
-report.save("report.html")
-report.data  # the ReportData shown, e.g. report.data.model_dump_json()
-```
-
-The report header shows the selected **Forecast range** separately from
-the **Available history** in `results.returns`. With no execution bounds,
-it labels the forecast range **Full history**; individual models may still
-have warm-up `NaN`s. Bounds are saved as ISO dates in
-`report.data.metadata.lower` and `.upper`, so the report reads the dates
-from that execution without computing anything again.
 
 ## Runs built in Python vs from specs
 

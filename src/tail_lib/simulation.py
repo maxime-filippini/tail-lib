@@ -28,7 +28,7 @@ returns. The recursions are the ones the volatility models use
 (`ewma_update`, `garch_update`), so a model given the same parameters filters
 the simulated returns back to the simulated volatilities.
 
-Arrays follow the library's layout (R8): time on the first axis, then the
+Arrays follow the library's layout: time on the first axis, then the
 batch shape, e.g. one axis of paths. Every parameter is a single value or an
 array broadcastable to the batch shape, e.g. one decay per series.
 """
@@ -42,8 +42,8 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
+from tail_lib._checks import check_array_positive
 from tail_lib._checks import check_broadcasts
-from tail_lib._checks import check_positive
 from tail_lib._checks import check_unit_interval
 from tail_lib.calendar import Calendar
 from tail_lib.distributions import Distribution
@@ -293,7 +293,7 @@ class ConstantVolProcess(VolatilityProcess):
     vol: FloatArray | float
 
     def __post_init__(self) -> None:
-        check_positive("Volatility", self.vol)
+        check_array_positive("Volatility", self.vol)
 
     def start(self, batch_shape: tuple[int, ...]) -> FloatArray:
         """Give the volatility, broadcast to the batch shape."""
@@ -338,7 +338,7 @@ class EwmaProcess(VolatilityProcess):
 
     def __post_init__(self) -> None:
         check_unit_interval("Decay factor", self.decay)
-        check_positive("Starting volatility", self.start_vol)
+        check_array_positive("Starting volatility", self.start_vol)
 
     def start(self, batch_shape: tuple[int, ...]) -> FloatArray:
         """Give the variance of the first date, `start_vol ** 2`."""
@@ -397,7 +397,7 @@ class GarchProcess(VolatilityProcess):
         if np.any(alpha + beta >= 1):
             msg = "GARCH alpha + beta has to be below 1, for a long-run variance!"
             raise ValueError(msg)
-        check_positive("GARCH omega", self.omega)
+        check_array_positive("GARCH omega", self.omega)
 
     @classmethod
     def from_long_run_variance(
@@ -430,7 +430,7 @@ class GarchProcess(VolatilityProcess):
             ValueError: If a parameter is outside its bounds.
 
         """
-        check_positive("GARCH long-run variance", long_run_variance)
+        check_array_positive("GARCH long-run variance", long_run_variance)
         omega = np.asarray(long_run_variance) * (1 - np.asarray(alpha) - beta)
         return cls(omega=omega, alpha=alpha, beta=beta)
 
@@ -463,8 +463,8 @@ class GarchProcess(VolatilityProcess):
 class Simulation:
     """Simulated returns, with their true means and volatilities.
 
-    The means and volatilities follow the timing of the library's models
-    (D1): the value on date `t` is the forecast for date `t + 1`, i.e.
+    The means and volatilities follow the timing of the library's models:
+    the value on date `t` is the forecast for date `t + 1`, i.e.
     `mu[t + 1]` and `sigma[t + 1]`, known from the returns up to `t`. So they
     compare directly with a model's output on the same returns.
     """
@@ -568,7 +568,7 @@ class Simulator:
             returns[t] = self._mean.value(mean_state) + eps
             mean_state = self._mean.update(mean_state, returns[t])
             vol_state = self._vol.update(vol_state, eps)
-            # The forecasts for `t + 1`, stored on `t` (D1).
+            # The forecasts for `t + 1`, stored on `t`.
             means[t] = self._mean.value(mean_state)
             vols[t] = self._vol.value(vol_state)
 

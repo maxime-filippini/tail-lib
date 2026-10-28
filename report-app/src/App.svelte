@@ -8,7 +8,7 @@
 
   let { data }: { data: ReportData | null } = $props();
 
-  // The tabs agreed for R19.
+  // The tabs of the report.
   const tabs = [
     "Graph",
     "Returns vs VaR",

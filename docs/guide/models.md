@@ -142,7 +142,7 @@ with \(\Phi^{-1}\) the standard normal quantile.
 forecasts computed elsewhere, passed to the run under `name`
 ([run inputs](python-runs.md#run-inputs)). Its `cf` is the level the
 forecasts were computed at, which backtests read. Use it to backtest another
-system's VaR next to the library's models (R3).
+system's VaR next to the library's models.
 
 === "Python"
 
@@ -211,7 +211,7 @@ With a constant decay, the recursion runs once, over the whole series.
 With a decay calibrated on trailing training windows
 ([`EwmaDecayCalibration`](#calibrated-decay)), the recursion is re-run over
 each training window with the new decay, from `start`, then continued with
-that decay until the next calibration (D7). This is how `rugarch` and `arch`
+that decay until the next calibration. This is how `rugarch` and `arch`
 forecast after a refit. The first volatility is on the last date of the
 first training window.
 

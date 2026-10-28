@@ -1,10 +1,10 @@
-"""The data of a run report: one JSON document, the contract with the page (R19).
+"""The data of a run report: one JSON document, the contract with the page.
 
 `ReportData` holds everything the report page shows: the returns, the run's
 graph, the output of every time-series node, and the backtest results. Its
 JSON Schema is also the source of the page's TypeScript types, so both sides
-are checked against one contract (R11). The data service could serve it as
-it is (R17).
+are checked against one contract. The data service could serve it as
+it is.
 
 Conventions in the data:
 
@@ -14,7 +14,7 @@ Conventions in the data:
   series, in C order, each with a label. Every series of values is a list
   over the series, then over the dates (or the windows of a backtest).
 - `NaN` becomes `null`, and dates are ISO strings, e.g. `2024-01-31`.
-- Settings that are not numbers or text are written as in the specs (R9),
+- Settings that are not numbers or text are written as in the specs,
   e.g. `{"type": "trailing", "length": 250, "step": 1}`.
 """
 
@@ -36,14 +36,15 @@ from tail_lib.backtests.kupiec import _KupiecTest
 from tail_lib.backtests.overshootings import Overshootings
 from tail_lib.context import _input_name
 from tail_lib.graph import Backtest
-from tail_lib.graph import Preprocessor
 from tail_lib.models.ewma import Backcast
 from tail_lib.models.ewma import DecayFactors
 from tail_lib.models.ewma import DecayModel
 from tail_lib.models.ewma import StartingVol
+from tail_lib.models.mean import MeanModel
 from tail_lib.models.value_at_risk import ValueAtRiskModel
 from tail_lib.models.volatility import FilteredReturns
 from tail_lib.models.volatility import VolatilityFilter
+from tail_lib.models.volatility import VolatilityModel
 from tail_lib.time_series.time_series import TimeSeries
 from tail_lib.time_series.windows import Last
 from tail_lib.time_series.windows import Trailing
@@ -209,7 +210,7 @@ def build_report_data(
     """Gather the data of a report from a context and the results of its run.
 
     Nothing is computed: every node of the context's graph is read from the
-    results, so a run computed once can be reported (R19).
+    results, so a run computed once can be reported.
 
     Args:
         context (Context): The context.
@@ -333,7 +334,7 @@ def _kind(node: Node[Any]) -> NodeKind:
             return "overshootings"
         case ValueAtRiskModel():
             return "model"
-        case Preprocessor() | DecayModel() | VolatilityFilter():
+        case MeanModel() | VolatilityModel() | DecayModel() | VolatilityFilter():
             return "preprocessor"
         case Backtest():
             return "backtest"
