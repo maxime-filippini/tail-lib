@@ -60,6 +60,11 @@ docstrings by mkdocstrings (`::: tail_lib.module` lines). The developer docs
 change to the public API, a spec field or a default also updates the guide:
 `docs/guide/specs.md` has a table of every spec.
 
+[Public contracts and core test coverage](public-contracts.md) inventories
+the implemented interface and maps its guarantees to test owners. It is the
+reference for the proposed test-suite pruning; implementation details alone
+do not require tests (R10, R11).
+
 ## The node graph (`graph.py`)
 
 Every computation is a `Node[T]`: a preprocessor (a model input such as a

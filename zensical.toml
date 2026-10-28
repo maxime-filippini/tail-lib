@@ -41,6 +41,7 @@ nav = [
   { "Development" = [
     "requirements.md",
     "architecture.md",
+    "public-contracts.md",
     "open-points.md",
   ] },
 ]

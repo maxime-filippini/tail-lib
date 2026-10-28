@@ -18,6 +18,12 @@ existing import-order lint error; it is left untouched.
 
 ## Next up
 
+The developer requested an inventory before pruning the test suite
+(2026-10-27). [Public contracts and core test coverage](public-contracts.md)
+lists the implemented contracts, suggested test owners, overlap candidates
+and validation mismatches (R10, R11). No tests have been removed. The next
+testing step is to choose the retained coverage using that inventory.
+
 1. **Context API**, plan agreed with the developer on 2026-10-26, see
    "Context API" under "Design questions". All steps are committed,
    including `Context.from_spec`, the `var` rename and the final removal
