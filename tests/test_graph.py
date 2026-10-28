@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 
 from tail_lib.context import Context
-from tail_lib.graph import Preprocessor
+from tail_lib.graph import Node
 from tail_lib.models.ewma import DecayFactors
 from tail_lib.models.ewma import EwmaDecayCalibration
 from tail_lib.models.value_at_risk import GaussianModel
@@ -127,7 +127,7 @@ def test_context_shares_decay_calibration_across_models() -> None:
 
 
 @dataclass(frozen=True)
-class _Scaled(Preprocessor):
+class _Scaled(Node[TimeSeries]):
     """Scales its input's output: `compute` must take `vol`, its one input."""
 
     vol: VolatilityModel
@@ -149,7 +149,7 @@ def test_compute_gets_the_output_of_each_input_by_field_name() -> None:
 
 
 @dataclass(frozen=True)
-class _MisnamedInput(Preprocessor):
+class _MisnamedInput(Node[TimeSeries]):
     volatility: VolatilityModel
 
     def compute(self, returns: TimeSeries, /, *, vol: TimeSeries) -> TimeSeries:  # noqa: ARG002
@@ -157,7 +157,7 @@ class _MisnamedInput(Preprocessor):
 
 
 @dataclass(frozen=True)
-class _ExtraKeyword(Preprocessor):
+class _ExtraKeyword(Node[TimeSeries]):
     vol: VolatilityModel
 
     def compute(
@@ -172,7 +172,7 @@ class _ExtraKeyword(Preprocessor):
 
 
 @dataclass(frozen=True)
-class _AnyKeywords(Preprocessor):
+class _AnyKeywords(Node[TimeSeries]):
     vol: VolatilityModel
 
     def compute(self, returns: TimeSeries, /, **inputs: TimeSeries) -> TimeSeries:  # noqa: ARG002
@@ -180,7 +180,7 @@ class _AnyKeywords(Preprocessor):
 
 
 @dataclass(frozen=True)
-class _NoReturns(Preprocessor):
+class _NoReturns(Node[TimeSeries]):
     vol: VolatilityModel
 
     def compute(self, *, vol: TimeSeries) -> TimeSeries:
@@ -197,7 +197,7 @@ class _NoReturns(Preprocessor):
     ],
 )
 def test_a_compute_not_matching_the_inputs_fails_when_the_node_is_built(
-    node_type: Callable[[VolatilityModel], Preprocessor], match: str
+    node_type: Callable[[VolatilityModel], Node[TimeSeries]], match: str
 ) -> None:
     with pytest.raises(TypeError, match=match):
         node_type(ConstantVolatility(0.01))

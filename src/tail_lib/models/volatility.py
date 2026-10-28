@@ -9,7 +9,6 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from tail_lib.graph import Node
-from tail_lib.graph import Preprocessor
 from tail_lib.graph import RunInput
 from tail_lib.graph import frozen_floats
 from tail_lib.models.ewma import DEFAULT_EWMA_START
@@ -27,7 +26,7 @@ if TYPE_CHECKING:
     from tail_lib._typing import Floats
 
 
-class VolatilityModel(Preprocessor):
+class VolatilityModel(Node[TimeSeries]):
     """A model of the volatility of the returns, as of each date.
 
     The volatility on date `t` is the forecast of the volatility of the return

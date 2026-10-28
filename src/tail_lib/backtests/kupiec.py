@@ -188,7 +188,6 @@ class _KupiecTest(Backtest[KupiecResult]):
         object.__setattr__(self, "cf_var", self.overshootings.cf_var)
         super().__post_init__()
 
-    # Every `compute` takes the returns first, even when it doesn't use them.
     def compute(
         self,
         returns: TimeSeries,  # noqa: ARG002

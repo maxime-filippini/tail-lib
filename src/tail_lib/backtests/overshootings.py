@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from tail_lib.graph import Preprocessor
+from tail_lib.graph import Node
 from tail_lib.time_series.time_series import TimeSeries
 
 if TYPE_CHECKING:
@@ -48,8 +48,8 @@ def overshootings(var: TimeSeries, returns: TimeSeries) -> TimeSeries:
 
 
 @dataclass(frozen=True)
-class Overshootings(Preprocessor):
-    """The overshootings of a value-at-risk model, as a node.
+class Overshootings(Node[TimeSeries]):
+    """The overshootings of a Value-at-risk model, as a node.
 
     Computes the model's value-at-risk, then flags its overshootings with
     `overshootings`. Backtests take this node rather than the model. The

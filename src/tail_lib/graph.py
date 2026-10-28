@@ -270,10 +270,6 @@ def _nested_tuples(values: list[Any]) -> Floats:
     )
 
 
-class Preprocessor(Node[TimeSeries]):
-    """A node turning the returns into a model input, as a time series."""
-
-
 class Backtest[T](Node[T]):
     """A node testing a value-at-risk model, e.g. on its overshootings.
 

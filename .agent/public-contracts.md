@@ -36,7 +36,7 @@ without re-exporting model classes.
   `tail_lib.backtests.kupiec.kupiec_pof`, `Kupiec`, `KupiecResult`.
 - **Configuration:** spec classes, constrained value types, tagged unions,
   and `find_last_window` in `tail_lib.specs` (C28–C32).
-- **Extensions:** `Node`, `Preprocessor`, `Backtest`, `RunInput`,
+- **Extensions:** `Node`, `Backtest`, `RunInput`,
   `Dependencies`, `Setting`, `Settings`, `frozen_floats` in `tail_lib.graph`;
   `MeanModel`, `DecayModel`, `VolatilityModel`, `ValueAtRiskModel` in their
   model modules. `tail_lib.build.BacktestResult` aliases `KupiecResult`.

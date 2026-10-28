@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from tail_lib.graph import Preprocessor
+from tail_lib.graph import Node
 from tail_lib.graph import frozen_floats
 from tail_lib.time_series.time_series import TimeSeries
 
@@ -16,7 +16,7 @@ if TYPE_CHECKING:
     from tail_lib._typing import Floats
 
 
-class MeanModel(Preprocessor):
+class MeanModel(Node[TimeSeries]):
     """A model of the mean of the returns, as of each date.
 
     The mean on date `t` is the forecast of the mean of the return of date

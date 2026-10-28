@@ -36,14 +36,15 @@ from tail_lib.backtests.kupiec import _KupiecTest
 from tail_lib.backtests.overshootings import Overshootings
 from tail_lib.context import _input_name
 from tail_lib.graph import Backtest
-from tail_lib.graph import Preprocessor
 from tail_lib.models.ewma import Backcast
 from tail_lib.models.ewma import DecayFactors
 from tail_lib.models.ewma import DecayModel
 from tail_lib.models.ewma import StartingVol
+from tail_lib.models.mean import MeanModel
 from tail_lib.models.value_at_risk import ValueAtRiskModel
 from tail_lib.models.volatility import FilteredReturns
 from tail_lib.models.volatility import VolatilityFilter
+from tail_lib.models.volatility import VolatilityModel
 from tail_lib.time_series.time_series import TimeSeries
 from tail_lib.time_series.windows import Last
 from tail_lib.time_series.windows import Trailing
@@ -333,7 +334,7 @@ def _kind(node: Node[Any]) -> NodeKind:
             return "overshootings"
         case ValueAtRiskModel():
             return "model"
-        case Preprocessor() | DecayModel() | VolatilityFilter():
+        case MeanModel() | VolatilityModel() | DecayModel() | VolatilityFilter():
             return "preprocessor"
         case Backtest():
             return "backtest"

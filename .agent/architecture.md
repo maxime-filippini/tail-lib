@@ -32,7 +32,7 @@ How tail-lib is organized, and how a call flows from a spec to the numbers
 |---|---|
 | `time_series/time_series.py`, `calendar.py` | `TimeSeries`, and the calendar behind its date helpers (R8a). |
 | `time_series/windows.py` | `Trailing` and `Last` window specs, and `Windows`: the windows over a series, `apply` and `to_series` (D5). With `skip_leading_nan=True`, the windows start on the first date where every series has a value (R16). |
-| `graph.py` | `Node`, `Preprocessor`, `Backtest`, `RunInput`: the value-identified nodes and their fields. |
+| `graph.py` | `Node`, `Backtest`, `RunInput`: the value-identified nodes and their fields. |
 | `models/mean.py` | `MeanModel`, `ZeroMean`, `ConstantMean`. |
 | `models/ewma.py` | EWMA start specs (`Backcast`, `StartingVol`), the recursion (`ewma_update`, `ewma_variance`), decay nodes (`ConstantDecay`, `EwmaDecayCalibration`), which output `DecayFactors` (the decay on each date, its refit dates and the first date of each fit), and the decay fit. |
 | `models/garch.py` | The GARCH(1, 1) recursion (`garch_update`), shared by the simulator and a future GARCH volatility model. |
@@ -69,7 +69,7 @@ do not require tests (R10, R11).
 ## The node graph (`graph.py`)
 
 Every computation is a `Node[T]`: a preprocessor (a model input such as a
-volatility, a `Preprocessor`), a decay model (a `DecayModel`, giving
+volatility or a mean, a `Node[TimeSeries]`), a decay model (a `DecayModel`, giving
 `DecayFactors`), a volatility filter (a `VolatilityFilter`, giving
 `FilteredReturns`), a VaR model (a `ValueAtRiskModel`), or a backtest (a
 `Backtest`). Nodes are frozen

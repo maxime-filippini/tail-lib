@@ -56,6 +56,14 @@ testing step is to choose the retained coverage using that inventory.
 
 Recorded so later changes don't undo them by accident.
 
+### No `Preprocessor` base (R10, R19)
+
+Removed on 2026-10-28, by the developer's choice. `MeanModel`,
+`VolatilityModel` and `Overshootings` subclass `Node[TimeSeries]` directly.
+The report's `_kind` names the node classes it gives the "preprocessor"
+kind: `MeanModel`, `VolatilityModel`, `DecayModel`, `VolatilityFilter`. A
+custom node of another class still raises `TypeError` there.
+
 ### Backtest declarations (R4, R10, R11)
 
 Agreed on 2026-10-27, replacing the functions of overshootings used during
