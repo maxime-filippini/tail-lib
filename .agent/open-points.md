@@ -69,6 +69,12 @@ the context migration:
   excluded from equality.
   `KupiecSpec` remains its JSON form; the executable `_KupiecTest` is
   internal. The result type and the `kupiec_pof` function are unchanged.
+- `BacktestDeclaration` (`backtests/base.py`, agreed 2026-10-28) is the
+  abstract parent of declarations, e.g. `Kupiec` and later Christoffersen.
+  It holds only `name`, the registration in `__post_init__`, and the
+  abstract `_bind(model) -> Backtest[Any]`; settings such as `window` stay
+  on each subclass. It is not generic over the result type: `BacktestResult`
+  and the report's Kupiec-specific code are still to generalize.
 - `ctx.add_backtest(name, declaration)` records the declaration; the
   construction hook calls it for direct declarations in a block. The
   constructor's `backtests` mapping was removed (2026-10-28): declare in

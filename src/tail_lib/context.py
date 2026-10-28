@@ -1,24 +1,42 @@
-"""Contexts: nodes declared in Python or built from specs, run on any returns.
+"""Model-building contexts.
 
-Nodes built inside `with Context() as ctx:` bind to it (D10). Its
-value-at-risk models are named, and every backtest given to the
-context runs on every one of them (R4). `ctx.graph()` walks the graph without
-computing; `ctx.run(returns, inputs)` computes every node once, and returns
-`Results`.
+`tail-lib` is built around the idea of running multiple models and backtests in
+a single run. To do so, models and their components are built into a graph,
+which is wired automatically as long as these components are written in a
+given `Context`.
 
-`Context.from_spec(spec)` builds the same kind of context from a `RunSpec`,
-with the spec's model keys as node names (R9, R17).
+Let us consider the following code:
 
-    with Context() as ctx:
-        Kupiec(name="kupiec")
-        vol = EwmaVolatility(ConstantDecay(0.94))
-        GaussianModel(cf=0.99, vol=vol, name="gauss")
-        HistoricalSimulationsModel(cf=0.99, window=Trailing(250), name="hs")
+```python
+with Context() as ctx:
+    df = ConstantDecay(0.94)
+    vol = EwmaVolatility(df)
+    gauss = GaussianModel(cf=0.99, vol=vol, name="gauss")
+    hs = HistoricalSimulationsModel(cf=0.99, window=Trailing(250), name="hs")
+    kupiec_250 = Kupiec(window=Trailing(250))
+```
 
-    results = ctx.run(returns)
-    results["gauss"]                     # the VaR of the Gaussian model
-    results[vol]                         # the EWMA volatility
-    results.backtests["gauss"]["kupiec"] # its Kupiec test
+This context would turn into a graph like the one below. (The overshooting
+nodes are constructed automatically to feed into the )
+
+```mermaid
+flowchart TD
+    df["ConstantDecay(0.94)"]
+    vol["EwmaVolatility(df=...)"]
+    gauss["GaussianModel(cf=0.99, vol=..., name='gauss')"]
+    hs["HistoricalSimulationsModel(cf=0.99, window=Trailing(250), name='hs')"]
+    os1{{"Overshootings(var=...)"}}
+    os2{{"Overshootings(var=...)"}}
+    kupiec_250["Kupiec(window=Trailing(250))"]
+
+    df --> vol --> gauss --> os1 --> kupiec_250
+    hs --> os2 --> kupiec_250
+```
+
+When running the context (via `ctx.run`), all these nodes get evaluated, and
+the VaR model results will be available, along with the specified backtesting
+results.
+
 """
 
 from __future__ import annotations
@@ -36,7 +54,7 @@ import numpy as np
 from tail_lib._checks import check_name_is_identifier
 from tail_lib._range import _check_model_history
 from tail_lib._range import _range_slice
-from tail_lib.backtests.kupiec import Kupiec
+from tail_lib.backtests.base import BacktestDeclaration
 from tail_lib.backtests.overshootings import Overshootings
 from tail_lib.build import _build_backtest
 from tail_lib.build import _build_var_model
@@ -76,18 +94,17 @@ class GraphNode:
         paths (tuple[str, ...]): Its paths from the run, e.g.
             `models.gauss.vol`, or `backtests.gauss.kupiec.overshootings`
             for a model's overshootings. A node shared by several readers has
-            several (D3).
+            several.
 
     """
 
-    # The nodes of a graph have different output types: `Any` stands for each.
     node: Node[Any]
     paths: tuple[str, ...]
 
 
 @dataclass(frozen=True)
 class GraphEdge:
-    """An edge of a run's graph: a node reading another one.
+    """An edge of a run's graph.
 
     Attributes:
         source (Node[Any]): The node read, a dependency of `target`.
@@ -119,32 +136,29 @@ class RunGraph:
 
 
 class Context:
-    """The nodes declared in a `with Context():` block, and how to compute them.
+    """A model-building context.
 
-    A node built inside the block binds to the context: the innermost open
-    one of its thread or asyncio task (D10). A node built outside any context
-    belongs to none, and can still be the input of a node in any context.
-    Nodes are identified by value (D9), so a node built twice is one node,
-    computed once.
+    In general, we want computation nodes to be bound to a given
+    context. However, nodes can be declared outside of a context if they are
+    meant to be re-used across multiple contexts. In such a case, when the
+    context is run, the node is brought into the graph, even though it was not
+    bound at the declaration stage.
 
-    Every value-at-risk model built in the block needs a `name`, a Python
-    identifier (R20): building one without a name raises `ValueError` there.
-    Names are unique in a context: two different nodes can't share one, and
-    no node can take a backtest's name. Equal models under two names are one
-    node, given under both.
+    Nodes are identified by value, not by key. This allows users to define
+    nodes in an anonymous way such as:
 
-    Every backtest runs on every model (R4). Each model gets one
-    `Overshootings` node, shared by all its backtests. A context with
-    backtests rejects a model with a `last` window, which gives one forecast,
-    for a date after the data.
+    ```python
+    with Context() as ctx:
+        vol = EwmaVolatility(decay=ConstantDecay(0.94))
+        #                          ^^^^^^^^^^^^^^^^^^^
+        #                          Graph node
 
-    A context without models computes its other nodes, e.g. a volatility on
-    its own.
+        print(id(vol.decay)) # 4473043728
 
-    Each run trims its returns at the first date where every portfolio has
-    a value (R21). All nodes, including calibrations, start from that common
-    history. Run inputs are checked against the original returns and trimmed
-    by the same amount. The context and the caller's arrays are unchanged.
+        vol_2 = EwmaVolatility(decay=ConstantDecay(0.94))
+        print(id(vol.decay)) # 4473043728 - The same node.
+    ```
+
     """
 
     def __init__(
@@ -156,14 +170,14 @@ class Context:
 
         Args:
             id_ (str | None): The id of the context. Defaults to a random
-                UUID.
+                UUID (v4).
             labels (Mapping[str, str] | None): Display names, by model or
                 backtest name, e.g. `{"gauss": "Gaussian 99%"}`, e.g. for a
-                report (R20). Names without one are shown as they are.
+                report. Names without one are shown as they are.
 
         """
         self._id: str = id_ or str(uuid4())
-        self._backtests: dict[str, Kupiec] = {}
+        self._backtests: dict[str, BacktestDeclaration] = {}
         self._labels = {} if labels is None else dict(labels)
         # Every distinct node bound, by value, in the order first bound.
         self._nodes: dict[Node[Any], None] = {}
@@ -174,8 +188,8 @@ class Context:
         # context outside it on exit. A list, so blocks can nest.
         self._tokens: list[Token[Context | None]] = []
 
-    def add_backtest(self, name: str, backtest: Kupiec) -> None:
-        """Register a declaration to test every model of this context (R4).
+    def add_backtest(self, name: str, backtest: BacktestDeclaration) -> None:
+        """Register a declaration to test every model of this context.
 
         Registration computes nothing and records no executable nodes.
         `graph()` binds the declaration to each model, including models
@@ -187,8 +201,8 @@ class Context:
         outside the block. The `name` argument chooses its registered name.
 
         Args:
-            name (str): The backtest's name, a Python identifier (R20).
-            backtest (Kupiec): The test and its settings, e.g.
+            name (str): The backtest's name, a Python identifier.
+            backtest (BacktestDeclaration): The test and its settings, e.g.
                 `Kupiec(window=Trailing(250))`.
 
         Raises:
@@ -198,8 +212,8 @@ class Context:
 
         """
         check_name_is_identifier("Backtest", name)
-        if not isinstance(backtest, Kupiec):
-            msg = f"Backtest {name!r} needs a Kupiec declaration, got {backtest!r}!"
+        if not isinstance(backtest, BacktestDeclaration):
+            msg = f"Backtest {name!r} needs a backtest declaration, got {backtest!r}!"
             raise TypeError(msg)
         if name in self._backtests:
             msg = f"Backtest {name!r} is already registered!"
@@ -211,13 +225,13 @@ class Context:
 
     @classmethod
     def from_spec(cls, spec: RunSpec) -> Self:
-        """Build a context from a spec, e.g. received as JSON (R9, R17).
+        """Build a context from a spec, e.g. received as JSON.
 
         The spec's model keys name the models. For a VaR input, the key
-        has to match its input name, since the node has one name (R13).
+        has to match its input name, since the node has one name.
         Plain functions build each node and its inputs inside the context;
-        equal nodes share computation by value (D9). Every backtest in the
-        spec runs on every model (R4).
+        equal nodes share computation by value. Every backtest in the
+        spec runs on every model.
 
         Args:
             spec (RunSpec): The validated run spec.
@@ -237,7 +251,7 @@ class Context:
             for name, model in spec.models.items():
                 _build_var_model(model, name=name)
 
-            # Named declarations built in the block register on `ctx` (D10).
+            # Named declarations built in the block register on `ctx`.
             for name, backtest in spec.backtests.items():
                 _build_backtest(backtest, name=name)
 
@@ -282,14 +296,17 @@ class Context:
                 f'name, e.g. `name="gauss"`!'
             )
             raise ValueError(msg)
+
         if name is not None:
             if name in self._backtests:
                 msg = f"Name {name!r} is both a node and a backtest!"
                 raise ValueError(msg)
+
             # An equal node may take its name again, e.g. an input built twice.
             if self._named.setdefault(name, node) != node:
                 msg = f"Name {name!r} is already used by another node!"
                 raise ValueError(msg)
+
             if isinstance(node, ValueAtRiskModel):
                 self._models[name] = node
         self._nodes.setdefault(node, None)
@@ -364,19 +381,19 @@ class Context:
 
         The nodes are computed in an order where each node's inputs come
         before it. A run input's output is the input of its name, never
-        computed (R13). Every other output, but a backtest's, holds a time
-        series with the dates and shape of the returns (R24), checked after
+        computed. Every other output, but a backtest's, holds a time
+        series with the dates and shape of the returns, checked after
         each node.
 
-        With either bound, nodes still compute on the whole trimmed history
-        (R23). VaR is `NaN` outside the selected dates; preprocessors retain
+        With either bound, nodes still compute on the whole trimmed history.
+        VaR is `NaN` outside the selected dates; preprocessors retain
         their history. Backtests receive only flags after the first selected
         forecast through the last selected date, inclusive. A single-date
         range has no observations to backtest.
 
         Args:
             returns (TimeSeries): The returns time series. Leading dates are
-                removed until every portfolio has a value (R21).
+                removed until every portfolio has a value.
             inputs (Mapping[str, TimeSeries] | None): The run inputs, by name,
                 each with the original dates and shape of `returns`. They
                 are trimmed with the returns. Inputs no node reads are ignored.
@@ -413,7 +430,7 @@ class Context:
             raise KeyError(msg)
 
         # Check inputs on the original grid, before slicing can hide a
-        # misalignment. Only inputs the graph reads are checked (R13).
+        # misalignment. Only inputs the graph reads are checked.
         inputs = {node.name: _run_input(node, returns, inputs) for node in input_nodes}
         first = _first_full_date(returns) if returns.n_dates else 0
         if first == returns.n_dates:
@@ -471,7 +488,7 @@ class Context:
         """Build each backtest node of each model, by model name, then test name.
 
         Equal models get equal overshootings and tests, so they are one node
-        each (D9). The nodes are built outside any context, so building them
+        each. The nodes are built outside any context, so building them
         never binds them to this one, even inside its `with` block.
         """
         token = current_context.set(None)
@@ -493,14 +510,14 @@ class Results:
 
     Read the output of any node by node, `results[vol]`, or of a node named
     in the context by its name, `results["gauss"]`. They hold the returns
-    they were computed on, so a report needs nothing else (R19).
+    they were computed on, so a report needs nothing else.
 
     Attributes:
         returns (TimeSeries): The returns the run computed on, starting at
-            the first date with a value for every portfolio (R21).
+            the first date with a value for every portfolio.
         models (dict[str, TimeSeries]): The value-at-risk of each model, by
             name. With explicit run bounds, values outside the requested
-            range are `NaN`, on the full grid of `returns` (R24).
+            range are `NaN`, on the full grid of `returns`.
         backtests (dict[str, dict[str, BacktestResult]]): The result of each
             backtest of each model, by model name, then backtest name.
         outputs (Mapping[Node[Any], Any]): The output of every node computed.
@@ -591,7 +608,7 @@ def _select_output(node: Node[Any], output: Any, selection: slice) -> Any:  # no
 
 
 def _mask_dates(series: TimeSeries, selection: slice) -> TimeSeries:
-    """Keep the full grid, with NaN outside the selected observations (R24)."""
+    """Keep the full grid, with NaN outside the selected observations."""
     values = series.values.copy()
     values[: selection.start] = np.nan
     values[selection.stop :] = np.nan
@@ -679,7 +696,7 @@ def _run_input(
 
 # Outputs have different types: `Any` stands for each.
 def _check_output(node: Node[Any], output: Any, returns: TimeSeries) -> None:  # noqa: ANN401
-    """Check a node's output holds a time series aligned with the returns (R24).
+    """Check a node's output holds a time series aligned with the returns.
 
     A `DecayFactors` holds its `values`, and `FilteredReturns` its
     `standardized` returns, which it checks its mean and volatility against.
@@ -698,7 +715,7 @@ def _check_output(node: Node[Any], output: Any, returns: TimeSeries) -> None:  #
         case _:
             msg = (
                 f"{node_type} outputs a {type(output).__name__}, which holds no "
-                f"time series: only backtests can (R24)!"
+                f"time series: only backtests can!"
             )
             raise TypeError(msg)
     try:
@@ -776,7 +793,7 @@ def _check_no_last_window(graphs: Mapping[str, _Graph], backtests: list[str]) ->
 def _input_names(graphs: Mapping[str, _Graph]) -> frozenset[str]:
     """Find the run inputs the models read, each name belonging to one node.
 
-    Equal input nodes are one node (D9). Two different nodes can't read one
+    Equal input nodes are one node. Two different nodes can't read one
     name, so no node silently reads another one's input, e.g. volatilities
     read as a value-at-risk.
 
@@ -840,7 +857,7 @@ def _run_graph(roots: list[tuple[str, Node[Any]]]) -> RunGraph:
             dependencies.
 
     """
-    # Nodes are identified by value (D9), and dicts keep the
+    # Nodes are identified by value, and dicts keep the
     # order they are first reached in.
     paths: dict[Node[Any], list[str]] = {}
     for root_path, root in roots:

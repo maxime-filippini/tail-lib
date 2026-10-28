@@ -37,7 +37,7 @@ class VolatilityModel(Preprocessor):
 
 @dataclass(frozen=True)
 class VolatilityInput(RunInput, VolatilityModel):
-    """Volatilities passed in at run time, under a name (R13).
+    """Volatilities passed in at run time, under a name.
 
     The volatility on date `t` is the input's value on date `t`. Like every
     volatility model's, it should be the forecast for date `t + 1`, using data
@@ -112,7 +112,7 @@ class EwmaVolatility(VolatilityModel):
     - a constant decay (`ConstantDecay`) has one refit, on the first date, so
       the recursion runs once, over the whole series;
     - a calibrated decay (`EwmaDecayCalibration`) is re-filtered over each
-      training window, then continued until the next calibration (D7). So
+      training window, then continued until the next calibration. So
       the volatility on a date only uses the returns of its training window
       and of later dates before it, and is `NaN` before the first window
       ends. With a `Last` window, there is one volatility, on the last date.

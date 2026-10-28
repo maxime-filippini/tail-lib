@@ -96,7 +96,7 @@ def test_context_passes_each_declared_inputs_output_to_compute(
     ctx = Context()
     ctx.bind(bound)
     # Outputs differ by node type. Record their identities at the compute
-    # boundary, after node construction has checked its real signature (D11).
+    # boundary, after node construction has checked its real signature.
     calls: list[dict[str, object]] = []
     compute = type(node).compute
 
@@ -161,7 +161,7 @@ def test_building_a_node_checks_its_compute(
     node: Node[Any], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # Every `__post_init__` has to reach `Node.__post_init__`, which checks
-    # `compute` against the inputs (D11).
+    # `compute` against the inputs.
     checked: list[Node[Any]] = []
     check = Node._check_compute  # noqa: SLF001
 

@@ -1,6 +1,6 @@
 # Report app
 
-The page of tail-lib's run reports (R19): a Svelte + TypeScript app, built
+The page of tail-lib's run reports: a Svelte + TypeScript app, built
 by Vite into one self-contained HTML file,
 `src/tail_lib/report/index.html`, which `Report.save` fills with a run's
 data. The built file is committed, so installing tail-lib never needs Node.

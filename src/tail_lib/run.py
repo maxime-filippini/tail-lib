@@ -1,4 +1,4 @@
-"""The serialized spec of a context, parsed from JSON or Python data (R9).
+"""The serialized spec of a context, parsed from JSON or Python data.
 
 `Context.from_spec` builds its nodes. Computation and graph inspection live
 in `tail_lib.context`; this module keeps the `RunSpec` import path.
@@ -30,8 +30,8 @@ class RunSpec(Spec):
     value-at-risk, the forecast for a date after the data. It has nothing to
     backtest, so a run with backtests rejects it.
 
-    `labels` gives display names to models and backtests, e.g. for a report
-    (R20), as in `Context`.
+    `labels` gives display names to models and backtests, e.g. for a report,
+    as in `Context`.
     """
 
     models: Annotated[dict[Name, ValueAtRiskSpec], Field(min_length=1)]

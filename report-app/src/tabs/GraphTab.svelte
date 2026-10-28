@@ -1,5 +1,5 @@
 <script lang="ts">
-  // The graph tab: every node of the run once, in layers (R19, D3).
+  // The graph tab: every node of the run once, in layers.
   import { onMount } from "svelte";
   import { type ChartOption, init } from "../charts";
   import { boxLabel, boxTooltip } from "../graph/format";

@@ -1,4 +1,4 @@
-// Places the nodes of a run's graph in layers, for the graph tab (R19).
+// Places the nodes of a run's graph in layers, for the graph tab.
 //
 // Data flows down: the returns and the run inputs at the top, then the
 // preprocessors, the models, their overshootings and the backtests. A

@@ -1,4 +1,4 @@
-"""A run report: one self-contained HTML file showing a run (R19).
+"""A run report: one self-contained HTML file showing a run.
 
 `Report` gathers the `ReportData` of a context and the results of its run,
 and saves it in the report page, a single HTML file that opens offline. The page is

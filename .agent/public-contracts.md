@@ -32,8 +32,8 @@ without re-exporting model classes.
   `InterpolationMethod`, `DEFAULT_EWMA_START`, `DEFAULT_DECAY_BOUNDS`,
   `DEFAULT_FIT_ITERATIONS`.
 - **Backtests:** `tail_lib.backtests.overshootings.overshootings`,
-  `Overshootings`; `tail_lib.backtests.kupiec.kupiec_pof`, `Kupiec`,
-  `KupiecResult`.
+  `Overshootings`; `tail_lib.backtests.base.BacktestDeclaration`;
+  `tail_lib.backtests.kupiec.kupiec_pof`, `Kupiec`, `KupiecResult`.
 - **Configuration:** spec classes, constrained value types, tagged unions,
   and `find_last_window` in `tail_lib.specs` (C28–C32).
 - **Extensions:** `Node`, `Preprocessor`, `Backtest`, `RunInput`,

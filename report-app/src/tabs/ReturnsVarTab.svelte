@@ -1,6 +1,6 @@
 <script lang="ts">
   // Returns vs VaR: the returns, each model's VaR and its overshootings, for
-  // one series (R19).
+  // one series.
   import Chart from "../Chart.svelte";
   import {
     type ChartOption,
@@ -70,7 +70,7 @@
     models.forEach((model, index) => {
       const color = MODEL_COLORS[index % MODEL_COLORS.length];
       const vars = data.outputs[model.nodeId]?.[series] ?? [];
-      // The VaR on date t is the forecast for t + 1 (D1): draw it on the date
+      // The VaR on date t is the forecast for t + 1: draw it on the date
       // it forecasts, next to the return it is tested against.
       lines.push({
         name: model.label,

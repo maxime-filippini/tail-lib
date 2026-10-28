@@ -1,7 +1,7 @@
 """Write the JSON Schema of `ReportData`, which the page's types come from.
 
 Run by `npm run types`, which then turns it into `src/report-data.d.ts`, so
-the page and the Python side share one contract (R11, R19).
+the page and the Python side share one contract.
 """
 
 import json

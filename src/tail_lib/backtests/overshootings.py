@@ -53,7 +53,7 @@ class Overshootings(Preprocessor):
 
     Computes the model's value-at-risk, then flags its overshootings with
     `overshootings`. Backtests take this node rather than the model. The
-    overshootings of equal models are one node (D9), so the backtests of a
+    overshootings of equal models are one node, so the backtests of a
     model flag its overshootings once.
 
     Attributes:

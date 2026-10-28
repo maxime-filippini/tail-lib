@@ -1,6 +1,6 @@
 <script lang="ts">
-  // The backtest table: every backtest of every model, for every series
-  // (R19). A backtest with several windows shows its last one; the rolling
+  // The backtest table: every backtest of every model, for every series.
+  // A backtest with several windows shows its last one; the rolling
   // backtests tab shows them all.
   import { modelEntries, percent } from "../models";
   import type { KupiecData, ReportData } from "../report-data";

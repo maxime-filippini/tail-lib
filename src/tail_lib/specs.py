@@ -1,4 +1,4 @@
-"""Specs: models written as data, e.g. parsed from JSON (R9).
+"""Specs: models written as data, e.g. parsed from JSON.
 
 A spec describes a model node or a backtest declaration as data: `build`
 turns model specs into nodes and backtest specs into declarations. Model
@@ -7,7 +7,7 @@ mirrors the declaration's settings. A node input is a nested spec, e.g.
 the volatility model of a Gaussian model.
 
 Specs are frozen and compare by value, so identical specs, even written
-separately, can be built into one shared node (D3).
+separately, can be built into one shared node.
 
 Specs check everything they are given: the field names, the `type` tag
 choosing the spec class in each slot, and the range of each value, e.g. a

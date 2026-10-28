@@ -176,7 +176,7 @@ def test_filtered_historical_matches_formula_after_ewma_warm_up() -> None:
     )
 
     # The backcast takes the first 20 returns, so the first standardized
-    # return is on date 20, and the first window holds dates 20 to 69 (R16).
+    # return is on date 20, and the first window holds dates 20 to 69.
     assert np.isnan(z[:20]).all()
     assert np.isnan(var.values[:69]).all()
     assert not np.isnan(var.values[69:]).any()

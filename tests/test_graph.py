@@ -116,7 +116,7 @@ def test_context_shares_decay_calibration_across_models() -> None:
     returns = simulated_returns()
     calibration = _CountingCalibration(Trailing(length=100, step=20))
 
-    # Two VaR models on equal volatility nodes and one calibration (D9).
+    # Two VaR models on equal volatility nodes and one calibration.
     with Context() as ctx:
         GaussianModel(cf=0.99, vol=EwmaVolatility(calibration), name="gaussian_99")
         GaussianModel(cf=0.95, vol=EwmaVolatility(calibration), name="gaussian_95")

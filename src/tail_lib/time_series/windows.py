@@ -66,8 +66,8 @@ class Windows:
     `NaN`.
 
     With `skip_leading_nan`, the windows start on the first date where every
-    series has a value, so no window holds the leading `NaN`s of a warm-up
-    (R16). For `Trailing` windows, the step is counted from there. A `Last`
+    series has a value, so no window holds the leading `NaN`s of a warm-up.
+    For `Trailing` windows, the step is counted from there. A `Last`
     window has to start on or after it.
     """
 

@@ -1,7 +1,7 @@
-"""Build nodes from specs (R9a).
+"""Build nodes from specs.
 
 Contexts use the plain `_build_*` functions: equal nodes share computation
-by value (D9), without tables of nodes built from specs. `_check_input_specs`
+by value, without tables of nodes built from specs. `_check_input_specs`
 rejects conflicting declarations before building nodes.
 """
 
@@ -66,15 +66,16 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
 
     from tail_lib._typing import FloatArray
+    from tail_lib.backtests.base import BacktestDeclaration
 
 # A union, like the specs, once there is a second backtest.
 type BacktestResult = KupiecResult
 
 
 def _check_input_specs(specs: Iterable[Spec]) -> None:
-    """Reject two different specs declaring the same run input (R13).
+    """Reject two different specs declaring the same run input.
 
-    This table checks declarations only; node sharing is by value (D9).
+    This table checks declarations only; node sharing is by value.
     """
     declared: dict[str, ValueAtRiskInputSpec | VolatilityInputSpec] = {}
     pending = list(specs)
@@ -170,10 +171,10 @@ def _build_mean(spec: MeanSpec) -> MeanModel:
             assert_never(spec)
 
 
-def _build_backtest(spec: BacktestSpec, *, name: str) -> Kupiec:
+def _build_backtest(spec: BacktestSpec, *, name: str) -> BacktestDeclaration:
     """Build a named declaration; the context supplies each model when binding.
 
-    Built inside a context, the named declaration registers on it (D10).
+    Built inside a context, the named declaration registers on it.
     """
     match spec:
         case KupiecSpec():

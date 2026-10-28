@@ -1,7 +1,7 @@
 <script lang="ts">
   // Rolling backtests: for each backtest on rolling windows, the observed
   // overshooting rate and the p-value at each window's end date, one line
-  // per model, for one series (R19).
+  // per model, for one series.
   import Chart from "../Chart.svelte";
   import {
     type ChartOption,
@@ -17,7 +17,7 @@
   const models = $derived(modelEntries(data));
 
   // The backtests with several windows, by name. Every backtest runs on
-  // every model (R4), so the first model's windows tell.
+  // every model, so the first model's windows tell.
   const rolling = $derived(
     Object.entries(data.backtests[models[0]?.name ?? ""] ?? {})
       .filter(([, backtest]) => backtest.result.end_dates.length > 1)

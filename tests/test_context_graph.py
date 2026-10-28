@@ -52,8 +52,8 @@ def test_the_graph_lists_each_node_once_with_all_its_paths() -> None:
     paths = _paths(run.graph())
 
     # Each distinct node once: 2 models, the filter, the shared volatility,
-    # one zero mean (the Gaussian's and the filter's are equal, so one node,
-    # D9), then per model one overshootings node and one backtest.
+    # one zero mean (the Gaussian's and the filter's are equal, so one node),
+    # then per model one overshootings node and one backtest.
     n_distinct = 2 + 1 + 1 + 1 + 2 * 2
     assert len(run.graph().nodes) == len(paths) == n_distinct
     assert paths[ZeroMean()][:2] == (

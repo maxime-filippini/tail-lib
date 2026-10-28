@@ -1,4 +1,4 @@
-// Labels and hover details of the graph's boxes (R19).
+// Labels and hover details of the graph's boxes.
 import type { NodeData, ReportData } from "../report-data";
 import { RETURNS_ID } from "./layout";
 

@@ -160,7 +160,7 @@ class DecayFactors:
     A decay factor comes into force on a refit date, and stays in force until
     the next one. It was fitted on the returns from its fit's first date up to
     and including the refit date, so `EwmaVolatility` re-filters each one
-    from that first date (D7). A constant decay has one refit, on the first
+    from that first date. A constant decay has one refit, on the first
     date, fitted from it.
 
     Attributes:
@@ -332,7 +332,7 @@ class EwmaDecayCalibration(DecayModel):
     before the first window ends. Each window's last date is a refit, and its
     first date the start of that fit (see `DecayFactors`). With a `Last`
     window, there is one fit, on the last date. Models given equal
-    calibrations share one, so it is only fitted once (D9).
+    calibrations share one, so it is only fitted once.
 
     Attributes:
         window (Trailing | Last): The training windows: how many dates each

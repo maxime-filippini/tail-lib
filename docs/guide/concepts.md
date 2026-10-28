@@ -19,7 +19,7 @@ returns = TimeSeries(
 ```
 
 Building the arrays is the caller's job: the library checks what it receives
-and does nothing more with it (R8).
+and does nothing more with it.
 
 ### Many series at once
 
@@ -38,7 +38,7 @@ ConstantDecay(np.array([0.94, 0.97]))  # returns of shape (n_dates, 2)
 ### Filling in dates
 
 When the dates don't matter, let the library fill them in from a first or
-last date (R8a). Dates follow a [`Calendar`][tail_lib.calendar.Calendar],
+last date. Dates follow a [`Calendar`][tail_lib.calendar.Calendar],
 Monday to Friday without holidays by default.
 
 ```python
@@ -56,7 +56,7 @@ TimeSeries.to_last_date(datetime.date(2024, 12, 31), values, calendar=calendar)
 ## Timing: the value on `t` is the forecast for `t + 1`
 
 A value on date `t` (a volatility, a decay factor, a VaR) uses data up to and
-including `t`, and is the forecast for the next date, `t + 1` (D1). There is
+including `t`, and is the forecast for the next date, `t + 1`. There is
 no look-ahead.
 
 So the VaR on Monday is the forecast for Tuesday's return, and a backtest
@@ -64,7 +64,7 @@ compares it with Tuesday's return. Each model's docstring states its timing.
 
 ## Sign: VaR is a return quantile
 
-A VaR is a **return quantile, negative for a loss** (R14). A 99% VaR of
+A VaR is a **return quantile, negative for a loss**. A 99% VaR of
 `-0.025` means a 1% chance of losing more than 2.5% the next day.
 
 The return of date `t` **overshoots** the VaR when it falls below the VaR of
@@ -83,7 +83,7 @@ is then the `1 - cf` quantile of the next return.
 
 Most models need some history before their first value: a window to fill, a
 backcast to start a recursion. Their output is `NaN` until then. A model
-reading another one starts on its first value (R16): a filtered historical
+reading another one starts on its first value: a filtered historical
 simulation on 500 dates, filtered by an EWMA volatility with a 20-day
 backcast, has its first window on dates 20 to 519.
 
@@ -121,7 +121,7 @@ Two rules decide what is a node and what is a plain setting:
 
 A node is computed at most once per run. Nodes are identified by value: two
 nodes of the same class with the same arguments are one node, so it is
-computed once for all the models that read it (D3, D9):
+computed once for all the models that read it:
 
 ```python
 models = {
@@ -163,7 +163,7 @@ Last(length=250)  # today's VaR only
 ## Run inputs
 
 Data computed outside the library, e.g. VaR forecasts from another system, or
-volatilities from a data service, enters a run as a **named input** (R13). An
+volatilities from a data service, enters a run as a **named input**. An
 input node declares the name, and you pass the series under that name at run
 time. A missing input is an error, reported before anything is computed. See
 [Runs in Python](python-runs.md#run-inputs).

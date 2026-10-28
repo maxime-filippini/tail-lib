@@ -39,6 +39,7 @@ How tail-lib is organized, and how a call flows from a spec to the numbers
 | `models/volatility.py` | `VolatilityModel`, `VolatilityInput`, `ConstantVolatility`, `EwmaVolatility` (constant or calibrated decay, D7), `VolatilityFilter`. |
 | `models/value_at_risk.py` | `ValueAtRiskModel`, `ValueAtRiskInput`, `HistoricalSimulationsModel` (D2), `FilteredHistoricalSimulationsModel`, `GaussianModel`. |
 | `backtests/overshootings.py` | `overshootings` (function) and `Overshootings` (node). |
+| `backtests/base.py` | `BacktestDeclaration`: the parent of backtest declarations, with their `name` and context registration. |
 | `backtests/kupiec.py` | `kupiec_pof` (function), `KupiecResult`, `Kupiec` (declaration), `_KupiecTest` (internal node). |
 | `report/data.py` | `ReportData`, the JSON contract with the report page, and `build_report_data` (R19). |
 | `report/report.py`, `report/index.html` | `Report`: reads results and saves their data in the report page, package data built from `report-app/` (R19). |
@@ -165,8 +166,8 @@ results["gauss"], results[vol], results.backtests["gauss"]["kupiec"]
   node can take a backtest's name; an equal node can take its name again.
   Named models are the context's `models`.
 - **Backtest declarations** built inside the block register themselves
-  through `Kupiec.__post_init__`, using the same `current_context` variable
-  as nodes (D10). They need a name inside the block; outside, unnamed
+  through `BacktestDeclaration.__post_init__`, the parent of `Kupiec`,
+  using the same `current_context` variable as nodes (D10). They need a name inside the block; outside, unnamed
   declarations can be reused. Their names are metadata, excluded from
   equality. A declaration registers settings only; executable nodes come
   later, during the graph walk.
