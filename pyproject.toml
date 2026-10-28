@@ -19,6 +19,7 @@ build-backend = "setuptools.build_meta"
 dev = [
     "coverage>=7.17.0",
     "ipykernel>=7.4.0",
+    "matplotlib>=3.11.2",
     "pytest>=9.1.1",
     "ruff>=0.17.0",
     "ty>=0.0.90",
