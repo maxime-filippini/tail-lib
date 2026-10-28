@@ -125,7 +125,7 @@ The backtesting guide indexes `rolling.end_dates` with `rolling.p_value < 0.05`.
 For a complete two-dimensional batch, teach per-portfolio aggregation and selection explicitly:
 
 ```python
-p = rolling.p_value                    # (n_windows, n_portfolios)
+p = rolling.p_value  # (n_windows, n_portfolios)
 share_rejected = (p < 0.05).mean(axis=0)
 portfolio_index = 0
 dates_rejected = rolling.end_dates[p[:, portfolio_index] < 0.05]
@@ -137,7 +137,7 @@ That rate example assumes finite p-values. Where p-values are missing, use a fin
 
 Start with `(T, P)` **already aggregated portfolio return series** and a list of portfolio IDs. Run several models and confidence levels with shared preprocessing, extract a portfolio-by-model summary, compare on a stated evaluation sample, then save a report without recomputation. Explain that columns are independent portfolio series, not component assets being combined or a covariance model. Include histories of different lengths and explain the supported policy.
 
-The present concepts page introduces batching well, but the quickstart and standalone comparison example use one series. The runs guide encourages repeated per-series calls without highlighting the batch option there. The README leads with contributor documentation and omits a minimal consumer run. [Batch concepts](../guide/concepts.md#many-series-at-once), [quickstart](../index.md#a-first-run), [runs guide](../guide/python-runs.md), [README](../../README.md)
+The present concepts page introduces batching well, but the quickstart and standalone comparison example use one series. The runs guide encourages repeated per-series calls without highlighting the batch option there. The README leads with contributor documentation and omits a minimal consumer run. [Batch concepts](../guide/concepts.md#many-series-at-once), [quickstart](../index.md#a-first-run), [runs guide](../guide/python-runs.md), [README](https://github.com/maxime-filippini/tail-lib/blob/develop/README.md)
 
 ### Make operational conventions discoverable
 
