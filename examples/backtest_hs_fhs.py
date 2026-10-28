@@ -34,10 +34,10 @@ from tail_lib.models.volatility import EwmaVolatility
 from tail_lib.models.volatility import VolatilityFilter
 from tail_lib.simulation import GarchProcess
 from tail_lib.simulation import Simulator
-from tail_lib.windows import Trailing
+from tail_lib.time_series.windows import Trailing
 
 if TYPE_CHECKING:
-    from tail_lib.time_series import TimeSeries
+    from tail_lib.time_series.time_series import TimeSeries
 
 CF = 0.99
 DECAY = 0.94

@@ -14,10 +14,10 @@ from tail_lib._checks import check_positive
 from tail_lib._checks import check_unit_interval
 from tail_lib.graph import Node
 from tail_lib.graph import frozen_floats
-from tail_lib.time_series import TimeSeries
-from tail_lib.windows import Last
-from tail_lib.windows import Trailing
-from tail_lib.windows import Windows
+from tail_lib.time_series.time_series import TimeSeries
+from tail_lib.time_series.windows import Last
+from tail_lib.time_series.windows import Trailing
+from tail_lib.time_series.windows import Windows
 
 if TYPE_CHECKING:
     from tail_lib._typing import FloatArray

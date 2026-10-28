@@ -50,9 +50,9 @@ from tail_lib.models.value_at_risk import FilteredHistoricalSimulationsModel
 from tail_lib.models.value_at_risk import HistoricalSimulationsModel
 from tail_lib.models.value_at_risk import ValueAtRiskModel
 from tail_lib.models.volatility import FilteredReturns
-from tail_lib.time_series import TimeSeries
-from tail_lib.windows import Last
-from tail_lib.windows import _first_full_date
+from tail_lib.time_series.time_series import TimeSeries
+from tail_lib.time_series.windows import Last
+from tail_lib.time_series.windows import _first_full_date
 
 if TYPE_CHECKING:
     import datetime
@@ -63,7 +63,7 @@ if TYPE_CHECKING:
 
     from tail_lib.build import BacktestResult
     from tail_lib.run import RunSpec
-    from tail_lib.windows import Trailing
+    from tail_lib.time_series.windows import Trailing
 
 
 @dataclass(frozen=True)

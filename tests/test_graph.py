@@ -18,8 +18,8 @@ from tail_lib.models.volatility import FilteredReturns
 from tail_lib.models.volatility import VolatilityFilter
 from tail_lib.models.volatility import VolatilityInput
 from tail_lib.models.volatility import VolatilityModel
-from tail_lib.time_series import TimeSeries
-from tail_lib.windows import Trailing
+from tail_lib.time_series.time_series import TimeSeries
+from tail_lib.time_series.windows import Trailing
 from tests.helpers import returns_series
 from tests.helpers import run_node
 from tests.helpers import simulated_returns

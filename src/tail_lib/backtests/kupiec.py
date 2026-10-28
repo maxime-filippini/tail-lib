@@ -15,16 +15,16 @@ from tail_lib._checks import check_probability
 from tail_lib.backtests.overshootings import Overshootings
 from tail_lib.graph import Backtest
 from tail_lib.graph import current_context
-from tail_lib.windows import Windows
+from tail_lib.time_series.windows import Windows
 
 if TYPE_CHECKING:
     from tail_lib._typing import DateArray1D
     from tail_lib._typing import FloatArray
     from tail_lib._typing import IntArray
     from tail_lib.models.value_at_risk import ValueAtRiskModel
-    from tail_lib.time_series import TimeSeries
-    from tail_lib.windows import Last
-    from tail_lib.windows import Trailing
+    from tail_lib.time_series.time_series import TimeSeries
+    from tail_lib.time_series.windows import Last
+    from tail_lib.time_series.windows import Trailing
 
 
 @dataclass(frozen=True)

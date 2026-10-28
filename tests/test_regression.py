@@ -47,9 +47,9 @@ from tail_lib.models.volatility import VolatilityFilter
 from tail_lib.models.volatility import VolatilityInput
 from tail_lib.simulation import GarchProcess
 from tail_lib.simulation import Simulator
-from tail_lib.time_series import TimeSeries
-from tail_lib.windows import Last
-from tail_lib.windows import Trailing
+from tail_lib.time_series.time_series import TimeSeries
+from tail_lib.time_series.windows import Last
+from tail_lib.time_series.windows import Trailing
 
 PATH = Path(__file__).parent / "data" / "regression.npz"
 

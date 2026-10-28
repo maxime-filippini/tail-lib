@@ -59,7 +59,7 @@ Windows start on the first flag (R16), so no window holds a model's warm-up.
     ```python
     from tail_lib.backtests.kupiec import Kupiec
     from tail_lib.context import Context
-    from tail_lib.windows import Last, Trailing
+    from tail_lib.time_series import Last, Trailing
 
     with Context() as ctx:
         Kupiec(name="kupiec")

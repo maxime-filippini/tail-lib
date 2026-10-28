@@ -20,7 +20,7 @@ from tail_lib.models.ewma import EwmaStart
 from tail_lib.models.ewma import ewma_variance
 from tail_lib.models.mean import MeanModel
 from tail_lib.models.mean import ZeroMean
-from tail_lib.time_series import TimeSeries
+from tail_lib.time_series.time_series import TimeSeries
 
 if TYPE_CHECKING:
     from tail_lib._typing import FloatArray

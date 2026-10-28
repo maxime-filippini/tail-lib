@@ -12,7 +12,7 @@ from tail_lib.models.volatility import ConstantVolatility
 from tail_lib.report.data import ReportData
 from tail_lib.report.report import DATA_PLACEHOLDER
 from tail_lib.report.report import Report
-from tail_lib.time_series import TimeSeries
+from tail_lib.time_series.time_series import TimeSeries
 from tests.helpers import returns_series
 
 _SLOT = re.compile(

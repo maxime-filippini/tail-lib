@@ -10,8 +10,8 @@ from tail_lib.models.value_at_risk import HistoricalSimulationsModel
 from tail_lib.models.value_at_risk import ValueAtRiskInput
 from tail_lib.models.volatility import ConstantVolatility
 from tail_lib.models.volatility import VolatilityInput
-from tail_lib.time_series import TimeSeries
-from tail_lib.windows import Trailing
+from tail_lib.time_series.time_series import TimeSeries
+from tail_lib.time_series.windows import Trailing
 from tests.helpers import returns_series
 from tests.helpers import run_node
 

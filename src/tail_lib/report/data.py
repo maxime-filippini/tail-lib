@@ -44,9 +44,9 @@ from tail_lib.models.ewma import StartingVol
 from tail_lib.models.value_at_risk import ValueAtRiskModel
 from tail_lib.models.volatility import FilteredReturns
 from tail_lib.models.volatility import VolatilityFilter
-from tail_lib.time_series import TimeSeries
-from tail_lib.windows import Last
-from tail_lib.windows import Trailing
+from tail_lib.time_series.time_series import TimeSeries
+from tail_lib.time_series.windows import Last
+from tail_lib.time_series.windows import Trailing
 
 if TYPE_CHECKING:
     from collections.abc import Sequence

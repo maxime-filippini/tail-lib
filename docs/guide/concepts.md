@@ -5,7 +5,7 @@ model's output easy to read.
 
 ## Returns are a `TimeSeries`
 
-Every input and output is a [`TimeSeries`][tail_lib.time_series.TimeSeries]:
+Every input and output is a [`TimeSeries`][tail_lib.time_series.time_series.TimeSeries]:
 an array of dates, and an array of values with **time on the first axis**.
 
 ```python
@@ -140,20 +140,20 @@ specs give one node.
 Models that work on a sample of past returns, such as historical simulation,
 take a window. There are two kinds:
 
-[`Trailing(length, step=1)`][tail_lib.windows.Trailing]
+[`Trailing(length, step=1)`][tail_lib.time_series.windows.Trailing]
 :   Rolling windows of `length` dates. The first ends on date `length - 1`,
     then one ends every `step` dates. Each result belongs to its window's last
     date, and is held until the next window ends. This gives a value on every
     date, so the model can be backtested.
 
-[`Last(length)`][tail_lib.windows.Last]
+[`Last(length)`][tail_lib.time_series.windows.Last]
 :   One window: the last `length` dates. The model gives one value, on the
     last date, e.g. today's VaR, without computing every past window. Such a
     model has nothing to backtest: its only value is the forecast for a date
     after the data.
 
 ```python
-from tail_lib.windows import Last, Trailing
+from tail_lib.time_series import Last, Trailing
 
 Trailing(length=250)  # a VaR on every date from date 249
 Trailing(length=250, step=5)  # refit every 5 dates, held in between

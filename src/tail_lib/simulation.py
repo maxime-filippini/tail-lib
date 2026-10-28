@@ -35,7 +35,7 @@ from tail_lib.distributions import Distribution
 from tail_lib.distributions import Gaussian
 from tail_lib.models.ewma import ewma_update
 from tail_lib.models.garch import garch_update
-from tail_lib.time_series import TimeSeries
+from tail_lib.time_series.time_series import TimeSeries
 
 if TYPE_CHECKING:
     import datetime

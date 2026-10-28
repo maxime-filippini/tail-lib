@@ -401,5 +401,5 @@ from tail_lib.models.volatility import (
     VolatilityFilter,
     VolatilityInput,
 )
-from tail_lib.windows import Last, Trailing
+from tail_lib.time_series import Last, Trailing
 ```

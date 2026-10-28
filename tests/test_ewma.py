@@ -8,9 +8,9 @@ from tail_lib.models.ewma import DecayFactors
 from tail_lib.models.ewma import EwmaDecayCalibration
 from tail_lib.models.ewma import StartingVol
 from tail_lib.models.ewma import fit_ewma_decay
-from tail_lib.time_series import TimeSeries
-from tail_lib.windows import Last
-from tail_lib.windows import Trailing
+from tail_lib.time_series.time_series import TimeSeries
+from tail_lib.time_series.windows import Last
+from tail_lib.time_series.windows import Trailing
 from tests.helpers import run_node
 from tests.helpers import simulate_ewma
 from tests.helpers import simulated_returns

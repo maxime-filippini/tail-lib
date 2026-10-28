@@ -21,9 +21,9 @@ from tail_lib.specs import EwmaDecayCalibrationSpec
 from tail_lib.specs import GaussianSpec
 from tail_lib.specs import TrailingSpec
 from tail_lib.specs import ValueAtRiskSpec
-from tail_lib.time_series import TimeSeries
-from tail_lib.windows import Last
-from tail_lib.windows import Trailing
+from tail_lib.time_series.time_series import TimeSeries
+from tail_lib.time_series.windows import Last
+from tail_lib.time_series.windows import Trailing
 from tests.helpers import returns_series
 from tests.helpers import run_node
 from tests.helpers import simulated_returns

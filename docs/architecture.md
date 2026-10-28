@@ -30,8 +30,8 @@ How tail-lib is organized, and how a call flows from a spec to the numbers
 
 | Module | Contents |
 |---|---|
-| `time_series.py`, `calendar.py` | `TimeSeries`, and the calendar behind its date helpers (R8a). |
-| `windows.py` | `Trailing` and `Last` window specs, and `Windows`: the windows over a series, `apply` and `to_series` (D5). With `skip_leading_nan=True`, the windows start on the first date where every series has a value (R16). |
+| `time_series/time_series.py`, `calendar.py` | `TimeSeries`, and the calendar behind its date helpers (R8a). |
+| `time_series/windows.py` | `Trailing` and `Last` window specs, and `Windows`: the windows over a series, `apply` and `to_series` (D5). With `skip_leading_nan=True`, the windows start on the first date where every series has a value (R16). |
 | `graph.py` | `Node`, `Preprocessor`, `Backtest`, `RunInput`: the value-identified nodes and their fields. |
 | `models/mean.py` | `MeanModel`, `ZeroMean`, `ConstantMean`. |
 | `models/ewma.py` | EWMA start specs (`Backcast`, `StartingVol`), the recursion (`ewma_update`, `ewma_variance`), decay nodes (`ConstantDecay`, `EwmaDecayCalibration`), which output `DecayFactors` (the decay on each date, its refit dates and the first date of each fit), and the decay fit. |
@@ -185,7 +185,7 @@ results["gauss"], results[vol], results.backtests["gauss"]["kupiec"]
 - **`run(returns, inputs, *, lower=None, upper=None)`** reports missing inputs and checks the inputs
   against the original returns before computing (R13). It finds the first
   date where every portfolio has a return, using `_first_full_date` from
-  `windows.py`, and slices both returns and used inputs from that date
+  `time_series/windows.py`, and slices both returns and used inputs from that date
   (R21). If there is no such date, including empty returns, it raises
   `ValueError` before computing. Inputs no node reads are ignored. It then
   computes each node once, in one loop over the graph ordered inputs first

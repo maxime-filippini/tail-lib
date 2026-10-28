@@ -13,9 +13,9 @@ from tail_lib.models.value_at_risk import GaussianModel
 from tail_lib.models.volatility import ConstantVolatility
 from tail_lib.models.volatility import EwmaVolatility
 from tail_lib.models.volatility import VolatilityFilter
-from tail_lib.time_series import TimeSeries
-from tail_lib.windows import Last
-from tail_lib.windows import Trailing
+from tail_lib.time_series.time_series import TimeSeries
+from tail_lib.time_series.windows import Last
+from tail_lib.time_series.windows import Trailing
 from tests.helpers import FIRST_DATE
 from tests.helpers import ewma
 from tests.helpers import returns_series

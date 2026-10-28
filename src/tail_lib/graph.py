@@ -32,7 +32,7 @@ from typing import Any
 import numpy as np
 
 from tail_lib._checks import check_name
-from tail_lib.time_series import TimeSeries
+from tail_lib.time_series.time_series import TimeSeries
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -41,8 +41,8 @@ if TYPE_CHECKING:
     from tail_lib._typing import Floats
     from tail_lib.context import Context
     from tail_lib.models.ewma import EwmaStart
-    from tail_lib.windows import Last
-    from tail_lib.windows import Trailing
+    from tail_lib.time_series.windows import Last
+    from tail_lib.time_series.windows import Trailing
 
 
 # The context of the innermost open `with Context():` block, which nodes built

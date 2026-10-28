@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from tail_lib.graph import Preprocessor
-from tail_lib.time_series import TimeSeries
+from tail_lib.time_series.time_series import TimeSeries
 
 if TYPE_CHECKING:
     from tail_lib.models.value_at_risk import ValueAtRiskModel

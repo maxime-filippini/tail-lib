@@ -59,8 +59,8 @@ from tail_lib.specs import VolatilityInputSpec
 from tail_lib.specs import VolatilitySpec
 from tail_lib.specs import WindowSpec
 from tail_lib.specs import ZeroMeanSpec
-from tail_lib.windows import Last
-from tail_lib.windows import Trailing
+from tail_lib.time_series.windows import Last
+from tail_lib.time_series.windows import Trailing
 
 if TYPE_CHECKING:
     from collections.abc import Iterable

@@ -38,7 +38,7 @@ from tail_lib.models.value_at_risk import HistoricalSimulationsModel
 from tail_lib.models.volatility import EwmaVolatility
 from tail_lib.simulation import GarchProcess
 from tail_lib.simulation import Simulator
-from tail_lib.windows import Trailing
+from tail_lib.time_series import Trailing
 
 # 1. Returns: 1000 dates of GARCH returns with fat-tailed shocks.
 simulator = Simulator(

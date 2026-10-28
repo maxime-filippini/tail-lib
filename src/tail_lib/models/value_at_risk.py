@@ -17,10 +17,10 @@ from tail_lib.graph import Node
 from tail_lib.graph import RunInput
 from tail_lib.models.mean import MeanModel
 from tail_lib.models.mean import ZeroMean
-from tail_lib.time_series import TimeSeries
-from tail_lib.windows import Last
-from tail_lib.windows import Trailing
-from tail_lib.windows import Windows
+from tail_lib.time_series.time_series import TimeSeries
+from tail_lib.time_series.windows import Last
+from tail_lib.time_series.windows import Trailing
+from tail_lib.time_series.windows import Windows
 
 if TYPE_CHECKING:
     from numpy.lib._function_base_impl import (

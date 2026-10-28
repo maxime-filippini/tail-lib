@@ -19,9 +19,9 @@ from tail_lib.run import RunSpec
 from tail_lib.specs import HistoricalSimulationsSpec
 from tail_lib.specs import TrailingSpec
 from tail_lib.specs import find_last_window
-from tail_lib.time_series import TimeSeries
-from tail_lib.windows import Last
-from tail_lib.windows import Trailing
+from tail_lib.time_series.time_series import TimeSeries
+from tail_lib.time_series.windows import Last
+from tail_lib.time_series.windows import Trailing
 from tests.helpers import returns_series
 from tests.helpers import run_node
 

@@ -16,8 +16,8 @@ from tail_lib.models.value_at_risk import GaussianModel
 from tail_lib.models.value_at_risk import HistoricalSimulationsModel
 from tail_lib.models.volatility import EwmaVolatility
 from tail_lib.models.volatility import VolatilityFilter
-from tail_lib.windows import Last
-from tail_lib.windows import Trailing
+from tail_lib.time_series import Last
+from tail_lib.time_series import Trailing
 
 # 1. The context, with the backtests to run on every model.
 with Context() as ctx:
@@ -280,7 +280,7 @@ To compute only the latest VaR, give the models a `Last` window, in a
 context without backtests:
 
 ```python
-from tail_lib.windows import Last
+from tail_lib.time_series import Last
 
 with Context() as today:
     HistoricalSimulationsModel(cf=0.99, window=Last(length=500), name="hs_500")

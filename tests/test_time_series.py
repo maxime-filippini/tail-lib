@@ -3,7 +3,7 @@ import datetime
 import numpy as np
 
 from tail_lib.calendar import Calendar
-from tail_lib.time_series import TimeSeries
+from tail_lib.time_series.time_series import TimeSeries
 
 # 2020-01-03 is a Friday.
 FRIDAY = datetime.date(2020, 1, 3)
