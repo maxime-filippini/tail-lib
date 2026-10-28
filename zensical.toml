@@ -38,12 +38,6 @@ nav = [
     "reference/graph.md",
     "reference/report.md",
   ] },
-  { "Development" = [
-    "requirements.md",
-    "architecture.md",
-    "public-contracts.md",
-    "open-points.md",
-  ] },
 ]
 
 extra_javascript = [
