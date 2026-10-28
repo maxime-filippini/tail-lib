@@ -170,12 +170,15 @@ def _build_mean(spec: MeanSpec) -> MeanModel:
             assert_never(spec)
 
 
-def _build_backtest(spec: BacktestSpec) -> Kupiec:
-    """Build a declaration; the context supplies each model when binding."""
+def _build_backtest(spec: BacktestSpec, *, name: str) -> Kupiec:
+    """Build a named declaration; the context supplies each model when binding.
+
+    Built inside a context, the named declaration registers on it (D10).
+    """
     match spec:
         case KupiecSpec():
             window = None if spec.window is None else _window(spec.window)
-            return Kupiec(window=window)
+            return Kupiec(window=window, name=name)
         case _:
             assert_never(spec)
 

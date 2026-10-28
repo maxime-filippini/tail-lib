@@ -154,15 +154,18 @@ def test_an_equal_node_can_take_its_name_again() -> None:
 
 def test_a_node_cant_take_a_backtests_name() -> None:
     with (
-        Context(backtests={"kupiec": Kupiec()}),
+        Context(),
         pytest.raises(ValueError, match="both a node and a backtest"),
     ):
-        GaussianModel(cf=0.99, vol=ConstantVolatility(0.01), name="kupiec")
+        _ = [
+            GaussianModel(cf=0.99, vol=ConstantVolatility(0.01), name="kupiec"),
+            Kupiec(name="kupiec"),
+        ]
 
 
 def test_a_backtest_name_has_to_be_an_identifier() -> None:
     with pytest.raises(ValueError, match="identifier"):
-        Context(backtests={"kupiec-250": Kupiec()})
+        Context().add_backtest(name="kupiec-250", backtest=Kupiec())
 
 
 def test_a_backtest_built_in_a_context_needs_a_name() -> None:
@@ -279,12 +282,10 @@ def test_labels_name_a_model_or_a_backtest() -> None:
 
 
 def test_labels_default_to_the_names() -> None:
-    with Context(
-        backtests={"kupiec": Kupiec()}, labels={"gauss": "Gaussian 99%"}
-    ) as ctx:
+    with Context(labels={"gauss": "Gaussian 99%"}) as ctx:
         GaussianModel(cf=0.99, vol=ConstantVolatility(0.01), name="gauss")
         HistoricalSimulationsModel(cf=0.99, window=Trailing(length=50), name="hs")
-
+        Kupiec(name="kupiec")
     assert dict(ctx.labels) == {
         "gauss": "Gaussian 99%",
         "hs": "hs",
@@ -296,12 +297,13 @@ def test_labels_default_to_the_names() -> None:
 
 
 def test_the_graph_has_paths_from_models_backtests_then_other_nodes() -> None:
-    with Context(backtests={"kupiec": Kupiec()}) as ctx:
+    with Context() as ctx:
         vol = ConstantVolatility(0.01)
         gauss = GaussianModel(cf=0.99, vol=vol, name="gauss")
         lone = EwmaVolatility(ConstantDecay(0.94), name="lone")
         EwmaVolatility(ConstantDecay(0.97))
         EwmaVolatility(ConstantDecay(0.9))
+        Kupiec(name="kupiec")
 
     paths = {n.node: n.paths for n in ctx.graph().nodes}
 
@@ -316,18 +318,19 @@ def test_the_graph_has_paths_from_models_backtests_then_other_nodes() -> None:
 
 def test_the_graph_computes_nothing() -> None:
     _CountingVolatility.n_calls = 0
-    with Context(backtests={"kupiec": Kupiec()}) as ctx:
+    with Context() as ctx:
         GaussianModel(cf=0.99, vol=_CountingVolatility(0.01), name="gauss")
-
+        Kupiec(name="kupiec")
     ctx.graph()
 
     assert _CountingVolatility.n_calls == 0
 
 
 def test_backtests_reject_a_model_with_a_last_window() -> None:
-    with Context(backtests={"kupiec": Kupiec()}) as ctx:
+    with Context() as ctx:
         vol = EwmaVolatility(EwmaDecayCalibration(Last(length=100)))
         GaussianModel(cf=0.99, vol=vol, name="today")
+        Kupiec(name="kupiec")
 
     with pytest.raises(ValueError, match=r"`models\.today\.vol\.decay\.window`"):
         ctx.graph()
@@ -350,12 +353,13 @@ def test_two_different_nodes_cant_read_one_input() -> None:
 
 def test_run_computes_each_node_once() -> None:
     _CountingVolatility.n_calls = 0
-    with Context(backtests={"kupiec": Kupiec()}) as ctx:
+    with Context() as ctx:
         vol = _CountingVolatility(0.01)
         GaussianModel(cf=0.99, vol=vol, name="a")
         # Equal models under two names are one node.
         GaussianModel(cf=0.99, vol=vol, name="b")
         GaussianModel(cf=0.95, vol=vol, name="c")
+        Kupiec(name="kupiec")
 
     results = ctx.run(returns_series(n=100))
 
@@ -471,9 +475,10 @@ def test_a_run_doesnt_bind_the_backtest_nodes_it_builds(
         return bind(self, model)
 
     monkeypatch.setattr(Kupiec, "_bind", recording)
-    with Context(backtests={"kupiec": Kupiec()}) as ctx:
+    with Context() as ctx:
         GaussianModel(cf=0.99, vol=ConstantVolatility(0.01), name="gauss")
         # Inside the block: the backtest nodes are built outside any context.
+        Kupiec(name="kupiec")
         ctx.run(returns_series(n=50))
 
     assert open_contexts

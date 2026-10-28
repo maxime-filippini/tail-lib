@@ -30,13 +30,9 @@ _N_SERIES = 2
 
 
 def _context() -> Context:
-    with Context(
-        backtests={
-            "kupiec": Kupiec(),
-            "kupiec_50": Kupiec(window=Trailing(length=50)),
-        },
-        labels={"gauss": "Gaussian 99%"},
-    ) as ctx:
+    with Context(labels={"gauss": "Gaussian 99%"}) as ctx:
+        Kupiec(name="kupiec")
+        Kupiec(name="kupiec_50", window=Trailing(length=50))
         vol = EwmaVolatility(ConstantDecay(0.94), start=Backcast(window=20))
         GaussianModel(cf=0.99, vol=vol, name="gauss")
         FilteredHistoricalSimulationsModel(

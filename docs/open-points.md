@@ -65,7 +65,9 @@ the context migration:
   internal. The result type and the `kupiec_pof` function are unchanged.
 - `ctx.add_backtest(name, declaration)` records the declaration; the
   construction hook calls it for direct declarations in a block. The
-  constructor's `backtests` mapping uses the same method. It checks names
+  constructor's `backtests` mapping was removed (2026-10-28): declare in
+  the block, or call `add_backtest`. `Context.from_spec` builds each
+  declaration named by its spec key, in its block. It checks names
   are identifiers and rejects duplicate backtest names and collisions
   with named nodes. A failed registration keeps the existing declaration.
 - `ctx.graph()` calls each declaration's private `_bind(model)` with node

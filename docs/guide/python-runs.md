@@ -83,15 +83,15 @@ required there and is checked when the declaration is built. The name is
 registration metadata, so equal settings under different names still
 share computation.
 
-Outside a context, a declaration can be unnamed and reused. Pass it through
-the constructor's `backtests` mapping, or register it explicitly with
-`ctx.add_backtest(name, declaration)`. Mapping keys and explicit names
-choose its name in that context:
+Outside a context, a declaration can be unnamed and reused. Register it
+explicitly with `ctx.add_backtest(name, declaration)`; the name chooses its
+name in that context:
 
 ```python
 rolling_test = Kupiec(window=Trailing(250))  # outside any context
-with Context(backtests={"kupiec_250": rolling_test}) as ctx:
+with Context() as ctx:
     ...  # the models
+ctx.add_backtest("kupiec_250", rolling_test)
 ```
 
 Registration records settings only and computes nothing. When `ctx.graph()`
@@ -116,9 +116,9 @@ friendlier names in `labels`:
 
 ```python
 with Context(
-    backtests={"kupiec_250": Kupiec(window=Trailing(length=250))},
     labels={"fhs_500": "Filtered HS, 500 days", "kupiec_250": "Kupiec, 250 days"},
 ) as ctx:
+    Kupiec(name="kupiec_250", window=Trailing(length=250))
     ...
 ctx.labels  # every model and backtest, by name; unlabelled names as they are
 ```
@@ -239,7 +239,8 @@ and shape of the returns.
 from tail_lib.models.value_at_risk import ValueAtRiskInput
 from tail_lib.models.volatility import VolatilityInput
 
-with Context(backtests={"kupiec": Kupiec()}) as ctx:
+with Context() as ctx:
+    Kupiec(name="kupiec")
     ValueAtRiskInput("var_ext", cf=0.99)
     GaussianModel(cf=0.99, vol=VolatilityInput("vol_svc"), name="gauss_svc")
 

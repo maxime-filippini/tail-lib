@@ -37,16 +37,14 @@ if __name__ == "__main__":
     var_ext = TimeSeries(dates=returns.dates, values=np.full((1000, 2), -0.025))
 
     with Context(
-        backtests={
-            "kupiec": Kupiec(),
-            "kupiec_250": Kupiec(window=Trailing(length=250)),
-        },
         labels={
             "gauss": "Gaussian, EWMA 0.94",
             "fhs_250": "Filtered HS, 250 days",
             "kupiec_250": "Kupiec, 250 days",
         },
     ) as ctx:
+        Kupiec(name="kupiec")
+        Kupiec(name="kupiec_250", window=Trailing(length=250))
         vol = EwmaVolatility(ConstantDecay(0.94))
         fitted = EwmaVolatility(EwmaDecayCalibration(Trailing(length=250, step=20)))
         GaussianModel(cf=0.99, vol=vol, name="gauss")

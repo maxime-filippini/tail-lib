@@ -162,7 +162,8 @@ def test_kupiec_declaration_on_windows_matches_functions() -> None:
     model = HistoricalSimulationsModel(cf=0.95, window=Trailing(length=100))
     window = Trailing(length=50, step=10)
 
-    ctx = Context(backtests={"kupiec": Kupiec(window=window)})
+    ctx = Context()
+    ctx.add_backtest("kupiec", Kupiec(window=window))
     ctx.bind(dataclasses.replace(model, name="hs"))
     result = ctx.run(returns).backtests["hs"]["kupiec"]
 
@@ -175,7 +176,8 @@ def test_kupiec_declaration_on_windows_matches_functions() -> None:
 
 
 def test_kupiec_test_uses_the_model_confidence_level() -> None:
-    with Context(backtests={"kupiec": Kupiec()}) as ctx:
+    with Context() as ctx:
+        Kupiec(name="kupiec")
         GaussianModel(cf=0.975, vol=ConstantVolatility(0.01), name="gauss")
 
     result = ctx.run(returns_series(n=50)).backtests["gauss"]["kupiec"]
@@ -193,7 +195,8 @@ def test_backtests_reuse_var_computed_in_the_same_context() -> None:
             _CountingGaussian.n_calls += 1
             return super().compute(returns, vol=vol, mean=mean)
 
-    with Context(backtests={"kupiec": Kupiec()}) as ctx:
+    with Context() as ctx:
+        Kupiec(name="kupiec")
         _CountingGaussian(cf=0.99, vol=ConstantVolatility(0.01), name="gaussian")
         HistoricalSimulationsModel(cf=0.99, window=Trailing(length=50), name="hs")
     n = 200

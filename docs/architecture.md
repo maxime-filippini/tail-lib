@@ -138,7 +138,8 @@ computes them. `Context.from_spec` builds the same kind of context from a
 spec. `Results` holds every output from one execution:
 
 ```python
-with Context(backtests={"kupiec": Kupiec()}, labels={"gauss": "Gaussian"}) as ctx:
+with Context(labels={"gauss": "Gaussian"}) as ctx:
+    Kupiec(name="kupiec")
     vol = EwmaVolatility(ConstantDecay(0.94))
     GaussianModel(cf=0.99, vol=vol, name="gauss")
     HistoricalSimulationsModel(cf=0.99, window=Trailing(length=250), name="hs")
@@ -165,11 +166,10 @@ results["gauss"], results[vol], results.backtests["gauss"]["kupiec"]
   equality. A declaration registers settings only; executable nodes come
   later, during the graph walk.
 - **`add_backtest(name, declaration)`** registers immutable test settings,
-  e.g. `Kupiec(window=Trailing(250))`. The constructor's `backtests` mapping
-  uses the same method. It rejects invalid names, duplicate registrations
+  e.g. `Kupiec(window=Trailing(250))`. It rejects invalid names, duplicate registrations
   and collisions with named nodes. Named declarations inside a block call
-  it automatically. Explicit registration and the constructor mapping can
-  reuse declarations built outside a block, choosing names for each use.
+  it automatically. Explicit registration can reuse declarations built
+  outside a block, choosing names for each use.
 - **`graph()`** checks the names and labels, the `last` windows when there
   are backtests, and that each run input name belongs to one node, then
   returns a `RunGraph`. Roots: each model
@@ -372,8 +372,8 @@ results = ctx.run(returns)
   specs share by the same value identity.
 - Each backtest is an immutable declaration such as `Kupiec()` or
   `Kupiec(window=Trailing(250))`, registered by name with
-  constructing `Kupiec(name="kupiec", ...)` in the block, explicitly with
-  `ctx.add_backtest`, or in the constructor's `backtests` mapping. The
+  constructing `Kupiec(name="kupiec", ...)` in the block, or explicitly with
+  `ctx.add_backtest`. The
   context creates its internal executable node for every model (R4),
   and equal overshootings nodes are computed once (D9).
 - Values are checked when each node is built, e.g. `ConstantDecay(1.5)`

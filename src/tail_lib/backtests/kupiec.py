@@ -146,7 +146,7 @@ class Kupiec:
     Inside `with Context():`, building `Kupiec(name="kupiec")` registers
     it on the innermost context (D10). A name is required there. Outside
     a context, it can be unnamed and reused through the context's
-    `backtests` mapping or `add_backtest` method.
+    `add_backtest` method.
 
     When the context builds its graph, it creates an internal test node
     for each model, reading that model's overshootings and confidence

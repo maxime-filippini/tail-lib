@@ -171,11 +171,14 @@ def _preprocessors(gaussian_ewma: ValueAtRiskModel) -> dict[str, Node[TimeSeries
 
 def _outputs(returns: TimeSeries) -> dict[str, np.ndarray]:
     """Every pinned output, by key: node values, then backtest fields."""
-    with Context(backtests=_BACKTESTS) as ctx:
+    with Context() as ctx:
         _models()
         preprocessors = _preprocessors(ctx.models["gaussian_ewma"])
         decays = _decays()
         filters = _filters()
+        for k, v in _BACKTESTS.items():
+            ctx.add_backtest(name=k, backtest=v)
+
     with Context() as today:
         _last_models()
     inputs = _inputs(returns)

@@ -36,12 +36,13 @@ def _paths(graph: RunGraph) -> dict[Node[Any], tuple[str, ...]]:
 
 
 def _gauss_and_fhs() -> tuple[Context, ConstantVolatility, GaussianModel]:
-    with Context(backtests={"kupiec": Kupiec()}) as ctx:
+    with Context() as ctx:
         vol = ConstantVolatility(0.01)
         gauss = GaussianModel(cf=0.99, vol=vol, name="gauss")
         FilteredHistoricalSimulationsModel(
             cf=0.99, filter=VolatilityFilter(vol), window=Trailing(50), name="fhs"
         )
+        Kupiec(name="kupiec")
     return ctx, vol, gauss
 
 
@@ -108,10 +109,10 @@ def test_the_edges_go_from_each_dependency_to_its_reader() -> None:
 
 
 def test_equal_models_built_separately_are_one_node() -> None:
-    with Context(backtests={"kupiec": Kupiec()}) as ctx:
+    with Context() as ctx:
         gauss = GaussianModel(cf=0.99, vol=ConstantVolatility(0.01), name="a")
         GaussianModel(cf=0.99, vol=ConstantVolatility(0.01), name="b")
-
+        Kupiec(name="kupiec")
     assert _paths(ctx.graph())[gauss][:2] == ("models.a", "models.b")
     n_distinct = 5  # Model, volatility, mean, overshootings and backtest.
     assert len(ctx.graph().nodes) == n_distinct
@@ -119,9 +120,10 @@ def test_equal_models_built_separately_are_one_node() -> None:
 
 def test_a_model_under_two_names_is_one_node_with_two_paths() -> None:
     gauss = GaussianModel(cf=0.99, vol=ConstantVolatility(0.01))
-    with Context(backtests={"kupiec": Kupiec()}) as ctx:
+    with Context() as ctx:
         dataclasses.replace(gauss, name="a")
         dataclasses.replace(gauss, name="b")
+        Kupiec(name="kupiec")
 
     paths = _paths(ctx.graph())
     assert paths[gauss] == (
@@ -144,9 +146,10 @@ def test_a_context_without_backtests_has_only_its_models_graph() -> None:
 
 
 def test_results_hold_every_graph_node_without_recomputing() -> None:
-    with Context(backtests={"k": Kupiec()}) as ctx:
+    with Context() as ctx:
         vol = _CountingVolatility(0.01)
         GaussianModel(cf=0.99, vol=vol, name="gauss")
+        Kupiec(name="k")
 
     results = ctx.run(returns_series(n=100))
     graph_nodes = {entry.node for entry in ctx.graph().nodes}

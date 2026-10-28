@@ -21,7 +21,8 @@ _SLOT = re.compile(
 
 
 def _report(title: str = "tail-lib report") -> Report:
-    with Context(backtests={"kupiec": Kupiec()}) as ctx:
+    with Context() as ctx:
+        Kupiec(name="kupiec")
         GaussianModel(cf=0.99, vol=ConstantVolatility(0.01), name="gauss")
     return Report(ctx, ctx.run(returns_series(n=100)), title=title)
 

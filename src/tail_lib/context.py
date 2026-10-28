@@ -29,6 +29,7 @@ from typing import TYPE_CHECKING
 from typing import Any
 from typing import Self
 from typing import overload
+from uuid import uuid4
 
 import numpy as np
 
@@ -148,25 +149,20 @@ class Context:
 
     def __init__(
         self,
-        backtests: Mapping[str, Kupiec] | None = None,
+        id_: str | None = None,
         labels: Mapping[str, str] | None = None,
     ) -> None:
         """Open an empty context, to fill in a `with` block.
 
         Args:
-            backtests (Mapping[str, Kupiec] | None): Backtest declarations,
-                by name, e.g. `{"kupiec": Kupiec()}` or
-                `{"kupiec_250": Kupiec(window=Trailing(250))}`. They are
-                registered through `add_backtest`, as if added later.
+            id_ (str | None): The id of the context. Defaults to a random
+                UUID.
             labels (Mapping[str, str] | None): Display names, by model or
                 backtest name, e.g. `{"gauss": "Gaussian 99%"}`, e.g. for a
                 report (R20). Names without one are shown as they are.
 
-        Raises:
-            ValueError: If a backtest name isn't a Python identifier.
-            TypeError: If a backtest isn't a declaration.
-
         """
+        self._id: str = id_ or str(uuid4())
         self._backtests: dict[str, Kupiec] = {}
         self._labels = {} if labels is None else dict(labels)
         # Every distinct node bound, by value, in the order first bound.
@@ -177,8 +173,6 @@ class Context:
         # One token per open `with` block on this context, to restore the
         # context outside it on exit. A list, so blocks can nest.
         self._tokens: list[Token[Context | None]] = []
-        for name, backtest in ({} if backtests is None else backtests).items():
-            self.add_backtest(name, backtest)
 
     def add_backtest(self, name: str, backtest: Kupiec) -> None:
         """Register a declaration to test every model of this context (R4).
@@ -238,19 +232,15 @@ class Context:
 
         """
         _check_input_specs(spec.models.values())
-        # Spec declarations use mapping keys as names. Build them without
-        # registering in a surrounding Python context (D10).
-        token = current_context.set(None)
-        try:
-            backtests = {
-                name: _build_backtest(backtest)
-                for name, backtest in spec.backtests.items()
-            }
-        finally:
-            current_context.reset(token)
-        with cls(backtests=backtests, labels=spec.labels) as ctx:
+
+        with cls(labels=spec.labels) as ctx:
             for name, model in spec.models.items():
                 _build_var_model(model, name=name)
+
+            # Named declarations built in the block register on `ctx` (D10).
+            for name, backtest in spec.backtests.items():
+                _build_backtest(backtest, name=name)
+
         ctx.graph()
         return ctx
 
@@ -473,8 +463,8 @@ class Context:
             backtests=backtests,
             outputs=MappingProxyType(outputs),
             named=MappingProxyType(dict(self._named)),
-            lower=None if selection is None else returns.dates[selection.start],
-            upper=None if selection is None else returns.dates[selection.stop - 1],
+            lower=None if selection is None else returns.dates[selection.start],  # pyright: ignore[reportArgumentType]
+            upper=None if selection is None else returns.dates[selection.stop - 1],  # pyright: ignore[reportArgumentType]
         )
 
     def _backtest_nodes(self) -> dict[str, dict[str, Backtest[BacktestResult]]]:
