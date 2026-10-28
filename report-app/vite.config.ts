@@ -7,7 +7,7 @@ import { viteSingleFile } from "vite-plugin-singlefile";
 export default defineConfig({
   plugins: [svelte(), viteSingleFile()],
   build: {
-    outDir: "../src/tail_lib/report",
+    outDir: "../src/tail_lib/_report",
     // The output directory holds the Python modules too: keep them.
     emptyOutDir: false,
   },

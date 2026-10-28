@@ -17,14 +17,14 @@ from importlib import resources
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from tail_lib.report.data import build_report_data
+from tail_lib._report.data import build_report_data
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
+    from tail_lib._report.data import ReportData
     from tail_lib.context import Context
     from tail_lib.context import Results
-    from tail_lib.report.data import ReportData
 
 DATA_PLACEHOLDER = "__TAIL_LIB_REPORT_DATA__"
 """The text the report page holds in its data slot, replaced by the JSON."""
@@ -94,7 +94,7 @@ def _html(data: ReportData) -> str:
         ValueError: If the page doesn't hold the placeholder exactly once.
 
     """
-    page = resources.files("tail_lib.report").joinpath("index.html").read_text("utf-8")
+    page = resources.files("tail_lib._report").joinpath("index.html").read_text("utf-8")
     if page.count(DATA_PLACEHOLDER) != 1:
         msg = f"The report page has to hold {DATA_PLACEHOLDER} exactly once!"
         raise ValueError(msg)

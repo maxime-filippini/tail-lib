@@ -324,38 +324,6 @@ for edge in graph.edges:
 Nodes no model reaches have paths from `nodes`: `nodes.<name>`, or
 `nodes.<class>` without a name.
 
-## Reports
-
-A [`Report`][tail_lib.report.report.Report] shows the results of a run as
-one HTML file that opens offline. It reads the results without
-computing anything again. Its tabs:
-
-- **Graph:** every node of the context once, with its settings; click a box
-  to chart its output.
-- **Returns vs VaR:** the returns against each model's VaR, on the date it
-  forecasts, with the overshootings marked.
-- **Backtests:** every backtest of every model, coloured by rejection at a
-  level you set.
-- **Rolling backtests:** the observed rate and p-value of rolling backtests
-  over time.
-- **Node outputs:** the output of any node, e.g. a volatility.
-
-```python
-from tail_lib.report.report import Report
-
-results = ctx.run(returns, inputs)
-report = Report(ctx, results, title="Daily VaR", series_labels=["SPX", "SX5E"])
-report.save("report.html")
-report.data  # the ReportData shown, e.g. report.data.model_dump_json()
-```
-
-The report header shows the selected **Forecast range** separately from
-the **Available history** in `results.returns`. With no execution bounds,
-it labels the forecast range **Full history**; individual models may still
-have warm-up `NaN`s. Bounds are saved as ISO dates in
-`report.data.metadata.lower` and `.upper`, so the report reads the dates
-from that execution without computing anything again.
-
 ## Runs built in Python vs from specs
 
 A context built from nodes has no spec, so it can't be written back as JSON.

@@ -8,6 +8,7 @@ from pathlib import Path
 
 import numpy as np
 
+from tail_lib._report.data import build_report_data
 from tail_lib.backtests.kupiec import Kupiec
 from tail_lib.context import Context
 from tail_lib.models.ewma import ConstantDecay
@@ -19,7 +20,6 @@ from tail_lib.models.value_at_risk import HistoricalSimulationsModel
 from tail_lib.models.value_at_risk import ValueAtRiskInput
 from tail_lib.models.volatility import EwmaVolatility
 from tail_lib.models.volatility import VolatilityFilter
-from tail_lib.report.data import build_report_data
 from tail_lib.simulation import EwmaProcess
 from tail_lib.simulation import Simulator
 from tail_lib.time_series.time_series import TimeSeries

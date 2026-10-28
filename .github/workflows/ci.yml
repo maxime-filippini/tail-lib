@@ -197,8 +197,8 @@ jobs:
       # be the page the app's source builds.
       - name: Check the committed page is up to date
         run: |
-          if ! git diff --exit-code -- src/tail_lib/report/index.html; then
-            echo "::error file=src/tail_lib/report/index.html::The committed report page is out of date: run \`npm run build\` in report-app/ and commit it."
+          if ! git diff --exit-code -- src/tail_lib/_report/index.html; then
+            echo "::error file=src/tail_lib/_report/index.html::The committed report page is out of date: run \`npm run build\` in report-app/ and commit it."
             exit 1
           fi
 

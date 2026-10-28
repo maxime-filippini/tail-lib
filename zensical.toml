@@ -36,7 +36,6 @@ nav = [
     "reference/time-series.md",
     "reference/simulation.md",
     "reference/graph.md",
-    "reference/report.md",
   ] },
 ]
 
