@@ -91,7 +91,7 @@ class StudentT(Distribution):
 
     def __post_init__(self) -> None:
         if np.any(np.asarray(self.df) <= 2):
-            msg = "Student-t distribution must have at least dof of 3!"
+            msg = "Student-t degrees of freedom must be above 2."
             raise ValueError(msg)
 
     def draw(self, rng: np.random.Generator, shape: tuple[int, ...]) -> FloatArray:  # noqa: D102
